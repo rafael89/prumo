@@ -18,7 +18,7 @@ public sealed class TextQualityValidatorTests
         var result = validator.Validate("texto curto");
 
         Assert.False(result.IsValid);
-        Assert.Equal("Texto insuficiente para anÃ¡lise.", result.Error);
+        Assert.Equal("Texto insuficiente para análise.", result.Error);
     }
 
     [Fact]
@@ -33,9 +33,9 @@ public sealed class TextQualityValidatorTests
     [Fact]
     public void Rejeita_texto_com_caracteres_invalidos()
     {
-        var result = validator.Validate("texto valido" + new string('\u0001', 12) + "com ruido e mais texto");
+        var result = validator.Validate("texto valido" + new string('\u0001', 20) + "com ruido");
 
         Assert.False(result.IsValid);
-        Assert.Equal("Texto possui caracteres invÃ¡lidos em excesso.", result.Error);
+        Assert.Equal("Texto possui caracteres inválidos em excesso.", result.Error);
     }
 }
