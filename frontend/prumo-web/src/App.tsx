@@ -1,12 +1,26 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { BrowserRouter, Link } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
 
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5080'
+const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
 
-type Portfolio = { id: string; name: string; totalValue: number; positionCount: number }
-type Position = { id: string; ticker: string; quantity: number; currentValue: number | null; portfolioWeight: number }
+type AssetType = 0 | 1 | 2 | 3
+type Feedback = { tone: 'success' | 'error'; message: string } | null
+
+type PortfolioSummary = { id: string; name: string; totalValue: number; positionCount: number }
+type Position = {
+  id: string
+  ticker: string
+  name: string
+  assetType: AssetType
+  sector: string | null
+  quantity: number
+  averagePrice: number
+  currentPrice: number | null
+  currentValue: number | null
+  portfolioWeight: number
+}
 type Dashboard = { id: string; name: string; totalValue: number; positionCount: number; positions: Position[] }
 type Document = {
   id: string
@@ -38,8 +52,36 @@ type DocumentAnalysis = {
   createdAt: string
 }
 
+type CreatePortfolioRequest = { name: string }
+type CreatePositionRequest = {
+  ticker: string
+  name: string
+  assetType: AssetType
+  sector: string | null
+  quantity: number
+  averagePrice: number
+  currentPrice: number | null
+}
+type UpdatePositionRequest = {
+  quantity: number
+  averagePrice: number
+  currentPrice: number | null
+}
+
 const processingStatuses = ['Descoberto', 'Baixado', 'Aguardando processamento', 'Processando', 'Processado', 'Erro', 'Ignorado']
 const documentTypes = ['Fato relevante', 'Comunicado', 'Relatorio gerencial', 'Outro']
+const assetTypeOptions: Array<{ value: AssetType; label: string }> = [
+  { value: 0, label: 'Acao' },
+  { value: 1, label: 'FII' },
+  { value: 2, label: 'ETF' },
+  { value: 3, label: 'Outro' },
+]
+const assetTypeLabels: Record<number, string> = {
+  0: 'Acao',
+  1: 'FII',
+  2: 'ETF',
+  3: 'Outro',
+}
 const importanceLabels: Record<string, string> = {
   Critical: 'Critico',
   Relevant: 'Relevante',
@@ -80,9 +122,40 @@ async function getOptionalJson<T>(path: string): Promise<T | null> {
   return response.json()
 }
 
+async function sendJson<TResponse, TRequest>(path: string, method: 'POST' | 'PUT', body: TRequest): Promise<TResponse> {
+  const response = await fetch(`${apiUrl}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readError(response))
+  }
+
+  return response.json()
+}
+
+async function sendVoid(path: string, method: 'DELETE'): Promise<void> {
+  const response = await fetch(`${apiUrl}${path}`, { method })
+  if (!response.ok) {
+    throw new Error(await readError(response))
+  }
+}
+
+async function readError(response: Response) {
+  const text = await response.text()
+  return text || 'Nao foi possivel concluir a operacao.'
+}
+
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'Sem valor'
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+}
+
+function formatNumber(value: number | null | undefined) {
+  if (value == null) return '-'
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value)
 }
 
 function formatDate(value: string | null) {
@@ -97,31 +170,185 @@ function analysisTone(importance: string) {
   return 'border-slate-300 bg-white text-slate-900'
 }
 
+function parseOptionalNumber(value: string) {
+  const normalized = value.trim().replace(',', '.')
+  return normalized.length === 0 ? null : Number(normalized)
+}
+
 function App() {
   const queryClient = useQueryClient()
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null)
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
-  const portfolios = useQuery({ queryKey: ['portfolios'], queryFn: () => getJson<Portfolio[]>('/api/portfolios') })
-  const portfolio = portfolios.data?.[0]
+  const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<Feedback>(null)
+  const [portfolioName, setPortfolioName] = useState('Minha carteira')
+  const [positionForm, setPositionForm] = useState({
+    ticker: '',
+    name: '',
+    assetType: 0 as AssetType,
+    sector: '',
+    quantity: '',
+    averagePrice: '',
+    currentPrice: '',
+  })
+  const [editForm, setEditForm] = useState({
+    quantity: '',
+    averagePrice: '',
+    currentPrice: '',
+  })
+
+  const portfolios = useQuery({
+    queryKey: ['portfolios'],
+    queryFn: () => getJson<PortfolioSummary[]>('/api/portfolios'),
+  })
+
+  const activePortfolio =
+    portfolios.data?.find((item) => item.id === selectedPortfolioId)
+    ?? portfolios.data?.[0]
+    ?? null
+
   const dashboard = useQuery({
-    queryKey: ['dashboard', portfolio?.id],
-    queryFn: () => getJson<Dashboard>(`/api/portfolios/${portfolio!.id}/dashboard`),
-    enabled: Boolean(portfolio),
+    queryKey: ['dashboard', activePortfolio?.id],
+    queryFn: () => getJson<Dashboard>(`/api/portfolios/${activePortfolio!.id}/dashboard`),
+    enabled: Boolean(activePortfolio),
   })
+
   const documents = useQuery({
-    queryKey: ['documents', portfolio?.id],
-    queryFn: () => getJson<Document[]>(`/api/portfolios/${portfolio!.id}/documents`),
-    enabled: Boolean(portfolio),
+    queryKey: ['documents', activePortfolio?.id],
+    queryFn: () => getJson<Document[]>(`/api/portfolios/${activePortfolio!.id}/documents`),
+    enabled: Boolean(activePortfolio),
   })
-  const selectedDocument = documents.data?.find((item) => item.id === selectedDocumentId) ?? documents.data?.[0] ?? null
+
+  const selectedDocument =
+    documents.data?.find((item) => item.id === selectedDocumentId)
+    ?? documents.data?.[0]
+    ?? null
+
   const analysis = useQuery({
     queryKey: ['document-analysis', selectedDocument?.id],
     queryFn: () => getOptionalJson<DocumentAnalysis>(`/api/documents/${selectedDocument!.id}/analysis`),
     enabled: Boolean(selectedDocument),
   })
+
   const createPortfolio = useMutation({
-    mutationFn: () => fetch(`${apiUrl}/api/portfolios`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Minha carteira' }) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
+    mutationFn: (request: CreatePortfolioRequest) => sendJson<PortfolioSummary, CreatePortfolioRequest>('/api/portfolios', 'POST', request),
+    onSuccess: async (created) => {
+      setSelectedPortfolioId(created.id)
+      setSelectedDocumentId(null)
+      setFeedback({ tone: 'success', message: `Carteira "${created.name}" criada com sucesso.` })
+      setPortfolioName(created.name)
+      await queryClient.invalidateQueries({ queryKey: ['portfolios'] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      await queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+    onError: (error: Error) => {
+      setFeedback({ tone: 'error', message: error.message })
+    },
   })
+
+  const createPosition = useMutation({
+    mutationFn: (request: CreatePositionRequest) => sendJson<Position, CreatePositionRequest>(`/api/portfolios/${activePortfolio!.id}/positions`, 'POST', request),
+    onSuccess: async (created) => {
+      setFeedback({ tone: 'success', message: `Posicao ${created.ticker} adicionada com sucesso.` })
+      setPositionForm({ ticker: '', name: '', assetType: 0, sector: '', quantity: '', averagePrice: '', currentPrice: '' })
+      await refreshPortfolioData(queryClient, activePortfolio?.id)
+    },
+    onError: (error: Error) => {
+      setFeedback({ tone: 'error', message: error.message })
+    },
+  })
+
+  const updatePosition = useMutation({
+    mutationFn: ({ positionId, request }: { positionId: string; request: UpdatePositionRequest }) =>
+      sendJson<Position, UpdatePositionRequest>(`/api/portfolios/${activePortfolio!.id}/positions/${positionId}`, 'PUT', request),
+    onSuccess: async (updated) => {
+      setEditingPositionId(null)
+      setFeedback({ tone: 'success', message: `Posicao ${updated.ticker} atualizada com sucesso.` })
+      await refreshPortfolioData(queryClient, activePortfolio?.id)
+    },
+    onError: (error: Error) => {
+      setFeedback({ tone: 'error', message: error.message })
+    },
+  })
+
+  const deletePosition = useMutation({
+    mutationFn: (positionId: string) => sendVoid(`/api/portfolios/${activePortfolio!.id}/positions/${positionId}`, 'DELETE'),
+    onSuccess: async () => {
+      setEditingPositionId(null)
+      setFeedback({ tone: 'success', message: 'Posicao removida com sucesso.' })
+      await refreshPortfolioData(queryClient, activePortfolio?.id)
+    },
+    onError: (error: Error) => {
+      setFeedback({ tone: 'error', message: error.message })
+    },
+  })
+
+  function handleCreatePortfolio(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = portfolioName.trim()
+    if (!name) {
+      setFeedback({ tone: 'error', message: 'Informe um nome para a carteira.' })
+      return
+    }
+
+    createPortfolio.mutate({ name })
+  }
+
+  function handleCreatePosition(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!activePortfolio) {
+      setFeedback({ tone: 'error', message: 'Crie ou selecione uma carteira antes de adicionar posicoes.' })
+      return
+    }
+
+    const quantity = Number(positionForm.quantity.replace(',', '.'))
+    const averagePrice = Number(positionForm.averagePrice.replace(',', '.'))
+    const currentPrice = parseOptionalNumber(positionForm.currentPrice)
+
+    if (!positionForm.ticker.trim() || !positionForm.name.trim()) {
+      setFeedback({ tone: 'error', message: 'Ticker e nome do ativo sao obrigatorios.' })
+      return
+    }
+
+    if (Number.isNaN(quantity) || Number.isNaN(averagePrice) || (currentPrice !== null && Number.isNaN(currentPrice))) {
+      setFeedback({ tone: 'error', message: 'Preencha quantidade, preco medio e cotacao com numeros validos.' })
+      return
+    }
+
+    createPosition.mutate({
+      ticker: positionForm.ticker.trim(),
+      name: positionForm.name.trim(),
+      assetType: positionForm.assetType,
+      sector: positionForm.sector.trim() || null,
+      quantity,
+      averagePrice,
+      currentPrice,
+    })
+  }
+
+  function startEditing(position: Position) {
+    setEditingPositionId(position.id)
+    setEditForm({
+      quantity: position.quantity.toString(),
+      averagePrice: position.averagePrice.toString(),
+      currentPrice: position.currentPrice?.toString() ?? '',
+    })
+    setFeedback(null)
+  }
+
+  function handleUpdatePosition(event: FormEvent<HTMLFormElement>, positionId: string) {
+    event.preventDefault()
+    const quantity = Number(editForm.quantity.replace(',', '.'))
+    const averagePrice = Number(editForm.averagePrice.replace(',', '.'))
+    const currentPrice = parseOptionalNumber(editForm.currentPrice)
+
+    if (Number.isNaN(quantity) || Number.isNaN(averagePrice) || (currentPrice !== null && Number.isNaN(currentPrice))) {
+      setFeedback({ tone: 'error', message: 'Preencha os campos da edicao com numeros validos.' })
+      return
+    }
+
+    updatePosition.mutate({ positionId, request: { quantity, averagePrice, currentPrice } })
+  }
 
   return (
     <BrowserRouter>
@@ -147,29 +374,206 @@ function App() {
             <p className="relative text-sm text-slate-400">Status da carteira</p>
             <p className="relative mt-3 text-4xl font-semibold">{dashboard.data ? formatCurrency(dashboard.data.totalValue) : 'Sua carteira'}</p>
             <div className="relative mt-12 grid grid-cols-3 gap-3 border-t border-white/10 pt-5 text-sm">
-              <div><strong className="block text-2xl text-rose-300">{dashboard.data?.positionCount ?? 0}</strong><span className="text-slate-400">ativos</span></div>
+              <div><strong className="block text-2xl text-rose-300">{dashboard.data?.positionCount ?? activePortfolio?.positionCount ?? 0}</strong><span className="text-slate-400">ativos</span></div>
               <div><strong className="block text-2xl text-amber-300">{dashboard.data?.positions.length ?? 0}</strong><span className="text-slate-400">posicoes</span></div>
-              <div><strong className="block text-2xl text-emerald-300">{dashboard.isLoading ? '...' : 'ok'}</strong><span className="text-slate-400">status</span></div>
+              <div><strong className="block text-2xl text-emerald-300">{dashboard.isLoading ? '...' : activePortfolio ? 'ok' : 'novo'}</strong><span className="text-slate-400">status</span></div>
             </div>
           </div>
         </section>
 
         <section className="mx-auto max-w-6xl px-6 pb-20">
-          {portfolios.isLoading && <p className="text-slate-500">Carregando carteira...</p>}
-          {portfolios.isError && <p className="text-rose-700">API indisponivel. Inicie o backend em `http://localhost:5080`.</p>}
-          {!portfolios.isLoading && !portfolios.isError && !portfolio && (
-            <button type="button" onClick={() => createPortfolio.mutate()} disabled={createPortfolio.isPending} className="rounded-full border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:border-amber-600 hover:text-amber-700">
-              {createPortfolio.isPending ? 'Criando...' : 'Criar minha carteira'}
-            </button>
-          )}
-
-          {dashboard.data && dashboard.data.positions.length > 0 && (
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              {dashboard.data.positions.map((position) => <div key={position.id} className="border-t border-slate-300 pt-3"><strong>{position.ticker}</strong><span className="ml-3 text-sm text-slate-500">{position.portfolioWeight.toFixed(1)}%</span></div>)}
+          {feedback && (
+            <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
+              {feedback.message}
             </div>
           )}
 
-          {portfolio && (
+          {portfolios.isLoading && <p className="text-slate-500">Carregando carteiras...</p>}
+          {portfolios.isError && <p className="text-rose-700">API indisponivel. Inicie o backend em `http://localhost:5041`.</p>}
+
+          {!portfolios.isError && (
+            <div className="grid gap-8 lg:grid-cols-[0.92fr_1.08fr]">
+              <section className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
+                  <h2 className="text-2xl font-semibold">Carteiras</h2>
+                  <span className="text-sm text-slate-500">{portfolios.data?.length ?? 0} cadastradas</span>
+                </div>
+
+                <form onSubmit={handleCreatePortfolio} className="mt-5 space-y-4">
+                  <div>
+                    <label htmlFor="portfolio-name" className="text-sm font-medium text-slate-700">Nome da carteira</label>
+                    <input
+                      id="portfolio-name"
+                      value={portfolioName}
+                      onChange={(event) => setPortfolioName(event.target.value)}
+                      className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white"
+                      placeholder="Minha carteira"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={createPortfolio.isPending}
+                    className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {createPortfolio.isPending ? 'Criando...' : 'Criar carteira'}
+                  </button>
+                </form>
+
+                <div className="mt-6 space-y-3">
+                  {portfolios.data?.length === 0 && !portfolios.isLoading && (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">
+                      Nenhuma carteira cadastrada ainda. Crie a primeira para adicionar posicoes e acompanhar documentos.
+                    </div>
+                  )}
+
+                  {portfolios.data?.map((portfolio) => {
+                    const isActive = portfolio.id === activePortfolio?.id
+                    return (
+                      <button
+                        key={portfolio.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPortfolioId(portfolio.id)
+                          setSelectedDocumentId(null)
+                          setFeedback(null)
+                        }}
+                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${isActive ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-900 hover:border-amber-300 hover:bg-amber-50'}`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <strong className="text-base">{portfolio.name}</strong>
+                          <span className={`rounded-full px-3 py-1 text-xs ${isActive ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                            {portfolio.positionCount} posicoes
+                          </span>
+                        </div>
+                        <p className={`mt-2 text-sm ${isActive ? 'text-slate-200' : 'text-slate-500'}`}>{formatCurrency(portfolio.totalValue)}</p>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
+                  <h2 className="text-2xl font-semibold">Posicoes</h2>
+                  <span className="text-sm text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span>
+                </div>
+
+                {!activePortfolio && (
+                  <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">
+                    Crie uma carteira para comecar a cadastrar ativos.
+                  </div>
+                )}
+
+                {activePortfolio && (
+                  <>
+                    <form onSubmit={handleCreatePosition} className="mt-5 grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label htmlFor="ticker" className="text-sm font-medium text-slate-700">Ticker</label>
+                        <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />
+                      </div>
+                      <div>
+                        <label htmlFor="asset-name" className="text-sm font-medium text-slate-700">Nome do ativo</label>
+                        <input id="asset-name" value={positionForm.name} onChange={(event) => setPositionForm((current) => ({ ...current, name: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="Brasilseguridade" />
+                      </div>
+                      <div>
+                        <label htmlFor="asset-type" className="text-sm font-medium text-slate-700">Tipo do ativo</label>
+                        <select id="asset-type" value={positionForm.assetType} onChange={(event) => setPositionForm((current) => ({ ...current, assetType: Number(event.target.value) as AssetType }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white">
+                          {assetTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="sector" className="text-sm font-medium text-slate-700">Setor</label>
+                        <input id="sector" value={positionForm.sector} onChange={(event) => setPositionForm((current) => ({ ...current, sector: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="Seguros" />
+                      </div>
+                      <div>
+                        <label htmlFor="quantity" className="text-sm font-medium text-slate-700">Quantidade</label>
+                        <input id="quantity" inputMode="decimal" value={positionForm.quantity} onChange={(event) => setPositionForm((current) => ({ ...current, quantity: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="100" />
+                      </div>
+                      <div>
+                        <label htmlFor="average-price" className="text-sm font-medium text-slate-700">Preco medio</label>
+                        <input id="average-price" inputMode="decimal" value={positionForm.averagePrice} onChange={(event) => setPositionForm((current) => ({ ...current, averagePrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="29,15" />
+                      </div>
+                      <div>
+                        <label htmlFor="current-price" className="text-sm font-medium text-slate-700">Preco atual</label>
+                        <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
+                      </div>
+                      <div className="flex items-end">
+                        <button type="submit" disabled={createPosition.isPending} className="w-full rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+                          {createPosition.isPending ? 'Salvando...' : 'Adicionar posicao'}
+                        </button>
+                      </div>
+                    </form>
+
+                    {dashboard.isLoading && <p className="mt-6 text-sm text-slate-500">Carregando posicoes...</p>}
+                    {dashboard.isError && <p className="mt-6 text-sm text-rose-700">Nao foi possivel carregar o dashboard desta carteira.</p>}
+                    {!dashboard.isLoading && dashboard.data?.positions.length === 0 && (
+                      <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">
+                        Nenhuma posicao cadastrada ainda para esta carteira.
+                      </div>
+                    )}
+
+                    {dashboard.data && dashboard.data.positions.length > 0 && (
+                      <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
+                        <div className="grid grid-cols-[1.2fr_.9fr_.8fr_.8fr_.9fr_.9fr_.7fr_.9fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                          <span>Ativo</span>
+                          <span>Tipo</span>
+                          <span>Qtde</span>
+                          <span>P. medio</span>
+                          <span>P. atual</span>
+                          <span>Valor atual</span>
+                          <span>Peso</span>
+                          <span>Acoes</span>
+                        </div>
+                        <div className="divide-y divide-slate-200 bg-white">
+                          {dashboard.data.positions.map((position) => (
+                            <div key={position.id} className="px-4 py-4">
+                              {editingPositionId === position.id ? (
+                                <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid gap-3 md:grid-cols-[1.1fr_.9fr_.8fr_.8fr_.9fr_.9fr_.7fr_.9fr] md:items-end">
+                                  <div>
+                                    <p className="text-sm font-semibold">{position.ticker}</p>
+                                    <p className="text-xs text-slate-500">{position.name}</p>
+                                  </div>
+                                  <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
+                                  <input value={editForm.quantity} onChange={(event) => setEditForm((current) => ({ ...current, quantity: event.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                                  <input value={editForm.averagePrice} onChange={(event) => setEditForm((current) => ({ ...current, averagePrice: event.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                                  <input value={editForm.currentPrice} onChange={(event) => setEditForm((current) => ({ ...current, currentPrice: event.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                                  <div className="text-sm text-slate-500">{formatCurrency(position.currentValue)}</div>
+                                  <div className="text-sm text-slate-500">{position.portfolioWeight.toFixed(2)}%</div>
+                                  <div className="flex gap-2">
+                                    <button type="submit" disabled={updatePosition.isPending} className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60">Salvar</button>
+                                    <button type="button" onClick={() => setEditingPositionId(null)} className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Cancelar</button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <div className="grid gap-3 md:grid-cols-[1.2fr_.9fr_.8fr_.8fr_.9fr_.9fr_.7fr_.9fr] md:items-center">
+                                  <div>
+                                    <p className="text-sm font-semibold">{position.ticker}</p>
+                                    <p className="text-xs text-slate-500">{position.name}</p>
+                                  </div>
+                                  <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
+                                  <div className="text-sm text-slate-600">{formatNumber(position.quantity)}</div>
+                                  <div className="text-sm text-slate-600">{formatCurrency(position.averagePrice)}</div>
+                                  <div className="text-sm text-slate-600">{formatCurrency(position.currentPrice)}</div>
+                                  <div className="text-sm text-slate-900">{formatCurrency(position.currentValue)}</div>
+                                  <div className="text-sm text-slate-600">{position.portfolioWeight.toFixed(2)}%</div>
+                                  <div className="flex gap-2">
+                                    <button type="button" onClick={() => startEditing(position)} className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-amber-400 hover:text-amber-700">Editar</button>
+                                    <button type="button" onClick={() => deletePosition.mutate(position.id)} disabled={deletePosition.isPending} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60">Excluir</button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            </div>
+          )}
+
+          {activePortfolio && (
             <div className="mt-12 grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
               <div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
@@ -286,6 +690,17 @@ function App() {
       </main>
     </BrowserRouter>
   )
+}
+
+async function refreshPortfolioData(queryClient: QueryClient, portfolioId: string | undefined) {
+  await queryClient.invalidateQueries({ queryKey: ['portfolios'] })
+  if (portfolioId) {
+    await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] })
+    await queryClient.invalidateQueries({ queryKey: ['documents', portfolioId] })
+  } else {
+    await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    await queryClient.invalidateQueries({ queryKey: ['documents'] })
+  }
 }
 
 export default App

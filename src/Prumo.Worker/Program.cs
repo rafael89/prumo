@@ -13,12 +13,26 @@ using Prumo.Infrastructure.Jobs;
 IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureServices((context, services) =>
     {
+        var aiProvider = context.Configuration["AI:Provider"]?.Trim();
+        if (string.Equals(aiProvider, "Fake", StringComparison.OrdinalIgnoreCase))
+        {
+            if (context.HostingEnvironment.IsProduction())
+            {
+                throw new InvalidOperationException("AI:Provider=Fake não é permitido em Production.");
+            }
+
+            services.AddScoped<IAiAnalysisService, FakeAiAnalysisService>();
+        }
+        else
+        {
+            services.AddHttpClient<IAiAnalysisService, HttpAiAnalysisService>();
+        }
+
         services.AddDbContext<PrumoDbContext>(options => options.UseNpgsql(context.Configuration.GetConnectionString("Postgres")));
         services.AddScoped<IProcessingJobQueue, PostgresProcessingJobQueue>();
         services.Configure<CvmFnetOptions>(context.Configuration.GetSection("Documents"));
         services.AddHttpClient<CvmFnetDocumentSource>();
         services.AddHttpClient("documents");
-        services.AddHttpClient<IAiAnalysisService, HttpAiAnalysisService>();
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));
         services.Configure<AiProviderOptions>(context.Configuration.GetSection("AI"));
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));

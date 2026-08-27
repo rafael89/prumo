@@ -7,6 +7,11 @@ using Prumo.Application.Documents;
 
 namespace Prumo.Infrastructure.Ai;
 
+/// <summary>
+/// Uses Prumo's custom HTTP contract: the request contains model and prompt,
+/// and the response body is an AiAnalysisPayload. This is not a native
+/// OpenAI, Gemini, Anthropic, or other commercial provider adapter.
+/// </summary>
 public sealed class HttpAiAnalysisService : IAiAnalysisService
 {
     private readonly HttpClient httpClient;
