@@ -1,0 +1,17 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# Frontend
+frontend/prumo-web/node_modules/
+frontend/prumo-web/dist/
+
+# Local configuration and storage
+.env
+storage/
+
+# IDE
+.vs/
+.vscode/
