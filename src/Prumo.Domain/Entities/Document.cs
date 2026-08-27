@@ -17,7 +17,8 @@ public sealed class Document
         string sourceName,
         string? sourceIdentifier,
         string sourceUrl,
-        string fingerprint)
+        string fingerprint,
+        string? downloadUrl = null)
     {
         if (assetId == Guid.Empty) throw new ArgumentException("O ativo é obrigatório.", nameof(assetId));
         if (string.IsNullOrWhiteSpace(sourceName)) throw new ArgumentException("A fonte é obrigatória.", nameof(sourceName));
@@ -31,6 +32,7 @@ public sealed class Document
         SourceName = sourceName.Trim();
         SourceIdentifier = string.IsNullOrWhiteSpace(sourceIdentifier) ? null : sourceIdentifier.Trim();
         SourceUrl = sourceUrl.Trim();
+        DownloadUrl = string.IsNullOrWhiteSpace(downloadUrl) ? null : downloadUrl.Trim();
         Fingerprint = fingerprint.Trim().ToLowerInvariant();
         ProcessingStatus = DocumentProcessingStatus.Discovered;
         DiscoveredAt = DateTimeOffset.UtcNow;
@@ -43,6 +45,7 @@ public sealed class Document
     public string SourceName { get; private set; } = string.Empty;
     public string? SourceIdentifier { get; private set; }
     public string SourceUrl { get; private set; } = string.Empty;
+    public string? DownloadUrl { get; private set; }
     public string? FilePath { get; private set; }
     public string? FileHash { get; private set; }
     public string Fingerprint { get; private set; } = string.Empty;

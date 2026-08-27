@@ -20,7 +20,10 @@ public sealed class DocumentsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<DocumentResponse>>> GetPortfolioDocuments(Guid portfolioId, CancellationToken cancellationToken)
     {
         var portfolioExists = await dbContext.Portfolios.AnyAsync(portfolio => portfolio.Id == portfolioId, cancellationToken);
-        if (!portfolioExists) return NotFound();
+        if (!portfolioExists)
+        {
+            return NotFound();
+        }
 
         var documents = await dbContext.Documents
             .AsNoTracking()
@@ -44,6 +47,24 @@ public sealed class DocumentsController : ControllerBase
         return document is null ? NotFound() : Ok(CreateResponse(document));
     }
 
+    [HttpGet("documents/{documentId:guid}/analysis")]
+    public async Task<ActionResult<DocumentAnalysisResponse>> GetLatestAnalysis(Guid documentId, CancellationToken cancellationToken)
+    {
+        var documentExists = await dbContext.Documents.AnyAsync(item => item.Id == documentId, cancellationToken);
+        if (!documentExists)
+        {
+            return NotFound();
+        }
+
+        var analysis = await dbContext.DocumentAnalyses
+            .AsNoTracking()
+            .Where(item => item.DocumentId == documentId)
+            .OrderByDescending(item => item.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return analysis is null ? NotFound() : Ok(CreateAnalysisResponse(analysis));
+    }
+
     private static DocumentResponse CreateResponse(Domain.Entities.Document document)
     {
         return new DocumentResponse(
@@ -59,6 +80,52 @@ public sealed class DocumentsController : ControllerBase
             document.DiscoveredAt,
             document.ProcessedAt);
     }
+
+    private static DocumentAnalysisResponse CreateAnalysisResponse(Domain.Entities.DocumentAnalysis analysis)
+    {
+        return new DocumentAnalysisResponse(
+            analysis.Id,
+            analysis.DocumentId,
+            analysis.Model,
+            analysis.PromptVersion,
+            analysis.Importance.ToString(),
+            analysis.Classification.ToString(),
+            analysis.RequiresAction,
+            analysis.SuggestedAction.ToString(),
+            analysis.Summary,
+            analysis.Impact,
+            analysis.PortfolioImpact,
+            analysis.AffectedAssets,
+            analysis.Confidence,
+            analysis.CreatedAt);
+    }
 }
 
-public sealed record DocumentResponse(Guid Id, string Ticker, string AssetName, DocumentType DocumentType, DateTimeOffset PublishedAt, string SourceName, string SourceUrl, string? FilePath, DocumentProcessingStatus ProcessingStatus, DateTimeOffset DiscoveredAt, DateTimeOffset? ProcessedAt);
+public sealed record DocumentResponse(
+    Guid Id,
+    string Ticker,
+    string AssetName,
+    DocumentType DocumentType,
+    DateTimeOffset PublishedAt,
+    string SourceName,
+    string SourceUrl,
+    string? FilePath,
+    DocumentProcessingStatus ProcessingStatus,
+    DateTimeOffset DiscoveredAt,
+    DateTimeOffset? ProcessedAt);
+
+public sealed record DocumentAnalysisResponse(
+    Guid Id,
+    Guid DocumentId,
+    string Model,
+    string PromptVersion,
+    string Importance,
+    string Classification,
+    bool RequiresAction,
+    string SuggestedAction,
+    string Summary,
+    string Impact,
+    string PortfolioImpact,
+    IReadOnlyList<string> AffectedAssets,
+    decimal Confidence,
+    DateTimeOffset CreatedAt);

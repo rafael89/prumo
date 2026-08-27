@@ -2,12 +2,12 @@
 
 Aplicacao self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira.
 
-Este repositorio esta no Incremento 3: descoberta e armazenamento de documentos. Processamento de PDFs, análises de IA e recomendações pertencem aos próximos incrementos.
+O repositorio esta no Incremento 5: descoberta, download, fila de jobs, extracao de texto em PDF, validacao deterministica de qualidade, analise estruturada por IA e exibicao basica da analise no frontend.
 
 ## Stack
 
 - React, TypeScript, Vite e Tailwind CSS
-- ASP.NET Core Web API em .NET 10 LTS
+- ASP.NET Core Web API em .NET 10
 - .NET Worker
 - PostgreSQL 16
 - Docker Compose
@@ -20,9 +20,8 @@ Este repositorio esta no Incremento 3: descoberta e armazenamento de documentos.
 dotnet restore Prumo.sln
 dotnet build Prumo.sln
 dotnet run --project src/Prumo.Api
+dotnet run --project src/Prumo.Worker
 ```
-
-A API fica disponivel em `https://localhost:5001` ou `http://localhost:5000`. O health check esta em `/health`.
 
 ### Frontend
 
@@ -32,71 +31,70 @@ npm install
 npm run dev
 ```
 
-O frontend fica disponivel em `http://localhost:5173`.
+## Documentos e analise
 
-## Carteira e API
+Fluxo atual:
 
-Os endpoints de carteira ficam sob `/api/portfolios`:
-
-- `GET` e `POST /api/portfolios`
-- `GET`, `PUT` e `DELETE /api/portfolios/{id}`
-- `GET /api/portfolios/{id}/dashboard`
-- `POST /api/portfolios/{id}/positions`
-- `PUT` e `DELETE /api/portfolios/{id}/positions/{positionId}`
-
-Ao criar uma posição, `currentPrice` é opcional. Quando informado, o backend calcula `currentValue` e `portfolioWeight`; sem cotação, o valor fica nulo e o peso fica zero. O patrimônio soma somente posições com valor calculado.
-
-## Docker Compose
-
-Requer Docker Desktop instalado e em execucao:
-
-```powershell
-docker compose up --build
+```text
+DocumentDiscoveryWorker
+  -> ProcessingJob DownloadDocument
+  -> DocumentDownloadWorker
+  -> Document em WaitingProcessing
+  -> ProcessingJob AnalyzeDocument
+  -> DocumentAnalysisWorker
+  -> PDF armazenado
+  -> IPdfTextExtractor
+  -> ITextQualityValidator
+  -> IAiAnalysisService
+  -> AiAnalysisValidator
+  -> DocumentAnalysis persistido
 ```
 
-Servicos:
+O backend continua como fonte de verdade. A IA apenas interpreta o texto extraido e o contexto consolidado da carteira. Nenhum dado financeiro da carteira e alterado durante a analise.
 
-- frontend: `http://localhost:5173`
-- api: `http://localhost:8080/health`
-- postgres: `localhost:5432`
+O endpoint `GET /api/documents/{id}/analysis` retorna a analise validada mais recente do documento. `RawResponse` nao e exposto por padrao.
 
-Os dados do PostgreSQL e os documentos persistem nos volumes `postgres-data` e `document-storage`.
+## Dependencia de PDF
+
+O projeto utiliza `UglyToad.PdfPig` na versao `1.7.0-custom-5`, conforme registrado em [src/Prumo.Infrastructure/Prumo.Infrastructure.csproj](/D:/Dev/prumo/src/Prumo.Infrastructure/Prumo.Infrastructure.csproj). A dependencia foi mantida neste incremento porque ja estava instalada no repositrio e e a versao referenciada pelo estado atual do projeto; nao houve troca de biblioteca por preferencia.
+
+Nao ha OCR neste incremento. PDFs sem texto confiavel devem falhar na validacao de qualidade e seguir a politica de retry/erro do job.
 
 ## Migrations
 
-A infraestrutura do EF Core esta configurada em `Prumo.Infrastructure`. A migration `20260827173316_InitialCreate` cria as tabelas de ativos, carteiras e posições, com índice único para ticker e para ativo dentro da carteira.
+As migrations de documentos, jobs e analises ficam em [src/Prumo.Infrastructure/Persistence/Migrations](/D:/Dev/prumo/src/Prumo.Infrastructure/Persistence/Migrations). O incremento adiciona a migration manual `20260827203000_AddDocumentAnalyses`, que cria a tabela `DocumentAnalyses` e relaxa o indice de `ProcessingJobs` para permitir historico de execucoes sem perder a protecao contra duplicacao acidental em andamento.
 
-Com a ferramenta EF instalada, uma migration pode ser aplicada com:
+Para aplicar migrations com ambiente compativel:
 
 ```powershell
 dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
 ```
 
-Para executar a atualização localmente sem Docker, inicie um PostgreSQL em `localhost:5432` ou defina a connection string `ConnectionStrings__Postgres`.
+## Configuracao
 
-## Validacao do Incremento 1
+Configuracoes principais do worker em [src/Prumo.Worker/appsettings.json](/D:/Dev/prumo/src/Prumo.Worker/appsettings.json):
 
-```powershell
-dotnet build Prumo.sln
-dotnet test Prumo.sln
-Set-Location frontend/prumo-web
-npm run build
-npm run lint
-```
+- `Jobs:PollInterval`
+- `Jobs:Lease`
+- `Jobs:RetryDelay`
+- `Jobs:MaxAttempts`
+- `TextQuality:MinimumCharacters`
+- `TextQuality:MinimumPrintableRatio`
+- `AI:Endpoint`
+- `AI:ApiKey`
+- `AI:Model`
+- `AI:TimeoutSeconds`
 
-O build, os testes financeiros, o build/lint frontend e o reconhecimento da migration foram validados. A aplicação da migration e os endpoints que consultam dados exigem PostgreSQL em execução. O Docker Compose não foi executado porque Docker CLI não está instalado ou disponível no `PATH` deste ambiente.
+Sem `AI:Endpoint` e `AI:Model`, a chamada real ao provider nao sera validada neste ambiente. Os testes do pipeline devem usar fakes ou mocks do `IAiAnalysisService`.
 
-## Documentos
+## Validacao realizada neste ambiente
 
-O Worker consulta a fonte configurável `Documents:CvmFnetEndpoint`, busca documentos para os ativos presentes nas carteiras, deduplica por fingerprint SHA-256 e salva downloads no storage local. O formato esperado da fonte é uma lista JSON de `DocumentCandidate`.
+- `npm run build`: aprovado em 2026-08-27
+- `npm run lint`: aprovado em 2026-08-27
+- `dotnet build Prumo.sln`: bloqueado em 2026-08-27 porque o ambiente possui apenas o SDK `6.0.428`, enquanto a solucao exige `.NET 10`
 
-O `Fingerprint` é a identidade lógica do documento: combina fonte, ticker, data de publicação, tipo e, preferencialmente, o identificador da fonte; sem identificador, usa a URL normalizada. O `FileHash` é separado e representa o conteúdo físico baixado. URL e identificador possuem índices não únicos, pois a fonte pode reutilizá-los; somente o fingerprint lógico é único.
+Nao foi possivel validar `dotnet restore`, `dotnet test`, `dotnet ef` nem a chamada real ao provider de IA neste ambiente por ausencia do SDK compativel e de credenciais configuradas.
 
-Endpoints disponíveis:
+## Warning conhecido
 
-- `GET /api/portfolios/{id}/documents`
-- `GET /api/documents/{id}`
-
-O pipeline atual para em `Downloaded`; extração de texto, jobs e análise pertencem aos próximos incrementos. Sem endpoint CVM/FNET configurado, o Worker permanece ocioso de forma intencional.
-
-A integração CVM/FNET ainda não foi validada end-to-end: este ambiente não possui Docker/PostgreSQL disponíveis e nenhum endpoint CVM/FNET foi configurado. A estratégia de deduplicação e as migrations foram validadas localmente, mas a descoberta e o download contra a fonte real aguardam esse ambiente.
+Existe um warning historico citado para `NU1903` envolvendo `System.Security.Cryptography.Xml 9.0.0`, associado ao tooling/dependencia transitiva do EF. Neste ambiente nao foi possivel confirmar se o warning ainda ocorre nem rastrear a arvore de dependencias com seguranca, porque a restauracao em `.NET 10` esta bloqueada pelo SDK disponivel.

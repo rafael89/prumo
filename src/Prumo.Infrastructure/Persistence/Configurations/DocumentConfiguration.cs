@@ -12,6 +12,7 @@ public sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.Property(document => document.SourceName).HasMaxLength(80).IsRequired();
         builder.Property(document => document.SourceIdentifier).HasMaxLength(200);
         builder.Property(document => document.SourceUrl).HasMaxLength(2000).IsRequired();
+        builder.Property(document => document.DownloadUrl).HasMaxLength(2000);
         builder.Property(document => document.FilePath).HasMaxLength(1000);
         builder.Property(document => document.FileHash).HasMaxLength(128);
         builder.Property(document => document.Fingerprint).HasMaxLength(128).IsRequired();

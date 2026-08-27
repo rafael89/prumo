@@ -1,0 +1,84 @@
+using Microsoft.Extensions.Options;
+using Prumo.Application.Abstractions;
+using Prumo.Domain.Enums;
+using Prumo.Infrastructure.Persistence;
+
+namespace Prumo.Worker;
+
+public sealed class DocumentAnalysisWorker : BackgroundService
+{
+    private readonly IServiceScopeFactory scopeFactory;
+    private readonly JobProcessingOptions options;
+    private readonly ILogger<DocumentAnalysisWorker> logger;
+
+    public DocumentAnalysisWorker(IServiceScopeFactory scopeFactory, IOptions<JobProcessingOptions> options, ILogger<DocumentAnalysisWorker> logger)
+    {
+        this.scopeFactory = scopeFactory;
+        this.options = options.Value;
+        this.logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await ProcessNextAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Erro inesperado no polling de jobs de analise");
+                await Task.Delay(options.PollInterval, stoppingToken);
+            }
+        }
+    }
+
+    private async Task ProcessNextAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<PrumoDbContext>();
+        var queue = scope.ServiceProvider.GetRequiredService<IProcessingJobQueue>();
+        var processor = scope.ServiceProvider.GetRequiredService<DocumentAnalysisProcessor>();
+        var job = await queue.ReserveNextAsync(DateTimeOffset.UtcNow, options.Lease, options.MaxAttempts, ProcessingJobType.AnalyzeDocument, cancellationToken);
+        if (job is null)
+        {
+            await Task.Delay(options.PollInterval, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await processor.ProcessAsync(job, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("Job de analise {JobId} interrompido; sera recuperado apos expiracao do lease.", job.Id);
+            throw;
+        }
+        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            await FailJobAsync(dbContext, job, "Timeout na chamada ao provider de IA.", exception, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            await FailJobAsync(dbContext, job, exception.Message, exception, cancellationToken);
+        }
+    }
+
+    private async Task FailJobAsync(PrumoDbContext dbContext, Domain.Entities.ProcessingJob job, string error, Exception exception, CancellationToken cancellationToken)
+    {
+        var retry = job.Fail(DateTimeOffset.UtcNow, error, options.MaxAttempts, options.RetryDelay);
+        if (job.Document is not null)
+        {
+            job.Document.MarkError();
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogError(exception, "Falha no job de analise {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}; erro={Error}", job.Id, retry, job.Attempts, options.MaxAttempts, error);
+    }
+}
