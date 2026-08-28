@@ -10,7 +10,7 @@ frontend/lodira-web/dist/
 
 # Local configuration and storage
 .env
-storage/
+/storage/
 
 # IDE
 .vs/
