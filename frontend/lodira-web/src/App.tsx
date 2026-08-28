@@ -51,6 +51,13 @@ type DocumentAnalysis = {
   confidence: number
   createdAt: string
 }
+type RadarItem = {
+  documentId: string; documentAnalysisId: string; assetTicker: string; documentType: number; publishedAt: string | null
+    priority: 'Low' | 'Medium' | 'High' | 'Critical'; score: number; reasons: string[]; status: 'Unread' | 'Read' | 'Resolved'
+  requiresAttention: boolean; importance: string; classification: string; requiresAction: boolean; suggestedAction: string
+  summary: string; portfolioImpact: string; confidence: number; affectedAssets: string[]; createdAt: string
+}
+type RadarResponse = { items: RadarItem[]; unread: number; requiresAttention: number; resolved: number }
 
 type CreatePortfolioRequest = { name: string }
 type CreatePositionRequest = {
@@ -122,7 +129,7 @@ async function getOptionalJson<T>(path: string): Promise<T | null> {
   return response.json()
 }
 
-async function sendJson<TResponse, TRequest>(path: string, method: 'POST' | 'PUT', body: TRequest): Promise<TResponse> {
+async function sendJson<TResponse, TRequest>(path: string, method: 'POST' | 'PUT' | 'PATCH', body: TRequest): Promise<TResponse> {
   const response = await fetch(`${apiUrl}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json' },
@@ -169,6 +176,10 @@ function analysisTone(importance: string) {
   if (importance === 'Informative') return 'border-sky-300 bg-sky-50 text-sky-900'
   return 'border-slate-300 bg-white text-slate-900'
 }
+
+const radarPriorityLabels: Record<string, string> = { Critical: 'CRÍTICA', High: 'ALTA', Medium: 'MÉDIA', Low: 'BAIXA' }
+const radarPriorityTone: Record<string, string> = { Critical: 'border-rose-400 bg-rose-50 text-rose-950', High: 'border-orange-300 bg-orange-50 text-orange-950', Medium: 'border-amber-300 bg-amber-50 text-amber-950', Low: 'border-slate-300 bg-white text-slate-800' }
+const radarReasonLabels: Record<string, string> = { HighImportance: 'Alta importância', MediumImportance: 'Importância relevante', RequiresAction: 'Requer ação', RelevantCorporateEvent: 'Evento corporativo relevante', AffectsPortfolioAsset: 'Afeta ativo da carteira', ReducedConfidence: 'Análise com confiança reduzida' }
 
 function parseOptionalNumber(value: string) {
   const normalized = value.trim().replace(',', '.')
@@ -359,7 +370,7 @@ function App() {
       <main className="min-h-screen bg-stone-50 text-slate-900">
         <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
           <Link to="/" className="text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
-          <span className="text-sm text-slate-500">Carteira inteligente</span>
+          <div className="flex items-center gap-5 text-sm"><a href="#radar" className="font-semibold text-amber-700 hover:text-amber-800">Radar</a><span className="text-slate-500">Carteira inteligente</span></div>
         </nav>
 
         <section className="mx-auto grid max-w-6xl gap-12 px-6 pb-20 pt-16 md:grid-cols-[1.15fr_.85fr] md:items-center md:pt-28">
@@ -691,9 +702,37 @@ function App() {
             </div>
           )}
         </section>
+        <RadarSection />
       </main>
     </BrowserRouter>
   )
+}
+
+function RadarSection() {
+  const queryClient = useQueryClient()
+  const [filter, setFilter] = useState<'all' | 'unread' | 'attention' | 'resolved'>('all')
+  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [assetFilter, setAssetFilter] = useState('')
+  const radar = useQuery({ queryKey: ['radar'], queryFn: () => getJson<RadarResponse>('/api/radar') })
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: RadarItem['status'] }) => sendJson<RadarItem, { status: RadarItem['status'] }>(`/api/radar/${id}/status`, 'PATCH', { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radar'] }),
+  })
+  const items = radar.data?.items.filter((item) => (filter === 'all' || (filter === 'unread' && item.status === 'Unread') || (filter === 'attention' && item.requiresAttention) || (filter === 'resolved' && item.status === 'Resolved')) && (priorityFilter === 'all' || item.priority === priorityFilter) && (!assetFilter.trim() || item.affectedAssets.some((asset) => asset.toLowerCase().includes(assetFilter.trim().toLowerCase())) || item.assetTicker.toLowerCase().includes(assetFilter.trim().toLowerCase()))) ?? []
+  return <section id="radar" className="mx-auto max-w-6xl px-6 pb-24 pt-10">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700">Radar</p><h2 className="mt-2 text-4xl font-semibold tracking-tight">O que merece sua atenção agora.</h2></div><div className="flex gap-2 text-xs font-semibold"><span className="rounded-full bg-rose-50 px-3 py-2 text-rose-800">{radar.data?.requiresAttention ?? 0} precisam de atenção</span><span className="rounded-full bg-slate-100 px-3 py-2 text-slate-700">{radar.data?.unread ?? 0} não lidos</span></div></div>
+    <div className="mb-6 flex flex-wrap gap-2">{([['all', 'Todos'], ['unread', 'Não lidos'], ['attention', 'Requer atenção'], ['resolved', 'Resolvidos']] as const).map(([key, label]) => <button key={key} type="button" onClick={() => setFilter(key)} className={`rounded-full px-4 py-2 text-sm font-semibold ${filter === key ? 'bg-slate-900 text-white' : 'border border-slate-300 text-slate-600'}`}>{label}</button>)}</div>
+    <div className="mb-6 flex flex-wrap gap-3"><select aria-label="Filtrar por prioridade" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm"><option value="all">Todas as prioridades</option><option value="Critical">Crítica</option><option value="High">Alta</option><option value="Medium">Média</option><option value="Low">Baixa</option></select><input aria-label="Filtrar por ativo" value={assetFilter} onChange={(event) => setAssetFilter(event.target.value)} placeholder="Filtrar por ativo" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:border-amber-500" /></div>
+    {radar.isLoading && <p className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Carregando Radar...</p>}
+    {radar.isError && <p className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">Não foi possível carregar o Radar.</p>}
+    {!radar.isLoading && !radar.isError && items.length === 0 && <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600">Seu Radar está tranquilo.<br /><span className="text-slate-500">Novos eventos relevantes da sua carteira aparecerão aqui.</span></p>}
+    <div className="grid gap-4">{items.map((item) => <article key={item.documentAnalysisId} className={`rounded-3xl border p-6 shadow-sm ${radarPriorityTone[item.priority]}`}>
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-2xl font-semibold">{item.assetTicker || item.affectedAssets.join(', ') || 'Carteira'}</p><p className="mt-1 text-xs font-bold uppercase tracking-[0.16em]">{radarPriorityLabels[item.priority]} PRIORIDADE · score {item.score}</p></div><div className="text-right text-sm"><p>{formatDate(item.publishedAt)}</p><p className="mt-1 font-semibold">{item.status === 'Resolved' ? 'Resolvido' : item.status === 'Read' ? 'Lido' : 'Não lido'}</p></div></div>
+      <p className="mt-5 text-base leading-7">{item.summary}</p><p className="mt-4 text-sm leading-6"><strong>Impacto na sua carteira:</strong> {item.portfolioImpact}</p>
+      <div className="mt-4 flex flex-wrap gap-2">{item.reasons.map((reason) => <span key={reason} className="rounded-full border border-current/20 px-3 py-1 text-xs font-semibold">{radarReasonLabels[reason] ?? reason}</span>)}</div>
+      <div className="mt-5 flex flex-wrap gap-2"><Link to={`/documents/${item.documentId}`} className="rounded-full border border-current/25 px-4 py-2 text-xs font-semibold">Ver análise</Link>{item.status === 'Unread' && <button type="button" onClick={() => statusMutation.mutate({ id: item.documentAnalysisId, status: 'Read' })} className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Marcar como lido</button>}{item.status !== 'Resolved' && <button type="button" onClick={() => statusMutation.mutate({ id: item.documentAnalysisId, status: 'Resolved' })} className="rounded-full border border-current/25 px-4 py-2 text-xs font-semibold">Resolver</button>}{item.status === 'Resolved' && <button type="button" onClick={() => statusMutation.mutate({ id: item.documentAnalysisId, status: 'Read' })} className="rounded-full border border-current/25 px-4 py-2 text-xs font-semibold">Reabrir</button>}</div>
+    </article>)}</div>
+  </section>
 }
 
 async function refreshPortfolioData(queryClient: QueryClient, portfolioId: string | undefined) {

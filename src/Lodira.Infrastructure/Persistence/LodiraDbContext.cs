@@ -16,6 +16,7 @@ public sealed class LodiraDbContext : DbContext
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<ProcessingJob> ProcessingJobs => Set<ProcessingJob>();
     public DbSet<DocumentAnalysis> DocumentAnalyses => Set<DocumentAnalysis>();
+    public DbSet<RadarItemState> RadarItemStates => Set<RadarItemState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
