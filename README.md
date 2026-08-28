@@ -1,4 +1,4 @@
-# Prumo
+# Lodira
 
 Aplicacao self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira.
 
@@ -12,21 +12,27 @@ O repositorio esta no Incremento 6: descoberta, download, fila de jobs, extracao
 - PostgreSQL 16
 - Docker Compose
 
+## Renomeacao tecnica e compatibilidade
+
+O nome oficial do produto e Lodira, com a solucao e os projetos organizados sob esse nome. O diretorio local pode continuar sendo `prumo` sem impacto no build ou na execucao.
+
+Para preservar ambientes existentes, os valores padrao do PostgreSQL continuam usando o banco, usuario e senha `prumo`, o `UserSecretsId` historico do worker foi mantido e as migrations preservam seu historico, operacoes e dados persistidos. Essas referencias sao deliberadas e nao representam o namespace atual.
+
 ## Executar localmente
 
 ### API e worker
 
 ```powershell
-dotnet restore Prumo.sln
-dotnet build Prumo.sln
-dotnet run --project src/Prumo.Api
-dotnet run --project src/Prumo.Worker
+dotnet restore Lodira.sln
+dotnet build Lodira.sln
+dotnet run --project src/Lodira.Api
+dotnet run --project src/Lodira.Worker
 ```
 
 ### Frontend
 
 ```powershell
-Set-Location frontend/prumo-web
+Set-Location frontend/lodira-web
 npm install
 npm run dev
 ```
@@ -62,23 +68,23 @@ Os calculos financeiros continuam no backend e preservam a precisao interna. No 
 
 ## Dependencia de PDF
 
-O projeto utiliza `UglyToad.PdfPig` na versao `1.7.0-custom-5`, conforme registrado em [src/Prumo.Infrastructure/Prumo.Infrastructure.csproj](/D:/Dev/prumo/src/Prumo.Infrastructure/Prumo.Infrastructure.csproj). A dependencia foi mantida neste incremento porque ja estava instalada no repositrio e e a versao referenciada pelo estado atual do projeto; nao houve troca de biblioteca por preferencia.
+O projeto utiliza `UglyToad.PdfPig` na versao `1.7.0-custom-5`, conforme registrado em [src/Lodira.Infrastructure/Lodira.Infrastructure.csproj](src/Lodira.Infrastructure/Lodira.Infrastructure.csproj). A dependencia foi mantida neste incremento porque ja estava instalada no repositrio e e a versao referenciada pelo estado atual do projeto; nao houve troca de biblioteca por preferencia.
 
 Nao ha OCR neste incremento. PDFs sem texto confiavel devem falhar na validacao de qualidade e seguir a politica de retry/erro do job.
 
 ## Migrations
 
-As migrations de documentos, jobs e analises ficam em [src/Prumo.Infrastructure/Persistence/Migrations](/D:/Dev/prumo/src/Prumo.Infrastructure/Persistence/Migrations). O incremento adiciona a migration manual `20260827203000_AddDocumentAnalyses`, que cria a tabela `DocumentAnalyses` e relaxa o indice de `ProcessingJobs` para permitir historico de execucoes sem perder a protecao contra duplicacao acidental em andamento.
+As migrations de documentos, jobs e analises ficam em [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations). O incremento adiciona a migration manual `20260827203000_AddDocumentAnalyses`, que cria a tabela `DocumentAnalyses` e relaxa o indice de `ProcessingJobs` para permitir historico de execucoes sem perder a protecao contra duplicacao acidental em andamento.
 
 Para aplicar migrations com ambiente compativel:
 
 ```powershell
-dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
+dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api
 ```
 
 ## Configuracao
 
-Configuracoes principais do worker em [src/Prumo.Worker/appsettings.json](/D:/Dev/prumo/src/Prumo.Worker/appsettings.json):
+Configuracoes principais do worker em [src/Lodira.Worker/appsettings.json](src/Lodira.Worker/appsettings.json):
 
 - `Jobs:PollInterval`
 - `Jobs:Lease`
@@ -106,7 +112,7 @@ $env:AI__Provider="Gemini"
 $env:AI__ApiKey="sua-chave"
 $env:AI__Model="gemini-3.5-flash-lite"
 $env:AI__TimeoutSeconds="60"
-dotnet run --project src/Prumo.Worker
+dotnet run --project src/Lodira.Worker
 ```
 
 Para usar OpenAI, defina `AI__Provider="OpenAI"`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves no repositorio.
@@ -115,8 +121,8 @@ Para usar OpenAI, defina `AI__Provider="OpenAI"`, `AI__ApiKey` e `AI__Model`. Nu
 
 - `npm run build`: aprovado em 2026-08-27
 - `npm run lint`: aprovado em 2026-08-27
-- `dotnet build Prumo.sln`: aprovado em 2026-08-27
-- `dotnet test Prumo.sln`: 71 aprovados, 0 falhos, em 2026-08-27
+- `dotnet build Lodira.sln`: aprovado em 2026-08-27
+- `dotnet test Lodira.sln`: 71 aprovados, 0 falhos, em 2026-08-27
 
 O Incremento 6 foi validado por testes automatizados. O E2E real de uma nova analise Gemini nao foi executado nesta etapa porque nao havia credencial configurada no ambiente.
 

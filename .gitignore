@@ -5,8 +5,8 @@
 *.suo
 
 # Frontend
-frontend/prumo-web/node_modules/
-frontend/prumo-web/dist/
+frontend/lodira-web/node_modules/
+frontend/lodira-web/dist/
 
 # Local configuration and storage
 .env

@@ -41,7 +41,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend/prumo-web
+      context: ./frontend/lodira-web
       dockerfile: Dockerfile
     ports:
       - "5173:80"
