@@ -6,7 +6,7 @@ import { B3ImportSection, ContributionSection, RadarSection } from './sections/F
 import { PortfolioSection } from './sections/PortfolioSection'
 import { DocumentsSection } from './sections/DocumentsSection'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faEye, faEyeSlash, faGear, faArrowUp } from '@fortawesome/free-solid-svg-icons'
+import { faEye, faEyeSlash, faArrowUp } from '@fortawesome/free-solid-svg-icons'
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
 
@@ -302,12 +302,12 @@ function App() {
         <nav className="sticky top-0 z-20 border-b border-slate-200 bg-stone-50/95 px-4 py-4 backdrop-blur md:px-6">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
-            <div className="order-3 flex w-full gap-4 overflow-x-auto text-sm md:order-2 md:w-auto"><a href="#dashboard" className="font-semibold text-slate-700 hover:text-amber-700">Dashboard</a><a href="#carteira" className="font-semibold text-slate-700 hover:text-amber-700">Carteira</a><a href="#radar" className="font-semibold text-slate-700 hover:text-amber-700">Radar</a><a href="#aporte" className="font-semibold text-slate-700 hover:text-amber-700">Aporte</a><a href="#documentos" className="font-semibold text-slate-700 hover:text-amber-700">Documentos</a></div>
-            <div className="order-2 flex items-center gap-2 md:order-3"><button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button><a href="#configuracoes" aria-label="Status e integrações" title="Status e integrações" className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm"><FontAwesomeIcon icon={faGear} /></a></div>
+            <div className="order-3 flex w-full gap-4 overflow-x-auto text-sm md:order-2 md:w-auto"><a href="#aporte" className="font-semibold text-slate-700 hover:text-amber-700">Aporte</a><a href="#carteira" className="font-semibold text-slate-700 hover:text-amber-700">Carteira</a><a href="#documentos" className="font-semibold text-slate-700 hover:text-amber-700">Documentos</a><a href="#radar" className="font-semibold text-slate-700 hover:text-amber-700">Radar</a></div>
+            <div className="order-2 flex items-center gap-2 md:order-3"><button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
           </div>
         </nav>
         {activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} privacyHidden={privacyHidden} />}
-        <section className="mx-auto max-w-7xl px-6 pb-20">
+        <section className="mx-auto max-w-[89.5rem] px-6 pb-12">
           {feedback && (
             <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
               {feedback.message}
@@ -316,16 +316,15 @@ function App() {
           {portfolios.isLoading && <p className="text-slate-500">Carregando carteiras...</p>}
           {portfolios.isError && <p className="text-rose-700">API indisponível. Inicie o backend em `http://localhost:5041`.</p>}
 
-          {!portfolios.isError && <div className="grid gap-8 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start">
+          {!portfolios.isError && <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start [&>*]:min-w-0">
             <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} />
             {activePortfolio && <DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} />}
           </div>}
         </section>
-        <div className="mx-auto grid max-w-7xl gap-8 px-6 pb-24 xl:grid-cols-2">
+        <div className="mx-auto grid max-w-[89.5rem] gap-8 px-6 pb-24 xl:grid-cols-2">
           <RadarSection portfolioId={activePortfolio?.id ?? null} />
           {activePortfolio && <B3ImportSection portfolioId={activePortfolio.id} />}
         </div>
-        <section id="configuracoes" className="mx-auto max-w-6xl px-6 pb-24"><div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700">Status e integra&ccedil;&otilde;es</p><h2 className="mt-2 text-3xl font-semibold">Status e integra&ccedil;&otilde;es</h2><div className="mt-6 grid gap-4 sm:grid-cols-2"><div className="rounded-2xl bg-stone-50 p-4"><p className="font-semibold">API</p><p className="mt-1 text-sm text-emerald-700">Dispon&iacute;vel.</p></div><div className="rounded-2xl bg-stone-50 p-4"><p className="font-semibold">IA</p><p className="mt-1 text-sm text-slate-600">IA configurada e pronta para an&aacute;lise.</p></div><div className="rounded-2xl bg-stone-50 p-4"><p className="font-semibold">CVM</p><p className="mt-1 text-sm text-slate-600">Ativo para descoberta de documentos.</p></div><div className="rounded-2xl bg-stone-50 p-4"><p className="font-semibold">Privacidade</p><p className="mt-1 text-sm text-slate-600">Controlada pelo bot&atilde;o de visibilidade no cabe&ccedil;alho.</p></div></div></div></section>
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
     </BrowserRouter>

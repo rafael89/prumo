@@ -9,6 +9,8 @@ public sealed record ContributionGuidanceResult(decimal RequestedAmount, decimal
 
 public sealed class ContributionGuidanceCalculator
 {
+    public const int MaxSuggestedAssets = 3;
+
     public ContributionGuidanceResult Calculate(IEnumerable<ContributionPosition> positions, decimal requestedAmount)
     {
         if (requestedAmount <= 0 || requestedAmount > 1_000_000_000m) throw new ArgumentOutOfRangeException(nameof(requestedAmount));
@@ -16,14 +18,23 @@ public sealed class ContributionGuidanceCalculator
         var total = list.Sum(p => p.CurrentValue);
         var projectedTotal = total + requestedAmount;
         var deficits = list.Select(p => Math.Max(0m, projectedTotal * p.TargetWeight / 100m - p.CurrentValue)).ToList();
-        var eligibleDeficit = deficits.Select((d, i) => list[i].ReviewRequired ? 0 : d).Sum();
+        var selectedIndices = deficits.Select((deficit, index) => (deficit, index))
+            .Where(item => item.deficit > 0)
+            .OrderByDescending(item => item.deficit)
+            .ThenBy(item => list[item.index].AssetId)
+            .Take(MaxSuggestedAssets)
+            .Select(item => item.index)
+            .ToHashSet();
+        var eligibleDeficit = selectedIndices.Where(i => !list[i].ReviewRequired).Sum(i => deficits[i]);
         var allocated = Math.Min(requestedAmount, eligibleDeficit);
-        var raw = deficits.Select((d, i) => list[i].ReviewRequired || eligibleDeficit == 0 ? 0 : d / eligibleDeficit * allocated).ToList();
+        var raw = deficits.Select((d, i) => !selectedIndices.Contains(i) || list[i].ReviewRequired || eligibleDeficit == 0 ? 0 : d / eligibleDeficit * allocated).ToList();
         var cents = raw.Select(v => Math.Floor(v * 100m) / 100m).ToList();
         var remainingCents = (int)Math.Round((allocated - cents.Sum()) * 100m, 0, MidpointRounding.AwayFromZero);
-        foreach (var index in raw.Select((_, i) => i).OrderByDescending(i => raw[i] - cents[i]).ThenBy(i => list[i].AssetId).Take(remainingCents)) cents[index] += .01m;
+        foreach (var index in raw.Select((value, i) => (value, i)).Where(item => item.value > 0).OrderByDescending(item => item.value - cents[item.i]).ThenBy(item => list[item.i].AssetId).Take(remainingCents).Select(item => item.i)) cents[index] += .01m;
 
-        var items = list.Select((p, i) => {
+        var items = list.Select((p, i) => (p, i)).Where(item => selectedIndices.Contains(item.i)).Select(item => {
+            var p = item.p;
+            var i = item.i;
             var reasons = new List<ContributionReason>();
             if (p.CurrentValue > total * p.TargetWeight / 100m && total > 0) reasons.Add(ContributionReason.AboveTarget);
             else if (deficits[i] > 0) reasons.Add(ContributionReason.BelowTarget);

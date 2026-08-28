@@ -1,5 +1,5 @@
 // @ts-nocheck
-import type { FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPen, faTrash } from '@fortawesome/free-solid-svg-icons'
@@ -8,15 +8,17 @@ function formatCurrency(value: number | null | undefined, hidden = false) { if (
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
 export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId }: PortfolioSectionProps) {
+  const [showCreateForm, setShowCreateForm] = useState(false)
   return <>
-      <div className="space-y-8">
+      <div className="min-w-0 space-y-8">
         <section id="carteira" className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
             <h2 className="text-2xl font-semibold">Carteiras</h2>
             <span className="text-sm text-slate-500">{portfolios.data?.length ?? 0} cadastradas</span>
           </div>
 
-          <form onSubmit={handleCreatePortfolio} className="mt-5 space-y-4">
+          {!showCreateForm && <button type="button" onClick={() => setShowCreateForm(true)} className="mt-4 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 hover:border-amber-400 hover:text-amber-700">+ Nova carteira</button>}
+          {showCreateForm && <form onSubmit={(event) => { handleCreatePortfolio(event); setShowCreateForm(false) }} className="mt-4 flex items-end gap-3">
             <div>
               <label htmlFor="portfolio-name" className="text-sm font-medium text-slate-700">Nome da carteira</label>
               <input
@@ -34,7 +36,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
             >
               {createPortfolio.isPending ? 'Criando...' : 'Criar carteira'}
             </button>
-          </form>
+          </form>}
 
           <div className="mt-6 space-y-3">
             {portfolios.data?.length === 0 && !portfolios.isLoading && (
@@ -78,7 +80,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
           {activePortfolio && (
             <>
-              <form onSubmit={handleCreatePosition} className="mt-5 grid gap-4 md:grid-cols-2">
+              <form onSubmit={handleCreatePosition} className="mt-5 grid gap-3 md:grid-cols-4">
                 <div>
                   <label htmlFor="ticker" className="text-sm font-medium text-slate-700">Ticker</label>
                   <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />

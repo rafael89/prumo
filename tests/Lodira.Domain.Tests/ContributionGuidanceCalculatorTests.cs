@@ -41,4 +41,16 @@ public sealed class ContributionGuidanceCalculatorTests
         Assert.Equal(result.AllocatedAmount, result.Items.Sum(i => i.SuggestedContribution));
         Assert.Equal(1m, result.AllocatedAmount);
     }
+
+    [Fact]
+    public void Returns_at_most_three_assets_with_the_largest_allocation_gaps()
+    {
+        var positions = Enumerable.Range(1, 5).Select(index => P($"A{index}", 0, index * 20m));
+
+        var result = new ContributionGuidanceCalculator().Calculate(positions, 100m);
+
+        Assert.Equal(3, result.Items.Count);
+        Assert.Equal(new[] { "A5", "A4", "A3" }, result.Items.Select(item => item.Ticker));
+        Assert.Equal(result.AllocatedAmount, result.Items.Sum(item => item.SuggestedContribution));
+    }
 }
