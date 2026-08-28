@@ -36,10 +36,10 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
           </div>
         </section>
 
-        <section className="order-3 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm xl:col-start-1 xl:row-start-2">
-          <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
-            <h2 className="text-2xl font-semibold">Posi&ccedil;&otilde;es</h2>
-            <span className="text-sm text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span>
+        <section className="order-3 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-2">
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Posi&ccedil;&otilde;es</h2>
+            <span className="text-xs text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span>
           </div>
 
           {!activePortfolio && (
@@ -50,7 +50,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
           {activePortfolio && (
             <>
-              <form onSubmit={handleCreatePosition} className="mt-5 grid gap-3 md:grid-cols-4">
+              <form onSubmit={handleCreatePosition} className="mt-4 grid gap-3 md:grid-cols-4">
                 <div>
                   <label htmlFor="ticker" className="text-sm font-medium text-slate-700">Ticker</label>
                   <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />
@@ -82,7 +82,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                   <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
                 </div>
                 <div className="flex items-end">
-                  <button type="submit" disabled={createPosition.isPending} className="w-full rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+                  <button type="submit" disabled={createPosition.isPending} className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                     {createPosition.isPending ? 'Salvando...' : 'Adicionar posi\u00e7\u00e3o'}
                   </button>
                 </div>
@@ -97,7 +97,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
               )}
 
               {dashboard.data && dashboard.data.positions.length > 0 && (
-                <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
+                <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
                   <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 md:grid">
                     <span>Ativo</span>
                     <span>Tipo</span>
@@ -110,7 +110,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                   </div>
                   <div className="divide-y divide-slate-200 bg-white">
                     {dashboard.data.positions.map((position) => (
-                      <div key={position.id} className="px-4 py-4">
+                      <div key={position.id} className="px-4 py-3">
                         {editingPositionId === position.id ? (
                           <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-end">
                             <div>
