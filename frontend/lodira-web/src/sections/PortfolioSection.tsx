@@ -11,58 +11,28 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
   const [showCreateForm, setShowCreateForm] = useState(false)
   return <>
       <div className="contents">
-        <section id="carteira" className="order-1 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm xl:col-start-1 xl:row-start-1">
-          <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
-            <h2 className="text-2xl font-semibold">Carteiras</h2>
-            <span className="text-sm text-slate-500">{portfolios.data?.length ?? 0} cadastradas</span>
+        <section id="carteira" className="order-1 self-stretch rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-1">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Carteiras</h2>
           </div>
 
-          {!showCreateForm && <button type="button" onClick={() => setShowCreateForm(true)} className="mt-4 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 hover:border-amber-400 hover:text-amber-700">+ Nova carteira</button>}
-          {showCreateForm && <form onSubmit={(event) => { handleCreatePortfolio(event); setShowCreateForm(false) }} className="mt-4 flex items-end gap-3">
-            <div>
-              <label htmlFor="portfolio-name" className="text-sm font-medium text-slate-700">Nome da carteira</label>
-              <input
-                id="portfolio-name"
-                value={portfolioName}
-                onChange={(event) => setPortfolioName(event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white"
-                placeholder="Minha carteira"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={createPortfolio.isPending}
-              className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {createPortfolio.isPending ? 'Criando...' : 'Criar carteira'}
-            </button>
-          </form>}
-
-          <div className="mt-6 space-y-3">
-            {portfolios.data?.length === 0 && !portfolios.isLoading && (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">
-                Nenhuma carteira cadastrada ainda. Crie a primeira para adicionar posi&ccedil;&otilde;es e acompanhar documentos.
-              </div>
-            )}
-
+          <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2">
             {portfolios.data?.map((portfolio) => {
               const isActive = portfolio.id === activePortfolio?.id
               return (
-                <div key={portfolio.id} className={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition ${isActive ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-900 hover:border-amber-300 hover:bg-amber-50'}`}>
-                  {editingPortfolioId === portfolio.id ? <form className="min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); const name = editingPortfolioName.trim(); if (name) renamePortfolio.mutate({ portfolioId: portfolio.id, name }) }}><input autoFocus value={editingPortfolioName} onChange={(event) => setEditingPortfolioName(event.target.value)} aria-label="Nome da carteira" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /><div className="mt-2 flex gap-2"><button type="submit" disabled={renamePortfolio.isPending} className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Salvar</button><button type="button" onClick={() => setEditingPortfolioId(null)} className="rounded-full border border-slate-300 px-3 py-1 text-xs">Cancelar</button></div></form> : <button type="button" onClick={() => { setSelectedPortfolioId(portfolio.id); setSelectedDocumentId(null); setPositionPage(1); setFeedback(null) }} className="min-w-0 flex-1 text-left">
-                  <div className="flex items-center justify-between gap-3">
-                    <strong className="text-base">{portfolio.name}</strong>
-                    <span className={`rounded-full px-3 py-1 text-xs ${isActive ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                      {portfolio.positionCount} posi&ccedil;&otilde;es
-                    </span>
-                  </div>
-                  <p className={`mt-2 text-sm ${isActive ? 'text-slate-200' : 'text-slate-500'}`}>{formatCurrency(portfolio.totalValue, privacyHidden)}</p>
-                  </button>}
-                  {editingPortfolioId !== portfolio.id && <button type="button" aria-label="Renomear carteira" title="Renomear carteira" onClick={() => { setEditingPortfolioId(portfolio.id); setEditingPortfolioName(portfolio.name) }} className={`h-10 w-10 shrink-0 rounded-full border ${isActive ? 'border-white/30 text-white hover:bg-white/10' : 'border-slate-300 text-slate-700 hover:border-amber-400 hover:text-amber-700'}`}><FontAwesomeIcon icon={faPen} /></button>}
-                  <button type="button" aria-label={`Excluir carteira ${portfolio.name}`} title="Excluir carteira" onClick={() => { if (window.confirm(`Excluir a carteira "${portfolio.name}"? Esta ação não poderá ser desfeita.`)) deletePortfolio.mutate(portfolio.id) }} disabled={deletePortfolio.isPending} className={`shrink-0 rounded-full border px-3 py-2 text-xs ${isActive ? 'border-white/30 text-white hover:bg-white/10' : 'border-rose-200 text-rose-700 hover:bg-rose-50'} disabled:opacity-50`}><FontAwesomeIcon icon={faTrash} /></button>
+                <div key={portfolio.id} className={`relative flex min-h-24 rounded-xl border bg-white p-3 transition ${isActive ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-amber-300 hover:bg-amber-50/40'}`}>
+                  {editingPortfolioId === portfolio.id ? <form className="flex min-w-0 flex-1 flex-col justify-center" onSubmit={(event) => { event.preventDefault(); const name = editingPortfolioName.trim(); if (name) renamePortfolio.mutate({ portfolioId: portfolio.id, name }) }}><input autoFocus value={editingPortfolioName} onChange={(event) => setEditingPortfolioName(event.target.value)} aria-label="Nome da carteira" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /><div className="mt-2 flex gap-2"><button type="submit" disabled={renamePortfolio.isPending} className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Salvar</button><button type="button" onClick={() => setEditingPortfolioId(null)} className="rounded-full border border-slate-300 px-3 py-1 text-xs">Cancelar</button></div></form> : <>
+                    <button type="button" title="Duplo clique para renomear" onClick={() => { setSelectedPortfolioId(portfolio.id); setSelectedDocumentId(null); setPositionPage(1); setFeedback(null) }} onDoubleClick={() => { setEditingPortfolioId(portfolio.id); setEditingPortfolioName(portfolio.name) }} className="min-w-0 flex-1 pr-12 text-left">
+                      <div className="flex flex-wrap items-center gap-2"><strong className="truncate text-sm">{portfolio.name}</strong>{isActive && <span className="rounded-full bg-slate-900 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">Ativa</span>}</div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-sm text-slate-500">{formatCurrency(portfolio.totalValue, privacyHidden)}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{portfolio.positionCount} posi&ccedil;&otilde;es</span></div>
+                    </button>
+                    <button type="button" aria-label={`Excluir carteira ${portfolio.name}`} title="Excluir carteira" onClick={() => { if (window.confirm(`Excluir a carteira "${portfolio.name}"? Esta ação não poderá ser desfeita.`)) deletePortfolio.mutate(portfolio.id) }} disabled={deletePortfolio.isPending} className="absolute right-3 top-1/2 h-10 w-10 -translate-y-1/2 rounded-xl border border-rose-200 text-sm text-rose-700 transition hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50"><FontAwesomeIcon icon={faTrash} /></button>
+                  </>}
                 </div>
               )
             })}
+            {!showCreateForm && <button type="button" onClick={() => setShowCreateForm(true)} className="flex min-h-24 items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300 px-4 text-sm font-semibold text-slate-600 transition hover:border-amber-400 hover:text-amber-700"><span className="text-2xl font-light">+</span> Nova carteira</button>}
+            {showCreateForm && <form onSubmit={(event) => { handleCreatePortfolio(event); setShowCreateForm(false) }} className="flex min-h-24 flex-col justify-center rounded-xl border border-dashed border-amber-400 bg-amber-50/40 p-3"><label htmlFor="portfolio-name" className="text-xs font-medium text-slate-700">Nome da carteira</label><input id="portfolio-name" autoFocus value={portfolioName} onChange={(event) => setPortfolioName(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500" placeholder="Minha carteira" /><div className="mt-2 flex gap-2"><button type="submit" disabled={createPortfolio.isPending} className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60">{createPortfolio.isPending ? 'Criando...' : 'Criar'}</button><button type="button" onClick={() => setShowCreateForm(false)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs">Cancelar</button></div></form>}
           </div>
         </section>
 
