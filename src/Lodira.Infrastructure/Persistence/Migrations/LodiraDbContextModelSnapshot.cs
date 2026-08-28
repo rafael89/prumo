@@ -28,6 +28,9 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("AssetClass")
+                        .HasColumnType("integer");
+
                     b.Property<int>("AssetType")
                         .HasColumnType("integer");
 
@@ -225,6 +228,29 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.ToTable("Portfolios");
                 });
 
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAllocationStrategy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PortfolioId")
+                        .IsUnique();
+
+                    b.ToTable("PortfolioAllocationStrategies");
+                });
+
             modelBuilder.Entity("Lodira.Domain.Entities.PortfolioPosition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -342,6 +368,30 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.ToTable("RadarItemStates");
                 });
 
+            modelBuilder.Entity("Lodira.Domain.Entities.StrategyAllocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AssetClass")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StrategyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("TargetPercentage")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StrategyId", "AssetClass")
+                        .IsUnique();
+
+                    b.ToTable("StrategyAllocations");
+                });
+
             modelBuilder.Entity("Lodira.Domain.Entities.Document", b =>
                 {
                     b.HasOne("Lodira.Domain.Entities.Asset", "Asset")
@@ -401,9 +451,23 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Lodira.Domain.Entities.StrategyAllocation", b =>
+                {
+                    b.HasOne("Lodira.Domain.Entities.PortfolioAllocationStrategy", null)
+                        .WithMany("Allocations")
+                        .HasForeignKey("StrategyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Lodira.Domain.Entities.Portfolio", b =>
                 {
                     b.Navigation("Positions");
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAllocationStrategy", b =>
+                {
+                    b.Navigation("Allocations");
                 });
 #pragma warning restore 612, 618
         }

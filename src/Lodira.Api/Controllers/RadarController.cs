@@ -63,7 +63,7 @@ public sealed class RadarController : ControllerBase
         var result = calculator.Calculate(a);
         var status = state?.Status ?? RadarItemStatus.Unread;
         return new RadarItemDto(a.DocumentId, a.Id, a.Document?.Asset?.Ticker ?? string.Empty, a.Document?.DocumentType ?? DocumentType.Other, a.Document?.PublishedAt,
-            result.Priority.ToString(), result.Score, result.Reasons.Select(reason => reason.ToString()).ToList(), status.ToString(), status != RadarItemStatus.Resolved && (result.Priority >= RadarPriority.High || a.RequiresAction),
+            result.Priority.ToString(), result.Score, result.Reasons.Select(reason => reason.ToString()).ToList(), status.ToString(), RadarAttentionPolicy.RequiresAttention(result.Priority, a.RequiresAction, status),
             a.Importance.ToString(), a.Classification.ToString(), a.RequiresAction, a.SuggestedAction.ToString(), a.Summary, a.PortfolioImpact, a.Confidence, a.AffectedAssets, a.CreatedAt);
     }
     private static bool RequiresAttention(RadarItemDto item) => item.RequiresAttention;

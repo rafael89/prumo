@@ -17,6 +17,8 @@ public sealed class LodiraDbContext : DbContext
     public DbSet<ProcessingJob> ProcessingJobs => Set<ProcessingJob>();
     public DbSet<DocumentAnalysis> DocumentAnalyses => Set<DocumentAnalysis>();
     public DbSet<RadarItemState> RadarItemStates => Set<RadarItemState>();
+    public DbSet<PortfolioAllocationStrategy> PortfolioAllocationStrategies => Set<PortfolioAllocationStrategy>();
+    public DbSet<StrategyAllocation> StrategyAllocations => Set<StrategyAllocation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Diagnostics;
+using System.Text.Json;
 using Lodira.Application.Abstractions;
 using Lodira.Infrastructure.DocumentSources;
 using Lodira.Infrastructure.Persistence;
@@ -20,6 +22,22 @@ builder.Services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(builder.Co
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
+
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("GlobalExceptionHandler");
+    if (exception is not null) logger.LogError(exception, "Erro inesperado ao processar {Method} {Path}", context.Request.Method, context.Request.Path);
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    context.Response.ContentType = "application/problem+json";
+    await JsonSerializer.SerializeAsync(context.Response.Body, new
+    {
+        type = "https://httpstatuses.com/500",
+        title = "Erro interno",
+        status = 500,
+        detail = "Não foi possível concluir a operação. Tente novamente."
+    });
+}));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

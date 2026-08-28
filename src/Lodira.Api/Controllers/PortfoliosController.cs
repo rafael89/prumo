@@ -132,7 +132,7 @@ public sealed class PortfoliosController : ControllerBase
         var asset = await dbContext.Assets.FirstOrDefaultAsync(item => item.Ticker == ticker, cancellationToken);
         if (asset is null)
         {
-            asset = new Asset(ticker, request.Name, request.AssetType, request.Sector);
+            asset = new Asset(ticker, request.Name, request.AssetType, request.Sector, request.AssetClass);
             dbContext.Assets.Add(asset);
         }
 
@@ -218,6 +218,8 @@ public sealed class PortfoliosController : ControllerBase
     {
         return new PositionResponse(
             position.Id,
+            position.AssetId,
+            position.Asset?.AssetClass ?? AssetClass.Other,
             position.Asset?.Ticker ?? string.Empty,
             position.Asset?.Name ?? string.Empty,
             position.Asset?.AssetType ?? AssetType.Other,
@@ -232,9 +234,9 @@ public sealed class PortfoliosController : ControllerBase
 
 public sealed record CreatePortfolioRequest(string Name);
 public sealed record RenamePortfolioRequest(string Name);
-public sealed record PositionRequest(string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice);
+public sealed record PositionRequest(string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, AssetClass? AssetClass = null);
 public sealed record PositionUpdateRequest(decimal Quantity, decimal AveragePrice, decimal? CurrentPrice);
 public sealed record PortfolioSummaryResponse(Guid Id, string Name, decimal TotalValue, int PositionCount);
 public sealed record PortfolioDetailResponse(Guid Id, string Name, decimal TotalValue, IReadOnlyList<PositionResponse> Positions);
 public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions);
-public sealed record PositionResponse(Guid Id, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight);
+public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight);

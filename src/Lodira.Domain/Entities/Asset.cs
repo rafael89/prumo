@@ -8,17 +8,19 @@ public sealed class Asset
     {
     }
 
-    public Asset(string ticker, string name, AssetType assetType, string? sector)
+    public Asset(string ticker, string name, AssetType assetType, string? sector, AssetClass? assetClass = null)
     {
         Id = Guid.NewGuid();
         Update(ticker, name, assetType, sector);
         IsActive = true;
+        AssetClass = assetClass ?? DeriveAssetClass(assetType);
     }
 
     public Guid Id { get; private set; }
     public string Ticker { get; private set; } = string.Empty;
     public string Name { get; private set; } = string.Empty;
     public AssetType AssetType { get; private set; }
+    public AssetClass AssetClass { get; private set; }
     public string? Sector { get; private set; }
     public bool IsActive { get; private set; }
 
@@ -27,6 +29,7 @@ public sealed class Asset
         Ticker = ValidateText(ticker, nameof(ticker)).ToUpperInvariant();
         Name = ValidateText(name, nameof(name));
         AssetType = assetType;
+        AssetClass = DeriveAssetClass(assetType);
         Sector = string.IsNullOrWhiteSpace(sector) ? null : sector.Trim();
     }
 
@@ -39,4 +42,11 @@ public sealed class Asset
 
         return value.Trim();
     }
+
+    private static AssetClass DeriveAssetClass(AssetType assetType) => assetType switch
+    {
+        AssetType.Stock => AssetClass.BrazilianStock,
+        AssetType.Fii => AssetClass.Fii,
+        _ => AssetClass.Other
+    };
 }

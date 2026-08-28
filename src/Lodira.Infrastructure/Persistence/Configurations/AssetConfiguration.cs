@@ -12,6 +12,7 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
         builder.Property(asset => asset.Ticker).HasMaxLength(12).IsRequired();
         builder.Property(asset => asset.Name).HasMaxLength(200).IsRequired();
         builder.Property(asset => asset.Sector).HasMaxLength(100);
+        builder.Property(asset => asset.AssetClass).IsRequired();
         builder.HasIndex(asset => asset.Ticker).IsUnique();
     }
 }

@@ -10,7 +10,7 @@ type Feedback = { tone: 'success' | 'error'; message: string } | null
 
 type PortfolioSummary = { id: string; name: string; totalValue: number; positionCount: number }
 type Position = {
-  id: string
+  id: string; assetId: string; assetClass: number
   ticker: string
   name: string
   assetType: AssetType
@@ -58,6 +58,8 @@ type RadarItem = {
   summary: string; portfolioImpact: string; confidence: number; affectedAssets: string[]; createdAt: string
 }
 type RadarResponse = { items: RadarItem[]; unread: number; requiresAttention: number; resolved: number }
+type Strategy = { id: string; allocations: Array<{ assetClass: number; targetPercentage: number }> }
+type Guidance = { requestedAmount: number; allocatedAmount: number; unallocatedAmount: number; items: Array<{ assetId: string; ticker: string; currentValue: number; currentWeight: number; targetWeight: number; suggestedContribution: number; projectedWeight: number; eligibility: string; reasons: string[] }> }
 
 type CreatePortfolioRequest = { name: string }
 type CreatePositionRequest = {
@@ -137,7 +139,7 @@ async function sendJson<TResponse, TRequest>(path: string, method: 'POST' | 'PUT
   })
 
   if (!response.ok) {
-    throw new Error(await readError(response))
+    throw new Error(await readError(response, path.includes('contribution-guidance') ? 'Nao foi possivel simular o aporte. Tente novamente.' : 'Nao foi possivel concluir a operacao.'))
   }
 
   return response.json()
@@ -146,13 +148,22 @@ async function sendJson<TResponse, TRequest>(path: string, method: 'POST' | 'PUT
 async function sendVoid(path: string, method: 'DELETE'): Promise<void> {
   const response = await fetch(`${apiUrl}${path}`, { method })
   if (!response.ok) {
-    throw new Error(await readError(response))
+    throw new Error(await readError(response, 'Nao foi possivel concluir a operacao.'))
   }
 }
 
-async function readError(response: Response) {
+async function readError(response: Response, fallback: string) {
   const text = await response.text()
-  return text || 'Nao foi possivel concluir a operacao.'
+  if (!text || response.status >= 500) return fallback
+  try {
+    const problem = JSON.parse(text) as { detail?: unknown; title?: unknown }
+    if (typeof problem.detail === 'string' && problem.detail.length < 300) return problem.detail
+    if (typeof problem.title === 'string' && problem.title.length < 120) return problem.title
+  } catch {
+    // Domain validation errors may still be returned as plain text.
+  }
+  if (/exception|stack trace| at |npgsql|microsoft\.|system\.|relation ".*" does not exist|select .* from/i.test(text) || text.length > 500) return fallback
+  return text
 }
 
 function formatCurrency(value: number | null | undefined) {
@@ -370,7 +381,7 @@ function App() {
       <main className="min-h-screen bg-stone-50 text-slate-900">
         <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
           <Link to="/" className="text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
-          <div className="flex items-center gap-5 text-sm"><a href="#radar" className="font-semibold text-amber-700 hover:text-amber-800">Radar</a><span className="text-slate-500">Carteira inteligente</span></div>
+          <div className="flex items-center gap-5 text-sm"><a href="#radar" className="font-semibold text-amber-700 hover:text-amber-800">Radar</a><a href="#aporte" className="font-semibold text-amber-700 hover:text-amber-800">Aporte</a><span className="text-slate-500">Carteira inteligente</span></div>
         </nav>
 
         <section className="mx-auto grid max-w-6xl gap-12 px-6 pb-20 pt-16 md:grid-cols-[1.15fr_.85fr] md:items-center md:pt-28">
@@ -703,6 +714,7 @@ function App() {
           )}
         </section>
         <RadarSection />
+        {activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
       </main>
     </BrowserRouter>
   )
@@ -733,6 +745,25 @@ function RadarSection() {
       <div className="mt-5 flex flex-wrap gap-2"><Link to={`/documents/${item.documentId}`} className="rounded-full border border-current/25 px-4 py-2 text-xs font-semibold">Ver análise</Link>{item.status === 'Unread' && <button type="button" onClick={() => statusMutation.mutate({ id: item.documentAnalysisId, status: 'Read' })} className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Marcar como lido</button>}{item.status !== 'Resolved' && <button type="button" onClick={() => statusMutation.mutate({ id: item.documentAnalysisId, status: 'Resolved' })} className="rounded-full border border-current/25 px-4 py-2 text-xs font-semibold">Resolver</button>}{item.status === 'Resolved' && <button type="button" onClick={() => statusMutation.mutate({ id: item.documentAnalysisId, status: 'Read' })} className="rounded-full border border-current/25 px-4 py-2 text-xs font-semibold">Reabrir</button>}</div>
     </article>)}</div>
   </section>
+}
+
+function ContributionSection({ portfolioId, positions }: { portfolioId: string; positions: Position[] }) {
+  const queryClient = useQueryClient()
+  const [targets, setTargets] = useState<Record<string, string>>({})
+  const [amount, setAmount] = useState('')
+  const [guidance, setGuidance] = useState<Guidance | null>(null)
+  const strategy = useQuery({ queryKey: ['strategy', portfolioId], queryFn: () => getOptionalJson<Strategy>(`/api/portfolios/${portfolioId}/allocation-strategy`) })
+  const simulate = useMutation({ mutationFn: () => sendJson<Guidance, { amount: number }>(`/api/portfolios/${portfolioId}/contribution-guidance`, 'POST', { amount: Number(amount.replace(',', '.')) }), onSuccess: setGuidance })
+  const classLabels: Record<number, string> = { 0: 'Ações brasileiras', 1: 'FIIs', 2: 'Renda fixa', 3: 'Internacional', 4: 'Outros' }
+  const classes = [0, 1, 2, 3, 4, ...new Set(positions.map((position) => position.assetClass))].filter((value, index, all) => all.indexOf(value) === index)
+  const loadedTargets = strategy.data?.allocations ?? []
+  const currentTargets = classes.map((assetClass) => ({ assetClass, assetId: String(assetClass), ticker: classLabels[assetClass] ?? 'Outros', label: classLabels[assetClass] ?? 'Outros', value: targets[assetClass] ?? loadedTargets.find((target) => target.assetClass === assetClass)?.targetPercentage.toString() ?? '' }))
+  const total = currentTargets.reduce((sum, item) => sum + (Number(item.value.replace(',', '.')) || 0), 0)
+  const save = useMutation({ mutationFn: () => sendJson<Strategy, { allocations: Array<{ assetClass: number; targetPercentage: number }> }>(`/api/portfolios/${portfolioId}/allocation-strategy`, 'PUT', { allocations: currentTargets.filter((item) => item.value.trim()).map((item) => ({ assetClass: item.assetClass, targetPercentage: Number(item.value.replace(',', '.')) })) }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['strategy', portfolioId] }) })
+  return <section id="aporte" className="mx-auto max-w-6xl px-6 pb-24 pt-4"><div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700">Aporte</p><h2 className="mt-2 text-4xl font-semibold tracking-tight">Oriente seu próximo aporte.</h2><p className="mt-3 text-sm text-slate-600">A Lodira calcula uma distribuição matemática. Nenhuma operação é executada.</p>
+    <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_.8fr]"><div><h3 className="font-semibold">Estratégia por ativo</h3>{positions.length === 0 ? <p className="mt-4 text-sm text-slate-500">Cadastre posições para configurar uma estratégia.</p> : <div className="mt-3 divide-y divide-slate-200">{currentTargets.map((item) => <div key={item.assetId} className="flex items-center justify-between gap-4 py-3 text-sm"><span className="font-semibold">{item.ticker}</span><input inputMode="decimal" aria-label={`Alvo ${item.ticker}`} value={item.value} onChange={(event) => setTargets((current) => ({ ...current, [item.assetId]: event.target.value }))} placeholder="0,00" className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-right" /><span>%</span></div>)}</div>}<p className={`mt-3 text-sm font-semibold ${Math.abs(total - 100) <= .01 ? 'text-emerald-700' : 'text-rose-700'}`}>Soma: {total.toFixed(2)}%</p><button type="button" disabled={save.isPending || Math.abs(total - 100) > .01} onClick={() => save.mutate()} className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{save.isPending ? 'Salvando...' : 'Salvar estratégia'}</button>{save.isError && <p className="mt-3 text-sm text-rose-700">Não foi possível salvar a estratégia.</p>}</div>
+      <div><h3 className="font-semibold">Simular aporte</h3><div className="mt-4 flex gap-2"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="2.000,00" className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3" /><button type="button" disabled={simulate.isPending || !amount} onClick={() => simulate.mutate()} className="rounded-full bg-amber-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">Simular</button></div>{simulate.isError && <p className="mt-3 text-sm text-rose-700">{(simulate.error as Error).message}</p>}{guidance && <div className="mt-5 space-y-3"><p className="text-sm font-semibold">Distribuição sugerida para {formatCurrency(guidance.requestedAmount)}</p>{guidance.items.map((item) => <div key={item.assetId} className="rounded-2xl bg-stone-50 p-4 text-sm"><div className="flex justify-between"><strong>{item.ticker}</strong><strong>{formatCurrency(item.suggestedContribution)}</strong></div><p className="mt-1 text-xs text-slate-600">Atual {item.currentWeight.toFixed(2)}% · alvo {item.targetWeight.toFixed(2)}% · projetado {item.projectedWeight.toFixed(2)}%</p>{item.eligibility === 'ReviewRequired' && <p className="mt-2 text-xs font-semibold text-amber-800">Revisão necessária: existe evento relevante pendente no Radar.</p>}</div>)}<div className="border-t border-slate-200 pt-3 text-sm font-semibold">Alocado: {formatCurrency(guidance.allocatedAmount)} · Sem alocação: {formatCurrency(guidance.unallocatedAmount)}</div></div>}</div></div>
+  </div></section>
 }
 
 async function refreshPortfolioData(queryClient: QueryClient, portfolioId: string | undefined) {
