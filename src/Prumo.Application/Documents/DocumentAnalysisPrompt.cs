@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Prumo.Application.Abstractions;
 
@@ -21,7 +22,7 @@ public static class DocumentAnalysisPrompt
                 quantity = context.Quantity,
                 averagePrice = context.AveragePrice,
                 currentValue = context.CurrentValue,
-                portfolioWeight = context.PortfolioWeight
+                portfolioWeight = FormatPercentage(context.PortfolioWeight)
             },
             sector = context.Sector
         });
@@ -43,5 +44,11 @@ public static class DocumentAnalysisPrompt
             DOCUMENTO:
             {documentText}
             """;
+    }
+
+    private static string FormatPercentage(decimal value)
+    {
+        var rounded = decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+        return $"{rounded.ToString("F2", CultureInfo.GetCultureInfo("pt-BR"))}%";
     }
 }
