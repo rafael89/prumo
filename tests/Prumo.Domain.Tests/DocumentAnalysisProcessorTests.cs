@@ -112,6 +112,36 @@ public sealed class DocumentAnalysisProcessorTests
         Assert.Equal(ProcessingJobStatus.Completed, seeded.Job.Status);
     }
 
+    [Fact]
+    public async Task Constroi_contexto_com_carteira_top5_e_concentracao()
+    {
+        await using var dbContext = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(dbContext);
+        var portfolio = await dbContext.Portfolios.SingleAsync();
+        for (var index = 1; index <= 5; index++)
+        {
+            var asset = new Asset($"TEST{index}11", $"Teste {index}", AssetType.Fii, "Diversos");
+            dbContext.Assets.Add(asset);
+            dbContext.PortfolioPositions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1m, 100m, 100m));
+        }
+        await dbContext.SaveChangesAsync();
+
+        var ai = new CapturingAiAnalysisService();
+        var processor = CreateProcessor(dbContext, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())), new FakePdfTextExtractor(), ai);
+        await processor.ProcessAsync(seeded.Job, CancellationToken.None);
+
+        Assert.Equal(portfolio.Id, ai.Context!.PortfolioId);
+        Assert.Equal("Minha carteira", ai.Context.PortfolioName);
+        Assert.Equal(6835.70m, ai.Context.TotalPortfolioValue);
+        Assert.Equal(6, ai.Context.PositionCount);
+        Assert.Equal(210m, ai.Context.Quantity);
+        Assert.Equal(6335.70m, ai.Context.CurrentValue);
+        Assert.Equal(5, ai.Context.TopPositions.Count);
+        Assert.Equal(4, ai.Context.TopPositions.Count(position => position.Ticker.StartsWith("TEST", StringComparison.Ordinal)));
+        Assert.Equal(ai.Context.TopPositions[0].PortfolioWeight, ai.Context.LargestPositionWeight);
+        Assert.Equal(ai.Context.TopPositions.Take(3).Sum(position => position.PortfolioWeight), ai.Context.TopThreePositionWeight);
+    }
+
     private static DocumentAnalysisProcessor CreateProcessor(PrumoDbContext dbContext, IFileStorage fileStorage, IPdfTextExtractor extractor, IAiAnalysisService aiAnalysisService)
     {
         return new DocumentAnalysisProcessor(
@@ -121,6 +151,19 @@ public sealed class DocumentAnalysisProcessorTests
             new TextQualityValidator(new TextQualityOptions { MinimumCharacters = 20, MinimumPrintableRatio = 0.7m }),
             aiAnalysisService,
             NullLogger<DocumentAnalysisProcessor>.Instance);
+    }
+
+    private sealed class CapturingAiAnalysisService : IAiAnalysisService
+    {
+        public PortfolioAnalysisContext? Context { get; private set; }
+        public string Model => "test-model";
+        public string PromptVersion => "document-analysis-v1";
+
+        public Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default)
+        {
+            Context = context;
+            return Task.FromResult(new AiAnalysisResult(AnalysisImportance.Informative, AnalysisClassification.Other, false, SuggestedAction.NoAction, "Resumo", "Impacto", "Impacto na carteira", new[] { context.Ticker }, 1m, "{}"));
+        }
     }
 
     private static PrumoDbContext CreateDbContext()

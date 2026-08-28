@@ -20,14 +20,42 @@ public sealed record AiAnalysisPayload(
     IReadOnlyList<string>? AffectedAssets,
     decimal? Confidence);
 
+public sealed record PortfolioAnalysisPositionContext(
+    string Ticker,
+    string AssetType,
+    decimal PortfolioWeight);
+
 public sealed record PortfolioAnalysisContext(
+    Guid PortfolioId,
+    string PortfolioName,
+    decimal TotalPortfolioValue,
+    int PositionCount,
     string Ticker,
     string AssetType,
     string? Sector,
     decimal Quantity,
     decimal AveragePrice,
+    decimal? CurrentPrice,
     decimal? CurrentValue,
-    decimal PortfolioWeight);
+    decimal PortfolioWeight,
+    IReadOnlyList<PortfolioAnalysisPositionContext> TopPositions,
+    decimal LargestPositionWeight,
+    decimal TopThreePositionWeight)
+{
+    public const int MaxTopPositions = 5;
+
+    public PortfolioAnalysisContext(
+        string ticker,
+        string assetType,
+        string? sector,
+        decimal quantity,
+        decimal averagePrice,
+        decimal? currentValue,
+        decimal portfolioWeight)
+        : this(Guid.Empty, string.Empty, currentValue ?? 0, 0, ticker, assetType, sector, quantity, averagePrice, null, currentValue, portfolioWeight, Array.Empty<PortfolioAnalysisPositionContext>(), portfolioWeight, portfolioWeight)
+    {
+    }
+}
 
 public sealed record AiAnalysisResult(
     AnalysisImportance Importance,

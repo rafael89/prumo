@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
+using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
 
 namespace Prumo.Worker;
@@ -101,31 +102,50 @@ public sealed class DocumentAnalysisProcessor
         var asset = await dbContext.Assets.AsNoTracking().SingleOrDefaultAsync(item => item.Id == assetId, cancellationToken)
             ?? throw new InvalidOperationException("Ativo do documento nao encontrado.");
 
-        var positions = await dbContext.PortfolioPositions
-            .AsNoTracking()
-            .Where(item => item.AssetId == assetId)
-            .ToListAsync(cancellationToken);
+        var portfolio = await dbContext.Portfolios
+            .Include(item => item.Positions)
+            .ThenInclude(item => item.Asset)
+            .Where(item => item.Positions.Any(position => position.AssetId == assetId))
+            .OrderBy(item => item.CreatedAt)
+            .ThenBy(item => item.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var allValuedPositions = await dbContext.PortfolioPositions
-            .AsNoTracking()
-            .Where(item => item.CurrentValue.HasValue)
-            .Select(item => item.CurrentValue!.Value)
-            .ToListAsync(cancellationToken);
+        if (portfolio is null)
+        {
+            return new PortfolioAnalysisContext(
+                Guid.Empty, "Indisponivel", 0, 0, asset.Ticker, asset.AssetType.ToString(), asset.Sector,
+                0, 0, null, null, 0, Array.Empty<PortfolioAnalysisPositionContext>(), 0, 0);
+        }
 
-        var quantity = positions.Sum(item => item.Quantity);
-        var totalCost = positions.Sum(item => item.Quantity * item.AveragePrice);
-        var averagePrice = quantity > 0 ? totalCost / quantity : 0;
-        var currentValue = positions.Sum(item => item.CurrentValue ?? 0m);
-        var totalPortfolioValue = allValuedPositions.Sum();
-        var portfolioWeight = totalPortfolioValue > 0 ? currentValue / totalPortfolioValue * 100 : 0;
+        PortfolioCalculator.RecalculateWeights(portfolio.Positions);
+        var totalPortfolioValue = PortfolioCalculator.CalculateTotalValue(portfolio.Positions);
+        var relatedPosition = portfolio.Positions.SingleOrDefault(item => item.AssetId == assetId);
+        var orderedPositions = portfolio.Positions
+            .OrderByDescending(item => item.PortfolioWeight)
+            .ThenBy(item => item.Asset?.Ticker ?? string.Empty, StringComparer.Ordinal)
+            .ToList();
+        var topPositions = orderedPositions
+            .Take(PortfolioAnalysisContext.MaxTopPositions)
+            .Select(item => new PortfolioAnalysisPositionContext(item.Asset?.Ticker ?? string.Empty, item.Asset?.AssetType.ToString() ?? "Indisponivel", item.PortfolioWeight))
+            .ToList();
+        var largestPositionWeight = orderedPositions.Count == 0 ? 0 : orderedPositions[0].PortfolioWeight;
+        var topThreePositionWeight = orderedPositions.Take(3).Sum(item => item.PortfolioWeight);
 
         return new PortfolioAnalysisContext(
+            portfolio.Id,
+            portfolio.Name,
+            totalPortfolioValue,
+            portfolio.Positions.Count,
             asset.Ticker,
             asset.AssetType.ToString(),
             asset.Sector,
-            quantity,
-            averagePrice,
-            currentValue,
-            portfolioWeight);
+            relatedPosition?.Quantity ?? 0,
+            relatedPosition?.AveragePrice ?? 0,
+            relatedPosition?.CurrentPrice,
+            relatedPosition?.CurrentValue,
+            relatedPosition?.PortfolioWeight ?? 0,
+            topPositions,
+            largestPositionWeight,
+            topThreePositionWeight);
     }
 }

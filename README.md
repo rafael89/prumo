@@ -2,7 +2,7 @@
 
 Aplicacao self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira.
 
-O repositorio esta no Incremento 5: descoberta, download, fila de jobs, extracao de texto em PDF, validacao deterministica de qualidade, analise estruturada por IA e exibicao basica da analise no frontend.
+O repositorio esta no Incremento 6: descoberta, download, fila de jobs, extracao de texto em PDF, validacao deterministica de qualidade, analise estruturada por IA e contexto enriquecido da carteira.
 
 ## Stack
 
@@ -54,6 +54,12 @@ O backend continua como fonte de verdade. A IA apenas interpreta o texto extraid
 
 O endpoint `GET /api/documents/{id}/analysis` retorna a analise validada mais recente do documento. `RawResponse` nao e exposto por padrao.
 
+## Contexto da carteira
+
+O `PortfolioAnalysisContext` e reconstruido no momento da analise e fornece a carteira principal relacionada ao ativo do documento, patrimonio total, quantidade de posicoes, dados da posicao afetada, top 5 posicoes por peso e indicadores de concentracao.
+
+Os calculos financeiros continuam no backend e preservam a precisao interna. No prompt, valores monetarios sao apresentados com duas casas em `pt-BR` e percentuais com duas casas, sem depender da cultura da maquina. A concentracao inclui o maior peso individual e a soma dos tres maiores pesos.
+
 ## Dependencia de PDF
 
 O projeto utiliza `UglyToad.PdfPig` na versao `1.7.0-custom-5`, conforme registrado em [src/Prumo.Infrastructure/Prumo.Infrastructure.csproj](/D:/Dev/prumo/src/Prumo.Infrastructure/Prumo.Infrastructure.csproj). A dependencia foi mantida neste incremento porque ja estava instalada no repositrio e e a versao referenciada pelo estado atual do projeto; nao houve troca de biblioteca por preferencia.
@@ -81,20 +87,39 @@ Configuracoes principais do worker em [src/Prumo.Worker/appsettings.json](/D:/De
 - `TextQuality:MinimumCharacters`
 - `TextQuality:MinimumPrintableRatio`
 - `AI:Endpoint`
+- `AI:Provider`
 - `AI:ApiKey`
 - `AI:Model`
 - `AI:TimeoutSeconds`
 
-Sem `AI:Endpoint` e `AI:Model`, a chamada real ao provider nao sera validada neste ambiente. Os testes do pipeline devem usar fakes ou mocks do `IAiAnalysisService`.
+Providers suportados pelo Worker:
+
+- `Fake`: deterministico, permitido apenas fora de Production.
+- `Gemini`: Gemini Developer API via `generateContent`, usando Structured Output.
+- `OpenAI`: Responses API com JSON Schema estrito.
+- qualquer outro valor: provider HTTP custom legado (`HttpAiAnalysisService`).
+
+Para usar o Gemini:
+
+```powershell
+$env:AI__Provider="Gemini"
+$env:AI__ApiKey="sua-chave"
+$env:AI__Model="gemini-3.5-flash-lite"
+$env:AI__TimeoutSeconds="60"
+dotnet run --project src/Prumo.Worker
+```
+
+Para usar OpenAI, defina `AI__Provider="OpenAI"`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves no repositorio.
 
 ## Validacao realizada neste ambiente
 
 - `npm run build`: aprovado em 2026-08-27
 - `npm run lint`: aprovado em 2026-08-27
-- `dotnet build Prumo.sln`: bloqueado em 2026-08-27 porque o ambiente possui apenas o SDK `6.0.428`, enquanto a solucao exige `.NET 10`
+- `dotnet build Prumo.sln`: aprovado em 2026-08-27
+- `dotnet test Prumo.sln`: 71 aprovados, 0 falhos, em 2026-08-27
 
-Nao foi possivel validar `dotnet restore`, `dotnet test`, `dotnet ef` nem a chamada real ao provider de IA neste ambiente por ausencia do SDK compativel e de credenciais configuradas.
+O Incremento 6 foi validado por testes automatizados. O E2E real de uma nova analise Gemini nao foi executado nesta etapa porque nao havia credencial configurada no ambiente.
 
 ## Warning conhecido
 
-Existe um warning historico citado para `NU1903` envolvendo `System.Security.Cryptography.Xml 9.0.0`, associado ao tooling/dependencia transitiva do EF. Neste ambiente nao foi possivel confirmar se o warning ainda ocorre nem rastrear a arvore de dependencias com seguranca, porque a restauracao em `.NET 10` esta bloqueada pelo SDK disponivel.
+Avisos `NU1900` podem aparecer quando o indice de vulnerabilidades do NuGet esta indisponivel. Eles nao impedem a compilacao ou os testes.
