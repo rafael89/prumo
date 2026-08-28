@@ -223,11 +223,15 @@ function App() {
     documents.data?.find((item) => item.id === selectedDocumentId)
     ?? documents.data?.[0]
     ?? null
+  const analysisDocumentId = selectedDocument?.id ?? null
 
   const analysis = useQuery({
-    queryKey: ['document-analysis', selectedDocument?.id],
-    queryFn: () => getOptionalJson<DocumentAnalysis>(`/api/documents/${selectedDocument!.id}/analysis`),
-    enabled: Boolean(selectedDocument),
+    queryKey: ['document-analysis', analysisDocumentId],
+    queryFn: ({ queryKey }) => {
+      const documentId = queryKey[1]
+      return documentId ? getOptionalJson<DocumentAnalysis>(`/api/documents/${documentId}/analysis`) : Promise.resolve(null)
+    },
+    enabled: Boolean(analysisDocumentId),
   })
 
   const createPortfolio = useMutation({

@@ -23,6 +23,14 @@ IHost host = Host.CreateDefaultBuilder(args)
 
             services.AddScoped<IAiAnalysisService, FakeAiAnalysisService>();
         }
+        else if (string.Equals(aiProvider, "OpenAI", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddHttpClient<IAiAnalysisService, OpenAiAnalysisService>();
+        }
+        else if (string.Equals(aiProvider, "Gemini", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddHttpClient<IAiAnalysisService, GeminiAnalysisService>();
+        }
         else
         {
             services.AddHttpClient<IAiAnalysisService, HttpAiAnalysisService>();
