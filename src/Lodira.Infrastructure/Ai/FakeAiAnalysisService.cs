@@ -26,7 +26,7 @@ public sealed class FakeAiAnalysisService : IAiAnalysisService
             SuggestedAction.NoAction,
             "Documento processado com sucesso.",
             "Análise de teste E2E.",
-            "Nenhum impacto determinado neste teste.",
+            "Evento identificado para o ativo.",
             string.IsNullOrWhiteSpace(context.Ticker) ? Array.Empty<string>() : new[] { context.Ticker },
             1.0m,
             string.Empty);

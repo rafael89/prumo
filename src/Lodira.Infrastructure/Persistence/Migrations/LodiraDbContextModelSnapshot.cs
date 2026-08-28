@@ -34,6 +34,10 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.Property<int>("AssetType")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Cnpj")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -52,6 +56,8 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(12)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Cnpj");
 
                     b.HasIndex("Ticker")
                         .IsUnique();
@@ -249,6 +255,60 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("PortfolioAllocationStrategies");
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioImportSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("FileHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("NormalizedJson")
+                        .IsRequired()
+                        .HasMaxLength(5000000)
+                        .HasColumnType("character varying(5000000)");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ReferenceDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PortfolioId", "Source", "FileHash")
+                        .IsUnique();
+
+                    b.ToTable("PortfolioImportSessions");
                 });
 
             modelBuilder.Entity("Lodira.Domain.Entities.PortfolioPosition", b =>

@@ -4,12 +4,30 @@ using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Lodira.Domain.Enums;
+using Lodira.Application.Abstractions;
 using Lodira.Infrastructure.DocumentSources;
 
 namespace Lodira.Domain.Tests;
 
 public sealed class CvmFnetDocumentSourceTests
 {
+    [Fact]
+    public async Task UsaCnpjOficialDoAtivoSemMapaPorTicker()
+    {
+        const string csv = "TP_FUNDO_CLASSE;CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;TP_DOC;NM_ARQ;ID_DOC;LINK_ARQ\n" +
+            "FII;11.111.111/0001-11;31/07/2026;07/08/2026;Fato Relevante;fato.pdf;125;https://dados.cvm.gov.br/documentos/fato.pdf\n";
+        using var client = new HttpClient(new CsvHandler(csv));
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            DocumentosEventuaisUrlTemplate = "https://dados.cvm.gov.br/eventual_{0}.csv"
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidates = await source.FindAsync(new[] { new DocumentSourceAsset("ABCD11", "11.111.111/0001-11") });
+
+        Assert.Single(candidates);
+        Assert.Equal("ABCD11", candidates[0].Ticker);
+    }
+
     [Fact]
     public async Task MapeiaDocumentosEventuaisDaCvmParaOCnpjDoTicker()
     {

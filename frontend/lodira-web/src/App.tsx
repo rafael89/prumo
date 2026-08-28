@@ -50,6 +50,7 @@ type DocumentAnalysis = {
   affectedAssets: string[]
   confidence: number
   createdAt: string
+  portfolioAssessment: { portfolioId: string; assetId: string; currentValue: number | null; currentWeight: number; priority: string; requiresAttention: boolean; reasons: string[]; portfolioImpactText: string; radarStatus: string } | null
 }
 type RadarItem = {
   documentId: string; documentAnalysisId: string; assetTicker: string; documentType: number; publishedAt: string | null
@@ -60,6 +61,7 @@ type RadarItem = {
 type RadarResponse = { items: RadarItem[]; unread: number; requiresAttention: number; resolved: number }
 type Strategy = { id: string; allocations: Array<{ assetClass: number; targetPercentage: number }> }
 type Guidance = { requestedAmount: number; allocatedAmount: number; unallocatedAmount: number; items: Array<{ assetId: string; ticker: string; currentValue: number; currentWeight: number; targetWeight: number; suggestedContribution: number; projectedWeight: number; eligibility: string; reasons: string[] }> }
+type ImportPreview = { importSessionId: string; newAssets: string[]; updatedPositions: string[]; unchangedPositions: string[]; warnings: string[]; errors: string[]; canConfirm: boolean }
 
 type CreatePortfolioRequest = { name: string }
 type CreatePositionRequest = {
@@ -251,7 +253,7 @@ function App() {
     queryKey: ['document-analysis', analysisDocumentId],
     queryFn: ({ queryKey }) => {
       const documentId = queryKey[1]
-      return documentId ? getOptionalJson<DocumentAnalysis>(`/api/documents/${documentId}/analysis`) : Promise.resolve(null)
+      return documentId ? getOptionalJson<DocumentAnalysis>(`/api/documents/${documentId}/analysis?portfolioId=${activePortfolio?.id}`) : Promise.resolve(null)
     },
     enabled: Boolean(analysisDocumentId),
   })
@@ -679,7 +681,7 @@ function App() {
                           </article>
                           <article>
                             <p className="text-xs font-semibold uppercase tracking-[0.16em]">Impacto na minha carteira</p>
-                            <p className="mt-2 text-sm leading-7">{analysis.data.portfolioImpact}</p>
+                            <p className="mt-2 text-sm leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p>
                           </article>
                         </div>
 
@@ -713,22 +715,23 @@ function App() {
             </div>
           )}
         </section>
-        <RadarSection />
+        <RadarSection portfolioId={activePortfolio?.id ?? null} />
         {activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
+        {activePortfolio && <B3ImportSection portfolioId={activePortfolio.id} />}
       </main>
     </BrowserRouter>
   )
 }
 
-function RadarSection() {
+function RadarSection({ portfolioId }: { portfolioId: string | null }) {
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'all' | 'unread' | 'attention' | 'resolved'>('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [assetFilter, setAssetFilter] = useState('')
-  const radar = useQuery({ queryKey: ['radar'], queryFn: () => getJson<RadarResponse>('/api/radar') })
+  const radar = useQuery({ queryKey: ['radar', portfolioId], queryFn: () => getJson<RadarResponse>(`/api/radar?portfolioId=${portfolioId}`), enabled: Boolean(portfolioId) })
   const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: RadarItem['status'] }) => sendJson<RadarItem, { status: RadarItem['status'] }>(`/api/radar/${id}/status`, 'PATCH', { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radar'] }),
+    mutationFn: ({ id, status }: { id: string; status: RadarItem['status'] }) => sendJson<RadarItem, { status: RadarItem['status'] }>(`/api/radar/${id}/status?portfolioId=${portfolioId}`, 'PATCH', { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }),
   })
   const items = radar.data?.items.filter((item) => (filter === 'all' || (filter === 'unread' && item.status === 'Unread') || (filter === 'attention' && item.requiresAttention) || (filter === 'resolved' && item.status === 'Resolved')) && (priorityFilter === 'all' || item.priority === priorityFilter) && (!assetFilter.trim() || item.affectedAssets.some((asset) => asset.toLowerCase().includes(assetFilter.trim().toLowerCase())) || item.assetTicker.toLowerCase().includes(assetFilter.trim().toLowerCase()))) ?? []
   return <section id="radar" className="mx-auto max-w-6xl px-6 pb-24 pt-10">
@@ -764,6 +767,25 @@ function ContributionSection({ portfolioId, positions }: { portfolioId: string; 
     <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_.8fr]"><div><h3 className="font-semibold">Estratégia por ativo</h3>{positions.length === 0 ? <p className="mt-4 text-sm text-slate-500">Cadastre posições para configurar uma estratégia.</p> : <div className="mt-3 divide-y divide-slate-200">{currentTargets.map((item) => <div key={item.assetId} className="flex items-center justify-between gap-4 py-3 text-sm"><span className="font-semibold">{item.ticker}</span><input inputMode="decimal" aria-label={`Alvo ${item.ticker}`} value={item.value} onChange={(event) => setTargets((current) => ({ ...current, [item.assetId]: event.target.value }))} placeholder="0,00" className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-right" /><span>%</span></div>)}</div>}<p className={`mt-3 text-sm font-semibold ${Math.abs(total - 100) <= .01 ? 'text-emerald-700' : 'text-rose-700'}`}>Soma: {total.toFixed(2)}%</p><button type="button" disabled={save.isPending || Math.abs(total - 100) > .01} onClick={() => save.mutate()} className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{save.isPending ? 'Salvando...' : 'Salvar estratégia'}</button>{save.isError && <p className="mt-3 text-sm text-rose-700">Não foi possível salvar a estratégia.</p>}</div>
       <div><h3 className="font-semibold">Simular aporte</h3><div className="mt-4 flex gap-2"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="2.000,00" className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3" /><button type="button" disabled={simulate.isPending || !amount} onClick={() => simulate.mutate()} className="rounded-full bg-amber-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">Simular</button></div>{simulate.isError && <p className="mt-3 text-sm text-rose-700">{(simulate.error as Error).message}</p>}{guidance && <div className="mt-5 space-y-3"><p className="text-sm font-semibold">Distribuição sugerida para {formatCurrency(guidance.requestedAmount)}</p>{guidance.items.map((item) => <div key={item.assetId} className="rounded-2xl bg-stone-50 p-4 text-sm"><div className="flex justify-between"><strong>{item.ticker}</strong><strong>{formatCurrency(item.suggestedContribution)}</strong></div><p className="mt-1 text-xs text-slate-600">Atual {item.currentWeight.toFixed(2)}% · alvo {item.targetWeight.toFixed(2)}% · projetado {item.projectedWeight.toFixed(2)}%</p>{item.eligibility === 'ReviewRequired' && <p className="mt-2 text-xs font-semibold text-amber-800">Revisão necessária: existe evento relevante pendente no Radar.</p>}</div>)}<div className="border-t border-slate-200 pt-3 text-sm font-semibold">Alocado: {formatCurrency(guidance.allocatedAmount)} · Sem alocação: {formatCurrency(guidance.unallocatedAmount)}</div></div>}</div></div>
   </div></section>
+}
+
+function B3ImportSection({ portfolioId }: { portfolioId: string }) {
+  const queryClient = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<ImportPreview | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  async function analyze() {
+    if (!file) return
+    setBusy(true); setMessage(null)
+    try { const body = new FormData(); body.append('file', file); const response = await fetch(`${apiUrl}/api/portfolios/${portfolioId}/imports/b3/preview`, { method: 'POST', body }); if (!response.ok) throw new Error(await readError(response, 'Não foi possível analisar o arquivo.')); setPreview(await response.json()) } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível analisar o arquivo.') } finally { setBusy(false) }
+  }
+  async function confirm() {
+    if (!preview) return
+    setBusy(true); setMessage(null)
+    try { const response = await fetch(`${apiUrl}/api/portfolios/${portfolioId}/imports/${preview.importSessionId}/confirm`, { method: 'POST' }); if (!response.ok) throw new Error(await readError(response, 'Não foi possível confirmar a importação.')); setMessage('Carteira atualizada com sucesso.'); setPreview(null); await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }) } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível confirmar a importação.') } finally { setBusy(false) }
+  }
+ return <section className="mx-auto max-w-6xl px-6 pb-24"><div className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700">Importar da B3</p><h2 className="mt-2 text-3xl font-semibold">Atualize sua carteira por arquivo.</h2><p className="mt-2 text-sm text-slate-600">Suporte ao Relatório mensal consolidado em XLSX. A prévia não altera sua carteira.</p><div className="mt-5 flex flex-wrap items-center gap-3"><input type="file" accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPreview(null) }} /><button type="button" disabled={!file || busy} onClick={analyze} className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Processando...' : 'Analisar arquivo'}</button></div>{message && <p className="mt-4 text-sm text-slate-700">{message}</p>}{preview && <div className="mt-6 rounded-2xl bg-stone-50 p-5 text-sm"><p><strong>{preview.newAssets.length}</strong> novos ativos · <strong>{preview.updatedPositions.length}</strong> posições atualizadas</p>{preview.warnings.map((warning) => <p key={warning} className="mt-2 text-amber-800">Aviso: {warning}</p>)}{preview.errors.map((error) => <p key={error} className="mt-2 text-rose-700">Erro: {error}</p>)}<button type="button" disabled={!preview.canConfirm || busy} onClick={confirm} className="mt-4 rounded-full bg-amber-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">Confirmar importação</button></div>}</div></section>
 }
 
 async function refreshPortfolioData(queryClient: QueryClient, portfolioId: string | undefined) {

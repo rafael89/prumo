@@ -5,6 +5,8 @@ using Lodira.Application.Abstractions;
 using Lodira.Infrastructure.DocumentSources;
 using Lodira.Infrastructure.Persistence;
 using Lodira.Infrastructure.Storage;
+using Lodira.Application.PortfolioImports;
+using Lodira.Infrastructure.PortfolioImports;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +19,8 @@ builder.Services.AddDbContext<LodiraDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 builder.Services.Configure<CvmFnetOptions>(builder.Configuration.GetSection("Documents"));
 builder.Services.AddHttpClient<CvmFnetDocumentSource>();
+builder.Services.AddSingleton<IPortfolioImporter, B3XlsxPortfolioImporter>();
+builder.Services.AddScoped<NewAssetBootstrapService>();
 builder.Services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
 builder.Services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(builder.Configuration["Storage:RootPath"] ?? "/storage"));
 builder.Services.AddHealthChecks();

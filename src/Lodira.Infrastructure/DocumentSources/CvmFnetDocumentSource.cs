@@ -26,15 +26,18 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
     public string Name => "CVM/FNET";
 
     public async Task<IReadOnlyList<DocumentCandidate>> FindAsync(IReadOnlyCollection<string> tickers, CancellationToken cancellationToken = default)
+        => await FindAsync(tickers.Select(ticker => new DocumentSourceAsset(ticker, null)).ToArray(), cancellationToken);
+
+    public async Task<IReadOnlyList<DocumentCandidate>> FindAsync(IReadOnlyCollection<DocumentSourceAsset> assets, CancellationToken cancellationToken = default)
     {
-        if (tickers.Count == 0)
+        if (assets.Count == 0)
         {
             return Array.Empty<DocumentCandidate>();
         }
 
         var year = DateTimeOffset.UtcNow.Year;
         var uri = string.Format(CultureInfo.InvariantCulture, options.DocumentosEventuaisUrlTemplate, year);
-        logger.LogInformation("Consultando recurso CVM {ResourceUrl} para {TickerCount} ticker(s)", uri, tickers.Count);
+            logger.LogInformation("Consultando recurso CVM {ResourceUrl} para {TickerCount} ticker(s)", uri, assets.Count);
 
         try
         {
@@ -47,9 +50,12 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             logger.LogInformation("Recurso CVM {ResourceUrl} retornou {RecordCount} registro(s)", uri, records.Count);
 
             var candidates = new List<DocumentCandidate>();
-            foreach (var ticker in tickers)
+            foreach (var asset in assets)
             {
-                if (!options.CnpjPorTicker.TryGetValue(ticker, out var cnpj))
+                var ticker = asset.Ticker;
+                var cnpj = asset.Cnpj;
+                if (string.IsNullOrWhiteSpace(cnpj)) options.CnpjPorTicker.TryGetValue(ticker, out cnpj);
+                if (string.IsNullOrWhiteSpace(cnpj))
                 {
                     logger.LogWarning("Ticker {Ticker} descartado: não há CNPJ CVM configurado", ticker);
                     continue;

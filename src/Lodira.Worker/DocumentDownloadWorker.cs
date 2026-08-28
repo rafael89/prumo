@@ -60,8 +60,7 @@ public sealed class DocumentDownloadWorker : BackgroundService
             job.Document!.MarkWaitingProcessing();
             var analysisExists = await dbContext.ProcessingJobs.AnyAsync(
                 item => item.DocumentId == job.DocumentId
-                    && item.JobType == ProcessingJobType.AnalyzeDocument
-                    && (item.Status == ProcessingJobStatus.Queued || item.Status == ProcessingJobStatus.Processing),
+                    && item.JobType == ProcessingJobType.AnalyzeDocument,
                 cancellationToken);
             if (!analysisExists)
             {

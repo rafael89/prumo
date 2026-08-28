@@ -11,6 +11,19 @@ public sealed class RadarPriorityCalculatorTests
         params string[] assets) => new(Guid.NewGuid(), Guid.NewGuid(), "test", "1", importance, classification, requiresAction, action, "Resumo", "Impacto", "Carteira", assets, confidence, "{}");
 
     [Fact]
+    public void Radar_state_is_independent_per_portfolio()
+    {
+        var analysisId = Guid.NewGuid();
+        var first = new RadarItemState(Guid.NewGuid(), analysisId);
+        var second = new RadarItemState(Guid.NewGuid(), analysisId);
+        first.SetStatus(RadarItemStatus.Resolved);
+
+        Assert.Equal(RadarItemStatus.Resolved, first.Status);
+        Assert.Equal(RadarItemStatus.Unread, second.Status);
+        Assert.NotEqual(first.PortfolioId, second.PortfolioId);
+    }
+
+    [Fact]
     public void Low_analysis_without_action_is_low() => Assert.Equal(RadarPriority.Low, new RadarPriorityCalculator().Calculate(Analysis()).Priority);
 
     [Fact]

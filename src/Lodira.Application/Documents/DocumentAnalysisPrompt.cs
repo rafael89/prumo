@@ -7,6 +7,20 @@ namespace Lodira.Application.Documents;
 public static class DocumentAnalysisPrompt
 {
     public const string Version = "document-analysis-v1";
+    public const string GlobalVersion = "document-analysis-global-v1";
+
+    public static string BuildGlobal(string documentText, PortfolioAnalysisContext context)
+    {
+        var asset = JsonSerializer.Serialize(new { ticker = context.Ticker, type = context.AssetType, sector = context.Sector });
+        return $"""
+            Analise o documento exclusivamente para identificar seu significado para o ativo.
+            Nao use nem invente contexto de carteira, patrimonio, peso, posicoes ou recomendacoes personalizadas.
+            Retorne somente JSON valido com importance, classification, requiresAction, suggestedAction,
+            summary, impact, affectedAssets e confidence.
+            CONTEXTO DO ATIVO: {asset}
+            DOCUMENTO: {documentText}
+            """;
+    }
 
     public static string Build(string documentText, PortfolioAnalysisContext context)
     {

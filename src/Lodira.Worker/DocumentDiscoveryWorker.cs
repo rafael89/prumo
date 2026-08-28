@@ -33,14 +33,15 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LodiraDbContext>();
         var source = scope.ServiceProvider.GetRequiredService<IDocumentSource>();
-        var tickers = await dbContext.PortfolioPositions
+        var assets = await dbContext.PortfolioPositions
             .Include(position => position.Asset)
-            .Select(position => position.Asset!.Ticker)
+            .Where(position => position.Asset != null)
+            .Select(position => position.Asset!)
             .Distinct()
             .ToListAsync(cancellationToken);
 
-        logger.LogInformation("Ciclo de descoberta encontrou {TickerCount} ticker(s): {Tickers}", tickers.Count, string.Join(", ", tickers));
-        if (tickers.Count == 0)
+        logger.LogInformation("Ciclo de descoberta encontrou {TickerCount} ticker(s): {Tickers}", assets.Count, string.Join(", ", assets.Select(asset => asset.Ticker)));
+        if (assets.Count == 0)
         {
             logger.LogInformation("Ciclo de descoberta encerrado: não há posições cadastradas");
             return;
@@ -49,7 +50,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         IReadOnlyList<DocumentCandidate> candidates;
         try
         {
-            candidates = await source.FindAsync(tickers, cancellationToken);
+            candidates = await source.FindAsync(assets.Select(asset => new DocumentSourceAsset(asset.Ticker, asset.Cnpj)).ToArray(), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -57,7 +58,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Erro da fonte {SourceName} durante a descoberta dos tickers {Tickers}", source.Name, string.Join(", ", tickers));
+            logger.LogError(exception, "Erro da fonte {SourceName} durante a descoberta dos tickers {Tickers}", source.Name, string.Join(", ", assets.Select(asset => asset.Ticker)));
             return;
         }
 

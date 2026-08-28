@@ -14,16 +14,14 @@ public sealed class AiAnalysisValidator
         if (string.IsNullOrWhiteSpace(payload.SuggestedAction) || !Enum.TryParse(payload.SuggestedAction, true, out SuggestedAction suggestedAction)) throw new InvalidOperationException("SuggestedAction invalida ou ausente.");
         if (string.IsNullOrWhiteSpace(payload.Summary)) throw new InvalidOperationException("Summary ausente.");
         if (string.IsNullOrWhiteSpace(payload.Impact)) throw new InvalidOperationException("Impact ausente.");
-        if (string.IsNullOrWhiteSpace(payload.PortfolioImpact)) throw new InvalidOperationException("PortfolioImpact ausente.");
         if (!payload.Confidence.HasValue || payload.Confidence is < 0 or > 1) throw new InvalidOperationException("Confidence deve estar entre 0 e 1.");
         if (payload.AffectedAssets is null) throw new InvalidOperationException("AffectedAssets ausente.");
 
         var summary = payload.Summary.Trim();
         var impact = payload.Impact.Trim();
-        var portfolioImpact = payload.PortfolioImpact.Trim();
+        var portfolioImpact = string.IsNullOrWhiteSpace(payload.PortfolioImpact) ? "Impacto identificado para o ativo." : payload.PortfolioImpact.Trim();
         if (summary.Length == 0) throw new InvalidOperationException("Summary ausente.");
         if (impact.Length == 0) throw new InvalidOperationException("Impact ausente.");
-        if (portfolioImpact.Length == 0) throw new InvalidOperationException("PortfolioImpact ausente.");
 
         return new AiAnalysisResult(
             importance,

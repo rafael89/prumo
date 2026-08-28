@@ -6,6 +6,17 @@ namespace Lodira.Domain.Tests;
 public sealed class DocumentAnalysisPromptTests
 {
     [Fact]
+    public void Global_prompt_does_not_include_portfolio_context()
+    {
+        var prompt = DocumentAnalysisPrompt.BuildGlobal("texto", CreateContext(69.747m));
+
+        Assert.Contains("XPLG11", prompt);
+        Assert.DoesNotContain("portfolioWeight", prompt);
+        Assert.DoesNotContain("topPositions", prompt);
+        Assert.DoesNotContain("83.560", prompt);
+    }
+
+    [Fact]
     public void FormataPesoComDuasCasasDecimaisEmPortugues()
     {
         var context = CreateContext(69.7471665213600697471665213m);

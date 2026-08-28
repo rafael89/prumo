@@ -54,7 +54,7 @@ public sealed class ContributionGuidanceController : ControllerBase
         if (strategy is null) return Conflict("Defina uma estratégia de alocação antes de simular um aporte.");
         var analyses = await db.DocumentAnalyses.AsNoTracking().Include(a => a.Document).OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id).ToListAsync(ct);
         var latest = analyses.GroupBy(a => a.DocumentId).Select(g => g.First()).ToList();
-        var states = await db.RadarItemStates.AsNoTracking().ToDictionaryAsync(s => s.DocumentAnalysisId, ct);
+        var states = await db.RadarItemStates.AsNoTracking().Where(s => s.PortfolioId == portfolioId).ToDictionaryAsync(s => s.DocumentAnalysisId, ct);
         var calculator = new RadarPriorityCalculator();
         var blocked = latest.Where(a => states.TryGetValue(a.Id, out var state) && RadarAttentionPolicy.RequiresAttention(calculator.Calculate(a).Priority, a.RequiresAction, state.Status) && a.AffectedAssets.Count > 0)
             .SelectMany(a => a.AffectedAssets).ToHashSet(StringComparer.OrdinalIgnoreCase);

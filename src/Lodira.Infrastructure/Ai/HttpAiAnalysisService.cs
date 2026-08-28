@@ -27,7 +27,7 @@ public sealed class HttpAiAnalysisService : IAiAnalysisService
     }
 
     public string Model => options.Model;
-    public string PromptVersion => DocumentAnalysisPrompt.Version;
+    public string PromptVersion => DocumentAnalysisPrompt.GlobalVersion;
 
     public async Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default)
     {
@@ -36,7 +36,7 @@ public sealed class HttpAiAnalysisService : IAiAnalysisService
 
         using var request = new HttpRequestMessage(HttpMethod.Post, options.Endpoint)
         {
-            Content = JsonContent.Create(new AiProviderRequest(options.Model, DocumentAnalysisPrompt.Build(documentText, context)))
+            Content = JsonContent.Create(new AiProviderRequest(options.Model, DocumentAnalysisPrompt.BuildGlobal(documentText, context)))
         };
         if (!string.IsNullOrWhiteSpace(options.ApiKey)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
 

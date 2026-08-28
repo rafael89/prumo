@@ -27,14 +27,14 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
     }
 
     public string Model => options.Model;
-    public string PromptVersion => DocumentAnalysisPrompt.Version;
+    public string PromptVersion => DocumentAnalysisPrompt.GlobalVersion;
 
     public async Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(options.ApiKey)) throw new InvalidOperationException("AI:ApiKey não configurada para o provider Gemini.");
         if (string.IsNullOrWhiteSpace(options.Model)) throw new InvalidOperationException("AI:Model não configurado para o provider Gemini.");
 
-        var prompt = DocumentAnalysisPrompt.Build(documentText, context);
+        var prompt = DocumentAnalysisPrompt.BuildGlobal(documentText, context);
         using var request = new HttpRequestMessage(HttpMethod.Post, string.Format(EndpointTemplate, Uri.EscapeDataString(options.Model)))
         {
             Content = JsonContent.Create(new
@@ -147,9 +147,9 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
             classification = new { type = "string", @enum = new[] { "CORPORATE_ACTION", "FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER" } },
             requiresAction = new { type = "boolean" },
             suggestedAction = new { type = "string", @enum = new[] { "MAINTAIN", "INCREASE_POSITION", "REDUCE_EXPOSURE", "EVALUATE_SALE", "MONITOR", "NO_ACTION", "OPEN_POSITION" } },
-            summary = new { type = "string" }, impact = new { type = "string" }, portfolioImpact = new { type = "string" },
+            summary = new { type = "string" }, impact = new { type = "string" },
             affectedAssets = new { type = "array", items = new { type = "string" } }, confidence = new { type = "number", minimum = 0, maximum = 1 }
         },
-        required = new[] { "importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "portfolioImpact", "affectedAssets", "confidence" }
+        required = new[] { "importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence" }
     };
 }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Lodira.Domain.Enums;
+using Lodira.Application.Radar;
 using Lodira.Infrastructure.Persistence;
 
 namespace Lodira.Api.Controllers;
@@ -48,7 +49,7 @@ public sealed class DocumentsController : ControllerBase
     }
 
     [HttpGet("documents/{documentId:guid}/analysis")]
-    public async Task<ActionResult<DocumentAnalysisResponse>> GetLatestAnalysis(Guid documentId, CancellationToken cancellationToken)
+    public async Task<ActionResult<DocumentAnalysisResponse>> GetLatestAnalysis(Guid documentId, [FromQuery] Guid? portfolioId, CancellationToken cancellationToken)
     {
         var documentExists = await dbContext.Documents.AnyAsync(item => item.Id == documentId, cancellationToken);
         if (!documentExists)
@@ -58,11 +59,29 @@ public sealed class DocumentsController : ControllerBase
 
         var analysis = await dbContext.DocumentAnalyses
             .AsNoTracking()
+            .Include(item => item.Document!).ThenInclude(item => item!.Asset)
             .Where(item => item.DocumentId == documentId)
             .OrderByDescending(item => item.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return analysis is null ? NotFound() : Ok(CreateAnalysisResponse(analysis));
+        if (analysis is null) return NotFound();
+        var assessment = portfolioId.HasValue
+            ? await CreateAssessment(analysis, portfolioId.Value, cancellationToken)
+            : null;
+        return Ok(CreateAnalysisResponse(analysis, assessment));
+    }
+
+    [NonAction]
+    public Task<ActionResult<DocumentAnalysisResponse>> GetLatestAnalysis(Guid documentId, CancellationToken cancellationToken)
+        => GetLatestAnalysis(documentId, null, cancellationToken);
+
+    private async Task<PortfolioDocumentAssessment?> CreateAssessment(Domain.Entities.DocumentAnalysis analysis, Guid portfolioId, CancellationToken cancellationToken)
+    {
+        var position = await dbContext.PortfolioPositions.Include(p => p.Asset)
+            .SingleOrDefaultAsync(p => p.PortfolioId == portfolioId && p.AssetId == analysis.Document!.AssetId, cancellationToken);
+        if (position is null) return null;
+        var state = await dbContext.RadarItemStates.AsNoTracking().SingleOrDefaultAsync(s => s.PortfolioId == portfolioId && s.DocumentAnalysisId == analysis.Id, cancellationToken);
+        return new PortfolioDocumentAssessmentService().Assess(portfolioId, position, analysis, state?.Status ?? RadarItemStatus.Unread);
     }
 
     private static DocumentResponse CreateResponse(Domain.Entities.Document document)
@@ -81,7 +100,7 @@ public sealed class DocumentsController : ControllerBase
             document.ProcessedAt);
     }
 
-    private static DocumentAnalysisResponse CreateAnalysisResponse(Domain.Entities.DocumentAnalysis analysis)
+    private static DocumentAnalysisResponse CreateAnalysisResponse(Domain.Entities.DocumentAnalysis analysis, PortfolioDocumentAssessment? assessment = null)
     {
         return new DocumentAnalysisResponse(
             analysis.Id,
@@ -97,7 +116,7 @@ public sealed class DocumentsController : ControllerBase
             analysis.PortfolioImpact,
             analysis.AffectedAssets,
             analysis.Confidence,
-            analysis.CreatedAt);
+            analysis.CreatedAt, assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.RadarStatus.ToString()));
     }
 }
 
@@ -128,4 +147,6 @@ public sealed record DocumentAnalysisResponse(
     string PortfolioImpact,
     IReadOnlyList<string> AffectedAssets,
     decimal Confidence,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt, PortfolioAssessmentResponse? PortfolioAssessment = null);
+
+public sealed record PortfolioAssessmentResponse(Guid PortfolioId, Guid AssetId, decimal? CurrentValue, decimal CurrentWeight, string Priority, bool RequiresAttention, IReadOnlyList<string> Reasons, string PortfolioImpactText, string RadarStatus);
