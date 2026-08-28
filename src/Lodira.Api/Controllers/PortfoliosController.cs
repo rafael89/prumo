@@ -88,9 +88,9 @@ public sealed class PortfoliosController : ControllerBase
     }
 
     [HttpGet("{portfolioId:guid}/dashboard")]
-    public async Task<ActionResult<DashboardResponse>> GetDashboard(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<DashboardResponse>> GetDashboard(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
     {
-        page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 20, 100);
+        page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 10, 100);
         var portfolio = await dbContext.Portfolios.AsNoTracking().SingleOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
         if (portfolio is null) return NotFound();
         var positionsQuery = dbContext.PortfolioPositions.AsNoTracking().Where(position => position.PortfolioId == portfolioId);
@@ -240,5 +240,5 @@ public sealed record PositionRequest(string Ticker, string Name, AssetType Asset
 public sealed record PositionUpdateRequest(decimal Quantity, decimal AveragePrice, decimal? CurrentPrice);
 public sealed record PortfolioSummaryResponse(Guid Id, string Name, decimal TotalValue, int PositionCount);
 public sealed record PortfolioDetailResponse(Guid Id, string Name, decimal TotalValue, IReadOnlyList<PositionResponse> Positions);
-public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 20, int TotalItems = 0, int TotalPages = 0);
+public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0);
 public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight);

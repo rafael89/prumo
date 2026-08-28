@@ -10,8 +10,8 @@ const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII',
 export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId }: PortfolioSectionProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   return <>
-      <div className="min-w-0 space-y-8">
-        <section id="carteira" className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="contents">
+        <section id="carteira" className="order-1 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm xl:col-start-1 xl:row-start-1">
           <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
             <h2 className="text-2xl font-semibold">Carteiras</h2>
             <span className="text-sm text-slate-500">{portfolios.data?.length ?? 0} cadastradas</span>
@@ -66,7 +66,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
           </div>
         </section>
 
-        <section className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="order-3 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm xl:col-start-1 xl:row-start-2">
           <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
             <h2 className="text-2xl font-semibold">Posi&ccedil;&otilde;es</h2>
             <span className="text-sm text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span>
@@ -127,50 +127,50 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
               )}
 
               {dashboard.data && dashboard.data.positions.length > 0 && (
-                <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
-                  <div className="min-w-[980px] grid grid-cols-[1.2fr_.9fr_.8fr_.8fr_.9fr_.9fr_.7fr_.9fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
+                  <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 md:grid">
                     <span>Ativo</span>
                     <span>Tipo</span>
-                    <span>Qtde</span>
-                    <span>Pre&ccedil;o m&eacute;dio</span>
-                    <span title="Preço informado na última atualização da carteira.">Pre&ccedil;o ref.</span>
-                    <span>Valor atual</span>
-                    <span>Peso</span>
-                    <span>A&ccedil;&otilde;es</span>
+                    <span className="text-right">Qtde</span>
+                    <span className="text-right">Pre&ccedil;o m&eacute;dio</span>
+                    <span className="text-right" title="Preço informado na última atualização da carteira.">Pre&ccedil;o ref.</span>
+                    <span className="text-right">Valor atual</span>
+                    <span className="text-right">Peso</span>
+                    <span className="text-center">A&ccedil;&otilde;es</span>
                   </div>
                   <div className="divide-y divide-slate-200 bg-white">
                     {dashboard.data.positions.map((position) => (
                       <div key={position.id} className="px-4 py-4">
                         {editingPositionId === position.id ? (
-                          <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid gap-3 md:grid-cols-[1.1fr_.9fr_.8fr_.8fr_.9fr_.9fr_.7fr_.9fr] md:items-end">
+                          <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-end">
                             <div>
                               <p className="text-sm font-semibold">{position.ticker}</p>
                               <p className="text-xs text-slate-500">{position.name}</p>
                             </div>
                             <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
-                            <input value={editForm.quantity} onChange={(event) => setEditForm((current) => ({ ...current, quantity: event.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                            <input value={editForm.averagePrice} onChange={(event) => setEditForm((current) => ({ ...current, averagePrice: event.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                            <input value={editForm.currentPrice} onChange={(event) => setEditForm((current) => ({ ...current, currentPrice: event.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                            <div className="text-sm text-slate-500">{formatCurrency(position.currentValue, privacyHidden)}</div>
-                            <div className="text-sm text-slate-500">{position.portfolioWeight.toFixed(2)}%</div>
-                            <div className="flex gap-2">
+                            <input value={editForm.quantity} onChange={(event) => setEditForm((current) => ({ ...current, quantity: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
+                            <input value={editForm.averagePrice} onChange={(event) => setEditForm((current) => ({ ...current, averagePrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
+                            <input value={editForm.currentPrice} onChange={(event) => setEditForm((current) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
+                            <div className="text-right text-sm text-slate-500">{formatCurrency(position.currentValue, privacyHidden)}</div>
+                            <div className="text-right text-sm text-slate-500">{position.portfolioWeight.toFixed(2)}%</div>
+                            <div className="flex flex-col items-stretch gap-1">
                               <button type="submit" disabled={updatePosition.isPending} className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60">Salvar</button>
                               <button type="button" onClick={() => setEditingPositionId(null)} className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Cancelar</button>
                             </div>
                           </form>
                         ) : (
-                          <div className="grid gap-3 md:grid-cols-[1.2fr_.9fr_.8fr_.8fr_.9fr_.9fr_.7fr_.9fr] md:items-center">
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
                             <div>
                               <p className="text-sm font-semibold">{position.ticker}</p>
                               <p className="text-xs text-slate-500">{position.name}</p>
                             </div>
                             <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
-                            <div className="text-sm text-slate-600">{formatNumber(position.quantity)}</div>
-                            <div className="text-sm text-slate-600">{formatCurrency(position.averagePrice, privacyHidden)}</div>
-                            <div className="text-sm text-slate-600">{formatCurrency(position.currentPrice, privacyHidden)}</div>
-                            <div className="text-sm text-slate-900">{formatCurrency(position.currentValue, privacyHidden)}</div>
-                            <div className="text-sm text-slate-600">{position.portfolioWeight.toFixed(2)}%</div>
-                            <div className="flex gap-2">
+                            <div className="text-right text-sm text-slate-600">{formatNumber(position.quantity)}</div>
+                            <div className="text-right text-sm text-slate-600">{formatCurrency(position.averagePrice, privacyHidden)}</div>
+                            <div className="text-right text-sm text-slate-600">{formatCurrency(position.currentPrice, privacyHidden)}</div>
+                            <div className="text-right text-sm text-slate-900">{formatCurrency(position.currentValue, privacyHidden)}</div>
+                            <div className="text-right text-sm text-slate-600">{position.portfolioWeight.toFixed(2)}%</div>
+                            <div className="flex justify-center gap-2">
                               <button type="button" aria-label="Editar posição" title="Editar posição" onClick={() => startEditing(position)} className="h-10 w-10 rounded-full border border-slate-300 text-slate-700 hover:border-amber-400 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faPen} /></button>
                               <button type="button" aria-label="Excluir posição" title="Excluir posição" onClick={() => deletePosition.mutate(position.id)} disabled={deletePosition.isPending} className="h-10 w-10 rounded-full border border-rose-200 text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-60"><FontAwesomeIcon icon={faTrash} /></button>
                             </div>

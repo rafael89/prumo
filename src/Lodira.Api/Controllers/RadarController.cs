@@ -21,7 +21,7 @@ public sealed class RadarController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<RadarResponse>> Get([FromQuery] Guid portfolioId, [FromQuery] RadarPriority? priority, [FromQuery] RadarItemStatus? status,
-        [FromQuery] bool? requiresAction, [FromQuery] bool? requiresAttention, [FromQuery] string? asset, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+        [FromQuery] bool? requiresAction, [FromQuery] bool? requiresAttention, [FromQuery] string? asset, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -42,7 +42,7 @@ public sealed class RadarController : ControllerBase
             if (requiresAttention.HasValue) items = items.Where(i => i.RequiresAttention == requiresAttention).ToList();
             items = items.OrderBy(i => i.Status == RadarItemStatus.Resolved.ToString()).ThenByDescending(i => PriorityRank(i.Priority)).ThenByDescending(i => i.Score)
                 .ThenByDescending(i => i.RequiresAction).ThenByDescending(i => i.PublishedAt).ThenByDescending(i => i.DocumentAnalysisId).ToList();
-            page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 20, 100);
+            page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 10, 100);
             var totalItems = items.Count;
             var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
             return Ok(new RadarResponse(pageItems, items.Count(i => i.Status == RadarItemStatus.Unread.ToString()), items.Count(RequiresAttention), items.Count(i => i.Status == RadarItemStatus.Resolved.ToString()), page, pageSize, totalItems, (int)Math.Ceiling(totalItems / (double)pageSize)));
@@ -85,7 +85,7 @@ public sealed class RadarController : ControllerBase
 }
 
 public sealed record SetRadarStatusRequest(string Status);
-public sealed record RadarResponse(IReadOnlyList<RadarItemDto> Items, int Unread, int RequiresAttention, int Resolved, int Page = 1, int PageSize = 20, int TotalItems = 0, int TotalPages = 0);
+public sealed record RadarResponse(IReadOnlyList<RadarItemDto> Items, int Unread, int RequiresAttention, int Resolved, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0);
 public sealed record RadarItemDto(Guid DocumentId, Guid DocumentAnalysisId, string AssetTicker, DocumentType DocumentType, DateTimeOffset? PublishedAt,
     string Priority, int Score, IReadOnlyList<string> Reasons, string Status, bool RequiresAttention,
     string Importance, string Classification, bool RequiresAction, string SuggestedAction,

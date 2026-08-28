@@ -19,7 +19,7 @@ public sealed class DocumentsController : ControllerBase
     }
 
     [HttpGet("portfolios/{portfolioId:guid}/documents")]
-    public async Task<ActionResult<PaginatedResponse<DocumentResponse>>> GetPortfolioDocuments(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? asset = null, [FromQuery] DocumentProcessingStatus? status = null, [FromQuery] DocumentType? type = null, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<PaginatedResponse<DocumentResponse>>> GetPortfolioDocuments(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? asset = null, [FromQuery] DocumentProcessingStatus? status = null, [FromQuery] DocumentType? type = null, CancellationToken cancellationToken = default)
     {
         var portfolioExists = await dbContext.Portfolios.AnyAsync(portfolio => portfolio.Id == portfolioId, cancellationToken);
         if (!portfolioExists)
@@ -28,7 +28,7 @@ public sealed class DocumentsController : ControllerBase
         }
 
         page = Math.Max(page, 1);
-        pageSize = Math.Clamp(pageSize, 20, 100);
+        pageSize = Math.Clamp(pageSize, 10, 100);
         IQueryable<Domain.Entities.Document> query = dbContext.Documents
             .AsNoTracking()
             .Where(document => dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == document.AssetId))

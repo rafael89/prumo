@@ -56,7 +56,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
 
   const documents = useQuery({
     queryKey: ['documents', portfolioId, documentPage, documentFilter, documentStatus, documentTypeFilter],
-    queryFn: () => getJson(`/api/portfolios/${portfolioId}/documents?page=${documentPage}&pageSize=20&asset=${encodeURIComponent(documentFilter)}${documentStatus ? `&status=${documentStatus}` : ''}${documentTypeFilter ? `&type=${documentTypeFilter}` : ''}`),
+    queryFn: () => getJson(`/api/portfolios/${portfolioId}/documents?page=${documentPage}&pageSize=10&asset=${encodeURIComponent(documentFilter)}${documentStatus ? `&status=${documentStatus}` : ''}${documentTypeFilter ? `&type=${documentTypeFilter}` : ''}`),
     enabled: Boolean(portfolioId),
   })
 
@@ -70,7 +70,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
   if (!portfolioId) return null
 
   return (
-    <div className="mt-0 grid min-w-0 gap-8 [&>*]:min-w-0">
+    <div className="order-4 mt-0 grid min-w-0 gap-8 self-start xl:col-start-2 xl:row-start-2 [&>*]:min-w-0">
       <div id="documentos" className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-baseline justify-between border-b border-slate-200 pb-3">
           <h2 className="text-2xl font-semibold">Documentos recentes</h2>
