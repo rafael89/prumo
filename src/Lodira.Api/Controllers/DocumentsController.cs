@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Lodira.Domain.Enums;
 using Lodira.Application.Radar;
 using Lodira.Infrastructure.Persistence;
+using Lodira.Api.Models;
 
 namespace Lodira.Api.Controllers;
 
@@ -18,7 +19,7 @@ public sealed class DocumentsController : ControllerBase
     }
 
     [HttpGet("portfolios/{portfolioId:guid}/documents")]
-    public async Task<ActionResult<IReadOnlyList<DocumentResponse>>> GetPortfolioDocuments(Guid portfolioId, CancellationToken cancellationToken)
+    public async Task<ActionResult<PaginatedResponse<DocumentResponse>>> GetPortfolioDocuments(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? asset = null, [FromQuery] DocumentProcessingStatus? status = null, [FromQuery] DocumentType? type = null, CancellationToken cancellationToken = default)
     {
         var portfolioExists = await dbContext.Portfolios.AnyAsync(portfolio => portfolio.Id == portfolioId, cancellationToken);
         if (!portfolioExists)
@@ -26,15 +27,24 @@ public sealed class DocumentsController : ControllerBase
             return NotFound();
         }
 
-        var documents = await dbContext.Documents
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 20, 100);
+        IQueryable<Domain.Entities.Document> query = dbContext.Documents
             .AsNoTracking()
             .Where(document => dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == document.AssetId))
-            .Include(document => document.Asset)
-            .OrderByDescending(document => document.PublishedAt)
-            .Select(document => CreateResponse(document))
-            .ToListAsync(cancellationToken);
+            .Include(document => document.Asset);
+        if (!string.IsNullOrWhiteSpace(asset))
+        {
+            var assetTerm = asset.Trim();
+            query = query.Where(document => EF.Functions.ILike(document.Asset!.Ticker, $"%{assetTerm}%") || EF.Functions.ILike(document.Asset.Name, $"%{assetTerm}%"));
+        }
+        if (status.HasValue) query = query.Where(document => document.ProcessingStatus == status.Value);
+        if (type.HasValue) query = query.Where(document => document.DocumentType == type.Value);
+        var totalItems = await query.CountAsync(cancellationToken);
+        var documents = await query.OrderByDescending(document => document.PublishedAt).ThenByDescending(document => document.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize).Select(document => CreateResponse(document)).ToListAsync(cancellationToken);
 
-        return Ok(documents);
+        return Ok(new PaginatedResponse<DocumentResponse>(documents, page, pageSize, totalItems, (int)Math.Ceiling(totalItems / (double)pageSize)));
     }
 
     [HttpGet("documents/{documentId:guid}")]

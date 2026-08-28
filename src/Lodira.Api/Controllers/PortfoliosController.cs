@@ -88,20 +88,22 @@ public sealed class PortfoliosController : ControllerBase
     }
 
     [HttpGet("{portfolioId:guid}/dashboard")]
-    public async Task<ActionResult<DashboardResponse>> GetDashboard(Guid portfolioId, CancellationToken cancellationToken)
+    public async Task<ActionResult<DashboardResponse>> GetDashboard(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
-        var portfolio = await LoadPortfolio(portfolioId, cancellationToken);
+        page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 20, 100);
+        var portfolio = await dbContext.Portfolios.AsNoTracking().SingleOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
         if (portfolio is null) return NotFound();
-
+        var positionsQuery = dbContext.PortfolioPositions.AsNoTracking().Where(position => position.PortfolioId == portfolioId);
+        var positionCount = await positionsQuery.CountAsync(cancellationToken);
+        var totalValue = await positionsQuery.SumAsync(position => position.CurrentPrice.HasValue ? position.Quantity * position.CurrentPrice.Value : 0m, cancellationToken);
+        var positions = await positionsQuery.Include(position => position.Asset).OrderByDescending(position => position.PortfolioWeight).ThenBy(position => position.Asset!.Ticker)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
         return Ok(new DashboardResponse(
             portfolio.Id,
             portfolio.Name,
-            PortfolioCalculator.CalculateTotalValue(portfolio.Positions),
-            portfolio.Positions.Count,
-            portfolio.Positions
-                .OrderByDescending(position => position.PortfolioWeight)
-                .Select(CreatePositionResponse)
-                .ToList()));
+            totalValue,
+            positionCount,
+            positions.Select(CreatePositionResponse).ToList(), page, pageSize, positionCount, (int)Math.Ceiling(positionCount / (double)pageSize)));
     }
 
     [HttpPost("{portfolioId:guid}/positions")]
@@ -238,5 +240,5 @@ public sealed record PositionRequest(string Ticker, string Name, AssetType Asset
 public sealed record PositionUpdateRequest(decimal Quantity, decimal AveragePrice, decimal? CurrentPrice);
 public sealed record PortfolioSummaryResponse(Guid Id, string Name, decimal TotalValue, int PositionCount);
 public sealed record PortfolioDetailResponse(Guid Id, string Name, decimal TotalValue, IReadOnlyList<PositionResponse> Positions);
-public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions);
+public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 20, int TotalItems = 0, int TotalPages = 0);
 public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight);

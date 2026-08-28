@@ -408,6 +408,9 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("DocumentAnalysisId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -422,7 +425,9 @@ namespace Lodira.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DocumentAnalysisId")
+                    b.HasIndex("DocumentAnalysisId");
+
+                    b.HasIndex("PortfolioId", "DocumentAnalysisId")
                         .IsUnique();
 
                     b.ToTable("RadarItemStates");

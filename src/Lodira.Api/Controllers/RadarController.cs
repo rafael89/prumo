@@ -4,6 +4,7 @@ using Lodira.Application.Radar;
 using Lodira.Domain.Enums;
 using Lodira.Domain.Entities;
 using Lodira.Infrastructure.Persistence;
+using Lodira.Api.Models;
 
 namespace Lodira.Api.Controllers;
 
@@ -20,27 +21,31 @@ public sealed class RadarController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<RadarResponse>> Get([FromQuery] Guid portfolioId, [FromQuery] RadarPriority? priority, [FromQuery] RadarItemStatus? status,
-        [FromQuery] bool? requiresAction, [FromQuery] string? asset, CancellationToken cancellationToken)
+        [FromQuery] bool? requiresAction, [FromQuery] bool? requiresAttention, [FromQuery] string? asset, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
         try
         {
             if (portfolioId == Guid.Empty) return BadRequest("PortfolioId é obrigatório.");
-            var analyses = await db.DocumentAnalyses.AsNoTracking().Include(a => a.Document!).ThenInclude(d => d!.Asset)
-                .OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id).ToListAsync(cancellationToken);
-            var latest = analyses.GroupBy(a => a.DocumentId).Select(g => g.OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id).First()).ToList();
             var positions =
                 await db.PortfolioPositions.Include(p => p.Asset).Where(p => p.PortfolioId == portfolioId).ToDictionaryAsync(p => p.AssetId, cancellationToken);
-            latest = latest.Where(a => a.Document?.AssetId is Guid assetId && positions.ContainsKey(assetId)).ToList();
+            var portfolioAssetIds = positions.Keys.ToList();
+            var latest = await db.DocumentAnalyses.AsNoTracking().Include(a => a.Document!).ThenInclude(d => d!.Asset)
+                .Where(a => a.Document != null && portfolioAssetIds.Contains(a.Document.AssetId) && !db.DocumentAnalyses.Any(newer => newer.DocumentId == a.DocumentId && (newer.CreatedAt > a.CreatedAt || (newer.CreatedAt == a.CreatedAt && newer.Id > a.Id))))
+                .Where(a => string.IsNullOrWhiteSpace(asset) || EF.Functions.ILike(a.Document!.Asset!.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Document.Asset.Name, $"%{asset.Trim()}%"))
+                .ToListAsync(cancellationToken);
             var ids = latest.Select(a => a.Id).ToList();
             var states = await db.RadarItemStates.AsNoTracking().Where(s => ids.Contains(s.DocumentAnalysisId) && s.PortfolioId == portfolioId).ToDictionaryAsync(s => s.DocumentAnalysisId, cancellationToken);
             var items = latest.Select(a => ToDto(a, states.TryGetValue(a.Id, out var state) ? state : null, portfolioId, positions)).ToList();
             if (priority.HasValue) items = items.Where(i => i.Priority == priority.Value.ToString()).ToList();
             if (status.HasValue) items = items.Where(i => i.Status == status.Value.ToString()).ToList();
             if (requiresAction.HasValue) items = items.Where(i => i.RequiresAction == requiresAction).ToList();
-            if (!string.IsNullOrWhiteSpace(asset)) items = items.Where(i => i.AffectedAssets.Any(x => x.Equals(asset.Trim(), StringComparison.OrdinalIgnoreCase))).ToList();
+            if (requiresAttention.HasValue) items = items.Where(i => i.RequiresAttention == requiresAttention).ToList();
             items = items.OrderBy(i => i.Status == RadarItemStatus.Resolved.ToString()).ThenByDescending(i => PriorityRank(i.Priority)).ThenByDescending(i => i.Score)
                 .ThenByDescending(i => i.RequiresAction).ThenByDescending(i => i.PublishedAt).ThenByDescending(i => i.DocumentAnalysisId).ToList();
-            return Ok(new RadarResponse(items, items.Count(i => i.Status == RadarItemStatus.Unread.ToString()), items.Count(RequiresAttention), items.Count(i => i.Status == RadarItemStatus.Resolved.ToString())));
+            page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 20, 100);
+            var totalItems = items.Count;
+            var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+            return Ok(new RadarResponse(pageItems, items.Count(i => i.Status == RadarItemStatus.Unread.ToString()), items.Count(RequiresAttention), items.Count(i => i.Status == RadarItemStatus.Resolved.ToString()), page, pageSize, totalItems, (int)Math.Ceiling(totalItems / (double)pageSize)));
         }
         catch (Exception exception)
         {
@@ -80,7 +85,7 @@ public sealed class RadarController : ControllerBase
 }
 
 public sealed record SetRadarStatusRequest(string Status);
-public sealed record RadarResponse(IReadOnlyList<RadarItemDto> Items, int Unread, int RequiresAttention, int Resolved);
+public sealed record RadarResponse(IReadOnlyList<RadarItemDto> Items, int Unread, int RequiresAttention, int Resolved, int Page = 1, int PageSize = 20, int TotalItems = 0, int TotalPages = 0);
 public sealed record RadarItemDto(Guid DocumentId, Guid DocumentAnalysisId, string AssetTicker, DocumentType DocumentType, DateTimeOffset? PublishedAt,
     string Priority, int Score, IReadOnlyList<string> Reasons, string Status, bool RequiresAttention,
     string Importance, string Classification, bool RequiresAction, string SuggestedAction,
