@@ -148,6 +148,18 @@ dotnet run --project src/Lodira.Worker
 
 Para usar OpenAI, defina `AI__Provider="OpenAI"`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves no repositorio.
 
+### Configuração local de IA
+
+O `Lodira.Worker` é o executável que instancia os providers de IA e já possui suporte padrão a .NET User Secrets em `Development`. Para armazenar uma chave Gemini localmente sem versioná-la:
+
+```powershell
+dotnet user-secrets set "AI:ApiKey" "<sua-chave-gemini>" --project src/Lodira.Worker
+dotnet user-secrets list --project src/Lodira.Worker
+dotnet user-secrets remove "AI:ApiKey" --project src/Lodira.Worker
+```
+
+O provider `Fake` continua sendo carregado por `src/Lodira.Worker/appsettings.Development.json`. Para containers, Beta e Production, `AI__ApiKey` continua sendo uma fonte de configuração suportada.
+
 ## Validação automatizada
 
 - `dotnet build Lodira.sln`: aprovado
@@ -187,3 +199,14 @@ As chaves OpenAI/Gemini devem ser fornecidas por variaveis de ambiente, como `AI
 Ownership futuro deve iniciar em `Portfolio.UserId`. Positions, imports, Objective, Strategy, StrategyAllocation, PortfolioAssessment e RadarItemState sao dependentes da carteira. Assets, Documents, DocumentAnalysis e InvestmentEvent permanecem globais nesta etapa.
 
 Debitos conhecidos mantidos fora deste marco: teste real de concorrencia PostgreSQL para `PortfolioAssessment`, configuracao Beta dedicada, HSTS/Auth e warnings conhecidos de frontend/EF.
+
+## Reset local do banco
+
+Para simular uma instalação limpa em Development, execute a partir da raiz:
+
+```powershell
+cd D:\Dev\lodira
+.\scripts\reset-local-database.ps1
+```
+
+O script lê a connection string da API, bloqueia hosts remotos, exige a confirmação literal `RESET`, solicita interativamente a senha do usuário local sem armazená-la e reseta o schema `public`. Em seguida, reaplica as migrations atuais com `dotnet ef database update` e valida o histórico e as tabelas vazias. Nenhum seed, carteira ou usuário é criado.
