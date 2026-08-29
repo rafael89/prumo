@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -35,7 +36,7 @@ export function TargetAllocationSection({ portfolioId }: { portfolioId: string }
   const labels: Record<number, string> = { 0: 'Ações brasileiras', 1: 'FIIs', 2: 'Renda fixa', 3: 'Internacional', 4: 'Outros' }
   const targets = useQuery({ queryKey: ['targets', portfolioId], queryFn: () => getOptionalJson<Array<{ assetClass: number; targetPercentage: number }>>(`/api/portfolios/${portfolioId}/target-allocations`) })
   const [values, setValues] = useState<Record<number, string>>({})
-  const save = useMutation({ mutationFn: () => sendJson<unknown, object>(`/api/portfolios/${portfolioId}/target-allocations`, 'PUT', { allocations: classes.map(assetClass => ({ assetClass, targetPercentage: Number(values[assetClass] ?? targets.data?.find(x => x.assetClass === assetClass)?.targetPercentage ?? 0) })) }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['targets', portfolioId] }) })
+  const save = useMutation({ mutationFn: () => sendJson<unknown, object>(`/api/portfolios/${portfolioId}/target-allocations`, 'PUT', { allocations: classes.map(assetClass => ({ assetClass, targetPercentage: Number(values[assetClass] ?? targets.data?.find(x => x.assetClass === assetClass)?.targetPercentage ?? 0) })) }), onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['targets', portfolioId] }); await queryClient.invalidateQueries({ queryKey: ['health', portfolioId] }); await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); await queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }) } })
   const total = classes.reduce((sum, assetClass) => sum + Number(values[assetClass] ?? targets.data?.find(x => x.assetClass === assetClass)?.targetPercentage ?? 0), 0)
   return <section className="mx-auto max-w-[89.5rem] px-6 pb-3 pt-3"><div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">Alocação-alvo</p><p className="mt-2 text-sm text-slate-600">Configure a distribuição percentual desejada por classe de ativos.</p><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{classes.map(assetClass => <label key={assetClass} className="text-xs font-semibold text-slate-700">{labels[assetClass]}<input inputMode="decimal" value={values[assetClass] ?? targets.data?.find(x => x.assetClass === assetClass)?.targetPercentage ?? ''} onChange={e => setValues(current => ({ ...current, [assetClass]: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="0" /></label>)}</div><div className="mt-4 flex items-center justify-between"><span className={`text-sm font-semibold ${Math.abs(total - 100) <= .01 ? 'text-emerald-700' : 'text-rose-700'}`}>Total: {total.toFixed(2)}%</span><button type="button" disabled={save.isPending || Math.abs(total - 100) > .01} onClick={() => save.mutate()} className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Salvar alocação</button></div></div></section>
 }
@@ -86,6 +87,17 @@ export function B3ImportSection({ portfolioId }: { portfolioId: string }) {
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  useEffect(() => {
+    if (message !== 'Carteira atualizada com sucesso.') return
+    const timeout = window.setTimeout(() => setMessage(null), 4000)
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['health', portfolioId] }),
+      queryClient.invalidateQueries({ queryKey: ['targets', portfolioId] }),
+      queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }),
+      queryClient.invalidateQueries({ queryKey: ['documents', portfolioId] }),
+    ])
+    return () => window.clearTimeout(timeout)
+  }, [message, portfolioId, queryClient])
   async function analyze() {
     if (!file) return
     setBusy(true); setMessage(null)

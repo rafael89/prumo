@@ -17,6 +17,7 @@ public static class DocumentAnalysisPrompt
             Nao use nem invente contexto de carteira, patrimonio, peso, posicoes ou recomendacoes personalizadas.
             Retorne somente JSON valido com importance, classification, requiresAction, suggestedAction,
             summary, impact, affectedAssets, confidence e events. Events pode ser uma lista vazia; cada evento deve conter eventType, occurredAt, summary, facts e affectedAssets.
+            eventType deve ser exatamente um destes valores: FINANCIAL_RESULT, DISTRIBUTION, CAPITAL_RAISE, CORPORATE_ACTION, ASSET_TRANSACTION, GOVERNANCE, OPERATIONAL, LIQUIDATION ou OTHER.
             CONTEXTO DO ATIVO: {asset}
             DOCUMENTO: {documentText}
             """;

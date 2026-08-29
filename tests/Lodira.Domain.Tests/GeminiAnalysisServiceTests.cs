@@ -30,6 +30,20 @@ public sealed class GeminiAnalysisServiceTests
     }
 
     [Fact]
+    public async Task NormalizaEventTypeEAcaoNoActionRetornadosEmScreamingSnakeCase()
+    {
+        var handler = new StubHandler(_ => JsonResponse("""
+            {"candidates":[{"content":{"parts":[{"text":"{\"importance\":\"RELEVANT\",\"classification\":\"OTHER\",\"requiresAction\":false,\"suggestedAction\":\"NO_ACTION\",\"summary\":\"Resumo\",\"impact\":\"Impacto\",\"affectedAssets\":[],\"confidence\":0.9,\"events\":[{\"eventType\":\"FINANCIAL_RESULT\",\"occurredAt\":null,\"summary\":\"Resultado\",\"facts\":[],\"affectedAssets\":[]}] }"} ]}}]}
+            """));
+
+        var result = await CreateService(handler).AnalyzeAsync("texto", Context);
+
+        Assert.Equal(SuggestedAction.NoAction, result.SuggestedAction);
+        var eventResult = Assert.Single(result.Events!);
+        Assert.Equal(InvestmentEventType.FinancialResult, eventResult.EventType);
+    }
+
+    [Fact]
     public async Task UsaChaveNoHeaderProprioDoGemini()
     {
         var handler = new StubHandler(_ => JsonResponse(ValidResponse()));

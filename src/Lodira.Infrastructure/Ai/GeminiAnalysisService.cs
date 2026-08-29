@@ -77,7 +77,11 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
     {
         Importance = NormalizeEnum(payload.Importance),
         Classification = NormalizeEnum(payload.Classification),
-        SuggestedAction = NormalizeEnum(payload.SuggestedAction)
+        SuggestedAction = NormalizeEnum(payload.SuggestedAction),
+        Events = payload.Events?.Select(eventPayload => eventPayload with
+        {
+            EventType = NormalizeEnum(eventPayload.EventType)
+        }).ToArray()
     };
 
     private static string? NormalizeEnum(string? value) => value?.Trim().ToUpperInvariant() switch
@@ -149,7 +153,7 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
             suggestedAction = new { type = "string", @enum = new[] { "MAINTAIN", "INCREASE_POSITION", "REDUCE_EXPOSURE", "EVALUATE_SALE", "MONITOR", "NO_ACTION", "OPEN_POSITION" } },
             summary = new { type = "string" }, impact = new { type = "string" },
             affectedAssets = new { type = "array", items = new { type = "string" } }, confidence = new { type = "number", minimum = 0, maximum = 1 },
-             events = new { type = "array", items = new { type = "object", properties = new { eventType = new { type = "string" }, occurredAt = new { type = "string", nullable = true }, summary = new { type = "string" }, facts = new { type = "array", items = new { type = "string" } }, affectedAssets = new { type = "array", items = new { type = "string" } } }, required = new[] { "eventType", "occurredAt", "summary", "facts", "affectedAssets" } } }
+             events = new { type = "array", items = new { type = "object", properties = new { eventType = new { type = "string", @enum = new[] { "FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "CORPORATE_ACTION", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER" } }, occurredAt = new { type = "string", nullable = true }, summary = new { type = "string" }, facts = new { type = "array", items = new { type = "string" } }, affectedAssets = new { type = "array", items = new { type = "string" } } }, required = new[] { "eventType", "occurredAt", "summary", "facts", "affectedAssets" } } }
         },
         required = new[] { "importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence" }
     };

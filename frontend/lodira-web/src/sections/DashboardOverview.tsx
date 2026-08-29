@@ -187,14 +187,16 @@ function RadarCard({ items }: { items: DashboardAssessment[] }) {
   </article>
 }
 
-function ContributionCard({ preview, privacyHidden, onGenerateGuidance }: { preview: Dashboard['contributionPreview']; privacyHidden: boolean; onGenerateGuidance: (amount: number) => Promise<DashboardGuidance> }) {
+function ContributionCard({ preview: rawPreview, privacyHidden, onGenerateGuidance }: { preview: Dashboard['contributionPreview']; privacyHidden: boolean; onGenerateGuidance: (amount: number) => Promise<DashboardGuidance> }) {
   const [amount, setAmount] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
   const mutation = useMutation({ mutationFn: onGenerateGuidance })
   const guidance = mutation.data
-  const isAvailable = matchesEnum(preview?.status, 0, 'Available')
+  const hasNoNeeds = matchesEnum(rawPreview?.status, 2, 'NoNeeds')
+  const preview = hasNoNeeds && rawPreview ? { ...rawPreview, summary: 'Sua carteira está alinhada; o próximo aporte buscará preservar suas alocações-alvo.' } : rawPreview
+  const isNoNeeds = false
+  const isAvailable = matchesEnum(preview?.status, 0, 'Available') || hasNoNeeds
   const isNotConfigured = matchesEnum(preview?.status, 1, 'NotConfigured')
-  const isNoNeeds = matchesEnum(preview?.status, 2, 'NoNeeds')
 
   const submit = () => {
     const parsedAmount = parseContributionAmount(amount)

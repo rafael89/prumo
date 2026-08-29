@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
-import { B3ImportSection, ContributionSection, PortfolioHealthSection, RadarSection, TargetAllocationSection } from './sections/FeatureSections'
+import { B3ImportSection, ContributionSection, RadarSection, TargetAllocationSection } from './sections/FeatureSections'
 import { PortfolioSection } from './sections/PortfolioSection'
 import { DocumentsSection } from './sections/DocumentsSection'
 import { DashboardOverview, type Dashboard, type DashboardGuidance } from './sections/DashboardOverview'
@@ -112,6 +112,11 @@ function App() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [positionPage, setPositionPage] = useState(1)
+  useEffect(() => {
+    if (feedback?.tone !== 'success') return
+    const timeout = window.setTimeout(() => setFeedback(null), 4000)
+    return () => window.clearTimeout(timeout)
+  }, [feedback])
   useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > 500)
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -304,7 +309,7 @@ function App() {
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} privacyHidden={privacyHidden} onGenerateGuidance={(amount) => sendJson<DashboardGuidance, { amount: number }>(`/api/portfolios/${activePortfolio?.id ?? ''}/contribution-guidance`, 'POST', { amount })} />}
-        {route === '/portfolio' && activePortfolio && <><TargetAllocationSection portfolioId={activePortfolio.id} /><PortfolioHealthSection portfolioId={activePortfolio.id} /></>}
+        {route === '/portfolio' && activePortfolio && <TargetAllocationSection portfolioId={activePortfolio.id} />}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} privacyHidden={privacyHidden} />}
         <section className="mx-auto max-w-[89.5rem] px-6 pb-12">
           {feedback && (
@@ -334,9 +339,15 @@ async function refreshPortfolioData(queryClient: QueryClient, portfolioId: strin
   if (portfolioId) {
     await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] })
     await queryClient.invalidateQueries({ queryKey: ['documents', portfolioId] })
+    await queryClient.invalidateQueries({ queryKey: ['health', portfolioId] })
+    await queryClient.invalidateQueries({ queryKey: ['targets', portfolioId] })
+    await queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] })
   } else {
     await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     await queryClient.invalidateQueries({ queryKey: ['documents'] })
+    await queryClient.invalidateQueries({ queryKey: ['health'] })
+    await queryClient.invalidateQueries({ queryKey: ['targets'] })
+    await queryClient.invalidateQueries({ queryKey: ['radar'] })
   }
 }
 
