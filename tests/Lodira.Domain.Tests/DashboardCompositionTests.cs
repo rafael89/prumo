@@ -52,6 +52,12 @@ public sealed class DashboardCompositionTests
         }
         await db.SaveChangesAsync(); var result = Ok(await Dashboard(db, portfolio.Id));
         Assert.Equal(3, result.AttentionNow!.Count); Assert.InRange(result.RecentUpdates!.Count, 1, 3); Assert.DoesNotContain(result.RecentUpdates!, x => result.AttentionNow!.Any(a => a.AssessmentId == x.AssessmentId));
+        Assert.All(result.AttentionNow, item =>
+        {
+            Assert.Equal(AttentionPriority.High, item.AttentionPriority);
+            Assert.Equal(ActionRequirement.Review, item.ActionRequirement);
+            Assert.Equal(CapitalDecisionImpact.None, item.CapitalDecisionImpact);
+        });
     }
 
     [Fact]
