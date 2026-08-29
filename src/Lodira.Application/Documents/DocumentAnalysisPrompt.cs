@@ -16,7 +16,7 @@ public static class DocumentAnalysisPrompt
             Analise o documento exclusivamente para identificar seu significado para o ativo.
             Nao use nem invente contexto de carteira, patrimonio, peso, posicoes ou recomendacoes personalizadas.
             Retorne somente JSON valido com importance, classification, requiresAction, suggestedAction,
-            summary, impact, affectedAssets e confidence.
+            summary, impact, affectedAssets, confidence e events. Events pode ser uma lista vazia; cada evento deve conter eventType, occurredAt, summary, facts e affectedAssets.
             CONTEXTO DO ATIVO: {asset}
             DOCUMENTO: {documentText}
             """;
@@ -73,7 +73,7 @@ public static class DocumentAnalysisPrompt
             "Nao ha informacoes suficientes para concluir."
             Retorne somente JSON valido com os campos:
             importance, classification, requiresAction, suggestedAction, summary, impact,
-            portfolioImpact, affectedAssets e confidence.
+            portfolioImpact, affectedAssets, confidence e events. Events pode ser uma lista vazia; cada evento deve conter eventType, occurredAt, summary, facts e affectedAssets.
 
             CONTEXTO DA CARTEIRA:
             {serializedContext}

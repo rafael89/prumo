@@ -221,7 +221,8 @@ public sealed class OpenAiAnalysisService : IAiAnalysisService
             summary = new { type = "string" },
             impact = new { type = "string" },
             affectedAssets = new { type = "array", items = new { type = "string" } },
-            confidence = new { type = "number", minimum = 0, maximum = 1 }
+            confidence = new { type = "number", minimum = 0, maximum = 1 },
+            events = new { type = "array", items = new { type = "object", properties = new { eventType = new { type = "string" }, occurredAt = new { type = new[] { "string", "null" } }, summary = new { type = "string" }, facts = new { type = "array", items = new { type = "string" } }, affectedAssets = new { type = "array", items = new { type = "string" } } }, required = new[] { "eventType", "occurredAt", "summary", "facts", "affectedAssets" }, additionalProperties = false } }
         },
         required = new[] { "importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence" },
         additionalProperties = false

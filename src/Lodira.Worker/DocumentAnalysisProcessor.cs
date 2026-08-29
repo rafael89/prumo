@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Lodira.Application.Abstractions;
 using Lodira.Domain.Entities;
+using Lodira.Domain.Enums;
+using Lodira.Application.Portfolio;
 using Lodira.Domain.Rules;
+using Lodira.Application.Intelligence;
 using Lodira.Infrastructure.Persistence;
 
 namespace Lodira.Worker;
@@ -14,6 +17,25 @@ public sealed class DocumentAnalysisProcessor
     private readonly ITextQualityValidator textQualityValidator;
     private readonly IAiAnalysisService aiAnalysisService;
     private readonly ILogger<DocumentAnalysisProcessor> logger;
+    private readonly IPortfolioImpactAssessmentService portfolioImpactAssessmentService;
+
+    public DocumentAnalysisProcessor(
+        LodiraDbContext dbContext,
+        IFileStorage fileStorage,
+        IPdfTextExtractor pdfTextExtractor,
+        ITextQualityValidator textQualityValidator,
+        IAiAnalysisService aiAnalysisService,
+        IPortfolioImpactAssessmentService portfolioImpactAssessmentService,
+        ILogger<DocumentAnalysisProcessor> logger)
+    {
+        this.dbContext = dbContext;
+        this.fileStorage = fileStorage;
+        this.pdfTextExtractor = pdfTextExtractor;
+        this.textQualityValidator = textQualityValidator;
+        this.aiAnalysisService = aiAnalysisService;
+        this.portfolioImpactAssessmentService = portfolioImpactAssessmentService;
+        this.logger = logger;
+    }
 
     public DocumentAnalysisProcessor(
         LodiraDbContext dbContext,
@@ -22,13 +44,8 @@ public sealed class DocumentAnalysisProcessor
         ITextQualityValidator textQualityValidator,
         IAiAnalysisService aiAnalysisService,
         ILogger<DocumentAnalysisProcessor> logger)
+        : this(dbContext, fileStorage, pdfTextExtractor, textQualityValidator, aiAnalysisService, new PortfolioImpactAssessmentService(), logger)
     {
-        this.dbContext = dbContext;
-        this.fileStorage = fileStorage;
-        this.pdfTextExtractor = pdfTextExtractor;
-        this.textQualityValidator = textQualityValidator;
-        this.aiAnalysisService = aiAnalysisService;
-        this.logger = logger;
     }
 
     public async Task ProcessAsync(ProcessingJob job, CancellationToken cancellationToken)
@@ -75,7 +92,7 @@ public sealed class DocumentAnalysisProcessor
         logger.LogInformation("Iniciando analise do documento {DocumentId}; providerModel={Model}; promptVersion={PromptVersion}.", document.Id, aiAnalysisService.Model, aiAnalysisService.PromptVersion);
 
         var result = await aiAnalysisService.AnalyzeAsync(extraction.Text, context, cancellationToken);
-        dbContext.DocumentAnalyses.Add(new DocumentAnalysis(
+        var analysis = new DocumentAnalysis(
             job.Id,
             document.Id,
             aiAnalysisService.Model,
@@ -89,12 +106,55 @@ public sealed class DocumentAnalysisProcessor
             result.PortfolioImpact,
             result.AffectedAssets,
             result.Confidence,
-            result.RawResponse));
+            result.RawResponse);
+        dbContext.DocumentAnalyses.Add(analysis);
+        await PersistEventsAndAssessmentsAsync(analysis, result.Events ?? Array.Empty<AiInvestmentEventResult>(), cancellationToken);
 
         document.MarkProcessed();
         job.Complete(DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Analise persistida com sucesso para o documento {DocumentId} e job {JobId}.", document.Id, job.Id);
+    }
+
+    private async Task PersistEventsAndAssessmentsAsync(DocumentAnalysis analysis, IReadOnlyList<AiInvestmentEventResult> results, CancellationToken cancellationToken)
+    {
+        foreach (var result in results)
+        {
+            var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{result.EventType}|{result.OccurredAt:O}|{result.Summary.Trim()}|{string.Join("|", result.Facts)}"))).ToLowerInvariant();
+            var investmentEvent = await dbContext.InvestmentEvents.Include(x => x.AffectedAssets).SingleOrDefaultAsync(x => x.DocumentAnalysisId == analysis.Id && x.Fingerprint == fingerprint, cancellationToken);
+            if (investmentEvent is null)
+            {
+                investmentEvent = new InvestmentEvent(analysis.Id, result.EventType, result.OccurredAt, result.Summary, result.Facts);
+                var assets = await dbContext.Assets.Where(x => result.AffectedAssets.Contains(x.Ticker)).ToListAsync(cancellationToken);
+                investmentEvent.AffectedAssets.AddRange(assets);
+                investmentEvent.Evidence.Add(new InvestmentEventEvidence(investmentEvent.Id, analysis.Id, analysis.DocumentId, "Análise estruturada do documento"));
+                dbContext.InvestmentEvents.Add(investmentEvent);
+            }
+
+            var assetIds = investmentEvent.AffectedAssets.Select(x => x.Id).ToArray();
+            if (assetIds.Length == 0) continue;
+            var portfolios = await dbContext.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).Where(x => x.Positions.Any(p => assetIds.Contains(p.AssetId))).ToListAsync(cancellationToken);
+            foreach (var portfolio in portfolios)
+            {
+                var strategy = await dbContext.PortfolioAllocationStrategies.Where(x => x.PortfolioId == portfolio.Id && x.ArchivedAt == null).SingleOrDefaultAsync(cancellationToken);
+                var objective = await dbContext.InvestmentObjectives.Where(x => x.PortfolioId == portfolio.Id && x.ArchivedAt == null).SingleOrDefaultAsync(cancellationToken);
+                var health = strategy is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, strategy);
+                var relevantPositions = portfolio.Positions
+                    .Where(x => assetIds.Contains(x.AssetId))
+                    .Select(x => new RelevantPositionContext(x.AssetId, x.Asset?.Ticker ?? string.Empty, x.Asset?.AssetClass ?? AssetClass.Other, x.CurrentValue ?? 0, x.PortfolioWeight))
+                    .ToList();
+                var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, objective, strategy, health));
+                var strategyVersion = strategy?.Version;
+                var objectiveVersion = objective?.Version;
+                var assessmentVersion = portfolioImpactAssessmentService.Version;
+                var portfolioSnapshotKey = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
+                var strategyKey = strategyVersion ?? 0;
+                var objectiveKey = objectiveVersion ?? 0;
+                if (await dbContext.PortfolioAssessments.AnyAsync(x => x.PortfolioId == portfolio.Id && x.InvestmentEventId == investmentEvent.Id && x.PortfolioSnapshotKey == portfolioSnapshotKey && x.StrategyVersionKey == strategyKey && x.ObjectiveVersionKey == objectiveKey && x.AssessmentVersion == assessmentVersion, cancellationToken)) continue;
+                logger.LogInformation("PortfolioAssessment reevaluation requested PortfolioId={PortfolioId} AssessmentVersion={AssessmentVersion} PortfolioSnapshotKey={PortfolioSnapshotKey} InvestmentEventId={InvestmentEventId} InvestmentEventVersion={InvestmentEventVersion}", portfolio.Id, assessmentVersion, portfolioSnapshotKey, investmentEvent.Id, investmentEvent.Version);
+                dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, AssessmentStatus.Detected, AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, strategy?.Version, objective?.Version, portfolioImpactAssessmentService.Version, portfolioSnapshotKey, investmentEvent.Version));
+            }
+        }
     }
 
     private async Task<PortfolioAnalysisContext> BuildPortfolioContextAsync(Guid assetId, CancellationToken cancellationToken)

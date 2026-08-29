@@ -18,7 +18,11 @@ public sealed record AiAnalysisPayload(
     string? Impact,
     string? PortfolioImpact,
     IReadOnlyList<string>? AffectedAssets,
-    decimal? Confidence);
+    decimal? Confidence,
+    IReadOnlyList<AiInvestmentEventPayload>? Events = null);
+
+public sealed record AiInvestmentEventPayload(string? EventType, DateTimeOffset? OccurredAt, string? Summary, IReadOnlyList<string>? Facts, IReadOnlyList<string>? AffectedAssets);
+public sealed record AiInvestmentEventResult(InvestmentEventType EventType, DateTimeOffset? OccurredAt, string Summary, IReadOnlyList<string> Facts, IReadOnlyList<string> AffectedAssets);
 
 public sealed record PortfolioAnalysisPositionContext(
     string Ticker,
@@ -67,4 +71,5 @@ public sealed record AiAnalysisResult(
     string PortfolioImpact,
     IReadOnlyList<string> AffectedAssets,
     decimal Confidence,
-    string RawResponse);
+    string RawResponse,
+    IReadOnlyList<AiInvestmentEventResult>? Events = null);

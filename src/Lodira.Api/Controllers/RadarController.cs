@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Lodira.Application.Radar;
-using Lodira.Domain.Enums;
-using Lodira.Domain.Entities;
-using Lodira.Infrastructure.Persistence;
 using Lodira.Api.Models;
+using Lodira.Domain.Entities;
+using Lodira.Domain.Enums;
+using Lodira.Infrastructure.Persistence;
+using Lodira.Application.Radar;
+using Lodira.Application.Abstractions;
+using Lodira.Application.Portfolio;
+using Lodira.Application.Intelligence;
+using Lodira.Application.Explainability;
+using Lodira.Api.Services;
 
 namespace Lodira.Api.Controllers;
 
@@ -13,80 +18,61 @@ namespace Lodira.Api.Controllers;
 public sealed class RadarController : ControllerBase
 {
     private readonly LodiraDbContext db;
-    private readonly RadarPriorityCalculator calculator = new();
-    private readonly PortfolioDocumentAssessmentService assessmentService = new();
-    private readonly ILogger<RadarController> logger;
-
-    public RadarController(LodiraDbContext db, ILogger<RadarController> logger) { this.db = db; this.logger = logger; }
+    private readonly IPortfolioAssessmentFreshnessEvaluator freshnessEvaluator;
+    private readonly PortfolioAssessmentCurrentService currentAssessmentService;
+    public RadarController(LodiraDbContext db, IPortfolioAssessmentFreshnessEvaluator? freshnessEvaluator = null, PortfolioAssessmentCurrentService? currentAssessmentService = null) { this.db = db; this.freshnessEvaluator = freshnessEvaluator ?? new PortfolioAssessmentFreshnessEvaluator(); this.currentAssessmentService = currentAssessmentService ?? new PortfolioAssessmentCurrentService(db, new PortfolioImpactAssessmentService(), this.freshnessEvaluator, Microsoft.Extensions.Logging.Abstractions.NullLogger<PortfolioAssessmentCurrentService>.Instance); }
 
     [HttpGet]
-    public async Task<ActionResult<RadarResponse>> Get([FromQuery] Guid portfolioId, [FromQuery] RadarPriority? priority, [FromQuery] RadarItemStatus? status,
-        [FromQuery] bool? requiresAction, [FromQuery] bool? requiresAttention, [FromQuery] string? asset, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
+    public async Task<ActionResult<RadarResponse>> Get([FromQuery] Guid portfolioId, [FromQuery] AttentionPriority? priority, [FromQuery] AssessmentStatus? status, [FromQuery] AssessmentUserState? userState, [FromQuery] bool? requiresAttention, [FromQuery] string? asset, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
     {
-        try
-        {
-            if (portfolioId == Guid.Empty) return BadRequest("PortfolioId é obrigatório.");
-            var positions =
-                await db.PortfolioPositions.Include(p => p.Asset).Where(p => p.PortfolioId == portfolioId).ToDictionaryAsync(p => p.AssetId, cancellationToken);
-            var portfolioAssetIds = positions.Keys.ToList();
-            var latest = await db.DocumentAnalyses.AsNoTracking().Include(a => a.Document!).ThenInclude(d => d!.Asset)
-                .Where(a => a.Document != null && portfolioAssetIds.Contains(a.Document.AssetId) && !db.DocumentAnalyses.Any(newer => newer.DocumentId == a.DocumentId && (newer.CreatedAt > a.CreatedAt || (newer.CreatedAt == a.CreatedAt && newer.Id > a.Id))))
-                .Where(a => string.IsNullOrWhiteSpace(asset) || EF.Functions.ILike(a.Document!.Asset!.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Document.Asset.Name, $"%{asset.Trim()}%"))
-                .ToListAsync(cancellationToken);
-            var ids = latest.Select(a => a.Id).ToList();
-            var states = await db.RadarItemStates.AsNoTracking().Where(s => ids.Contains(s.DocumentAnalysisId) && s.PortfolioId == portfolioId).ToDictionaryAsync(s => s.DocumentAnalysisId, cancellationToken);
-            var items = latest.Select(a => ToDto(a, states.TryGetValue(a.Id, out var state) ? state : null, portfolioId, positions)).ToList();
-            if (priority.HasValue) items = items.Where(i => i.Priority == priority.Value.ToString()).ToList();
-            if (status.HasValue) items = items.Where(i => i.Status == status.Value.ToString()).ToList();
-            if (requiresAction.HasValue) items = items.Where(i => i.RequiresAction == requiresAction).ToList();
-            if (requiresAttention.HasValue) items = items.Where(i => i.RequiresAttention == requiresAttention).ToList();
-            items = items.OrderBy(i => i.Status == RadarItemStatus.Resolved.ToString()).ThenByDescending(i => PriorityRank(i.Priority)).ThenByDescending(i => i.Score)
-                .ThenByDescending(i => i.RequiresAction).ThenByDescending(i => i.PublishedAt).ThenByDescending(i => i.DocumentAnalysisId).ToList();
-            page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 10, 100);
-            var totalItems = items.Count;
-            var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-            return Ok(new RadarResponse(pageItems, items.Count(i => i.Status == RadarItemStatus.Unread.ToString()), items.Count(RequiresAttention), items.Count(i => i.Status == RadarItemStatus.Resolved.ToString()), page, pageSize, totalItems, (int)Math.Ceiling(totalItems / (double)pageSize)));
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "Erro ao consultar o Radar");
-            throw;
-        }
-    }
-
-    [HttpPatch("{analysisId:guid}/status")]
-    public async Task<ActionResult<RadarItemDto>> SetStatus(Guid analysisId, [FromQuery] Guid portfolioId, [FromBody] SetRadarStatusRequest request, CancellationToken cancellationToken)
-    {
-        if (!Enum.TryParse<RadarItemStatus>(request.Status, true, out var requestedStatus)) return BadRequest("Status inválido.");
-        var analysis = await db.DocumentAnalyses.Include(a => a.Document!).ThenInclude(d => d!.Asset).SingleOrDefaultAsync(a => a.Id == analysisId, cancellationToken);
-        if (analysis is null) return NotFound();
         if (portfolioId == Guid.Empty) return BadRequest("PortfolioId é obrigatório.");
-        var state = await db.RadarItemStates.SingleOrDefaultAsync(s => s.DocumentAnalysisId == analysisId && s.PortfolioId == portfolioId, cancellationToken);
-        if (state is null) { state = new RadarItemState(portfolioId, analysisId); db.RadarItemStates.Add(state); }
-        state.SetStatus(requestedStatus);
-        await db.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Estado do item do Radar alterado para {Status}", request.Status);
-        var positions = await db.PortfolioPositions.Include(p => p.Asset).Where(p => p.PortfolioId == portfolioId).ToDictionaryAsync(p => p.AssetId, cancellationToken);
-        return Ok(ToDto(analysis, state, portfolioId, positions));
+        var query = db.PortfolioAssessments.AsNoTracking().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
+            .Where(x => x.PortfolioId == portfolioId);
+        if (priority.HasValue) query = query.Where(x => x.AttentionPriority == priority.Value);
+        if (status.HasValue) query = query.Where(x => x.Status == status.Value);
+        if (userState.HasValue) query = query.Where(x => x.UserState == userState.Value);
+        if (!string.IsNullOrWhiteSpace(asset)) query = query.Where(x => x.InvestmentEvent!.AffectedAssets.Any(a => EF.Functions.ILike(a.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Name, $"%{asset.Trim()}%")));
+        var portfolio = await db.Portfolios.AsNoTracking().Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
+        if (portfolio is null) return NotFound();
+        var strategy = await db.PortfolioAllocationStrategies.AsNoTracking().SingleOrDefaultAsync(x => x.PortfolioId == portfolioId && x.ArchivedAt == null, ct);
+        var objective = await db.InvestmentObjectives.AsNoTracking().SingleOrDefaultAsync(x => x.PortfolioId == portfolioId && x.ArchivedAt == null, ct);
+        var loadedAssessments = await query.OrderByDescending(x => x.GeneratedAt).ThenBy(x => x.Id).ToListAsync(ct);
+        var assessments = (await currentAssessmentService.EnsureFreshAsync(portfolio, strategy, objective, loadedAssessments, ct)).OrderByDescending(x => x.GeneratedAt).ThenBy(x => x.Id).ToList();
+        var items = assessments.Select(ToDto).ToList();
+        if (requiresAttention.HasValue) items = items.Where(x => x.RequiresAttention == requiresAttention.Value).ToList();
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100);
+        var total = items.Count; var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return Ok(new RadarResponse(pageItems.Where(x => x.RequiresAttention).ToList(), pageItems.Where(x => !x.RequiresAttention).ToList(), items.Count(x => x.RequiresAttention), items.Count(x => x.UserState == AssessmentUserState.Unread), page, pageSize, total, (int)Math.Ceiling(total / (double)pageSize)));
     }
 
-    private RadarItemDto ToDto(DocumentAnalysis a, RadarItemState? state, Guid? portfolioId = null, IReadOnlyDictionary<Guid, PortfolioPosition>? positions = null)
+    [HttpPatch("{assessmentId:guid}/seen")]
+    public async Task<ActionResult<RadarItemDto>> MarkSeen(Guid assessmentId, [FromQuery] Guid portfolioId, CancellationToken ct)
     {
-        var result = calculator.Calculate(a);
-        var status = state?.Status ?? RadarItemStatus.Unread;
-        var position = portfolioId.HasValue && a.Document is not null && positions is not null && positions.TryGetValue(a.Document.AssetId, out var found) ? found : null;
-        var assessment = portfolioId.HasValue && position is not null ? assessmentService.Assess(portfolioId.Value, position, a, status) : null;
-        return new RadarItemDto(a.DocumentId, a.Id, a.Document?.Asset?.Ticker ?? string.Empty, a.Document?.DocumentType ?? DocumentType.Other, a.Document?.PublishedAt,
-            assessment?.Priority.ToString() ?? result.Priority.ToString(), result.Score, assessment?.Reasons.Select(reason => reason.ToString()).ToList() ?? result.Reasons.Select(reason => reason.ToString()).ToList(), status.ToString(), assessment?.RequiresAttention ?? RadarAttentionPolicy.RequiresAttention(result.Priority, a.RequiresAction, status),
-            a.Importance.ToString(), a.Classification.ToString(), a.RequiresAction, a.SuggestedAction.ToString(), a.Summary, assessment?.PortfolioImpactText ?? a.PortfolioImpact, a.Confidence, a.AffectedAssets, a.CreatedAt);
+        var assessment = await db.PortfolioAssessments.Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).SingleOrDefaultAsync(x => x.Id == assessmentId && x.PortfolioId == portfolioId, ct);
+        if (assessment is null) return NotFound();
+        assessment.MarkSeen(); await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
     }
-    private static bool RequiresAttention(RadarItemDto item) => item.RequiresAttention;
-    private static int PriorityRank(string priority) => priority switch { nameof(RadarPriority.Critical) => 4, nameof(RadarPriority.High) => 3, nameof(RadarPriority.Medium) => 2, _ => 1 };
+
+    [HttpPatch("{assessmentId:guid}/status")]
+    public async Task<ActionResult<RadarItemDto>> SetStatus(Guid assessmentId, [FromQuery] Guid portfolioId, [FromBody] SetRadarStatusRequest request, CancellationToken ct)
+    {
+        if (!Enum.TryParse<AssessmentStatus>(request.Status, true, out var status)) return BadRequest("Status inválido.");
+        var assessment = await db.PortfolioAssessments.Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).SingleOrDefaultAsync(x => x.Id == assessmentId && x.PortfolioId == portfolioId, ct);
+        if (assessment is null) return NotFound();
+        assessment.SetStatus(status); await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
+    }
+
+    private static RadarItemDto ToDto(PortfolioAssessment x)
+    {
+        var attention = RadarAttentionNowPolicy.RequiresAttention(x);
+        var eventItem = x.InvestmentEvent!;
+        var evidence = eventItem.Evidence.Select(e => new RadarEvidenceDto(e.DocumentId, e.DocumentAnalysisId, e.Reference)).ToList();
+        var references = evidence.Select(e => new EvidenceReference("Document", e.DocumentId.ToString(), e.Reference, e.Reference, eventItem.OccurredAt)).ToList();
+        return new(x.Id, eventItem.Id, eventItem.DocumentAnalysisId, eventItem.AffectedAssets.Select(a => a.Ticker).ToList(), eventItem.EventType, eventItem.OccurredAt, x.AttentionPriority, x.ActionRequirement, x.CapitalDecisionImpact, x.Status, x.UserState, attention, eventItem.Summary, x.Summary, x.WhyItMatters, x.SuggestedBehavior, x.Confidence, x.GeneratedAt, evidence, FreshnessStatus.Fresh, Array.Empty<FreshnessReason>(), references);
+    }
 }
 
 public sealed record SetRadarStatusRequest(string Status);
-public sealed record RadarResponse(IReadOnlyList<RadarItemDto> Items, int Unread, int RequiresAttention, int Resolved, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0);
-public sealed record RadarItemDto(Guid DocumentId, Guid DocumentAnalysisId, string AssetTicker, DocumentType DocumentType, DateTimeOffset? PublishedAt,
-    string Priority, int Score, IReadOnlyList<string> Reasons, string Status, bool RequiresAttention,
-    string Importance, string Classification, bool RequiresAction, string SuggestedAction,
-    string Summary, string PortfolioImpact, decimal Confidence, IReadOnlyList<string> AffectedAssets, DateTimeOffset CreatedAt);
+public sealed record RadarResponse(IReadOnlyList<RadarItemDto> AttentionNow, IReadOnlyList<RadarItemDto> RecentUpdates, int RequiresAttention, int Unread, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0);
+public sealed record RadarEvidenceDto(Guid DocumentId, Guid DocumentAnalysisId, string Reference);
+public sealed record RadarItemDto(Guid AssessmentId, Guid InvestmentEventId, Guid DocumentAnalysisId, IReadOnlyList<string> AffectedAssets, InvestmentEventType EventType, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, bool RequiresAttention, string EventSummary, string Summary, string WhyItMatters, string SuggestedBehavior, IntelligenceConfidence Confidence, DateTimeOffset GeneratedAt, IReadOnlyList<RadarEvidenceDto> Evidence, FreshnessStatus Freshness = FreshnessStatus.Fresh, IReadOnlyList<FreshnessReason>? FreshnessReasons = null, IReadOnlyList<EvidenceReference>? EvidenceReferences = null);

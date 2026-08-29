@@ -20,6 +20,8 @@ public sealed class Portfolio
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
     public List<PortfolioPosition> Positions { get; private set; } = new();
+    public List<InvestmentObjective> InvestmentObjectives { get; private set; } = new();
+    public List<PortfolioAllocationStrategy> AllocationStrategies { get; private set; } = new();
 
     public void Rename(string name)
     {

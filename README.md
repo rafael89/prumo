@@ -2,7 +2,7 @@
 
 Aplicacao self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira.
 
-O repositorio esta no Incremento 6: descoberta, download, fila de jobs, extracao de texto em PDF, validacao deterministica de qualidade, analise estruturada por IA e contexto enriquecido da carteira.
+O repositorio contempla os incrementos funcionais de descoberta e analise de documentos, Radar, priorizacao, orientação de aporte mensal, importação de carteira B3 em XLSX e as melhorias de UX do Incremento 10.
 
 ## Stack
 
@@ -11,6 +11,27 @@ O repositorio esta no Incremento 6: descoberta, download, fila de jobs, extracao
 - .NET Worker
 - PostgreSQL 16
 - Docker Compose
+
+## Funcionalidades atuais
+
+- Carteiras e posições com detalhe do ativo, busca e paginação server-side.
+- Importação do Relatório Consolidado Mensal da B3 em XLSX, com prévia e sincronização.
+- Descoberta e processamento de documentos da CVM/FNet.
+- Análise global do evento e avaliação do impacto em cada carteira.
+- Radar com prioridade, filtros, estados por portfolio e paginação.
+- Orientação de aporte mensal baseada em alocações-alvo e eventos que requerem atenção.
+- Privacy mode para ocultar valores financeiros na sessão atual.
+- Frontend organizado em sections para Dashboard, Carteira e Documentos, com Radar, Aporte e importação B3.
+
+## Fluxo de dados
+
+```text
+B3 XLSX -> prévia -> confirmação -> carteira atualizada
+CVM/FNet -> descoberta -> download -> extração/validação -> análise IA
+Documento -> DocumentAnalysis global -> PortfolioAssessment por portfolio -> Radar/Aporte
+```
+
+O backend é a fonte de verdade. A regra `RequiresAttention` é compartilhada pelo Radar e pela orientação de aporte; o frontend apenas apresenta os resultados da API.
 
 ## Renomeacao tecnica e compatibilidade
 
@@ -82,6 +103,22 @@ Para aplicar migrations com ambiente compativel:
 dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api
 ```
 
+As migrations mais recentes incluem contexto de portfolio no Radar, estratégia de alocação, classes de ativos, sessões de importação B3, CNPJ dos ativos e ajustes de escopo dos estados do Radar. A migration pendente precisa ser aplicada ao banco antes de usar as funcionalidades correspondentes.
+
+## Estrutura do frontend
+
+```text
+frontend/lodira-web/src/
+  App.tsx                         # shell, navegação e estado compartilhado
+  components/Pagination.tsx       # paginação reutilizável
+  sections/DashboardSection.tsx
+  sections/PortfolioSection.tsx
+  sections/DocumentsSection.tsx
+  sections/FeatureSections.tsx    # Radar, Aporte e importação B3
+```
+
+As listas de carteira, documentos e Radar são paginadas no backend. Filtros resetam a página para 1 e as query keys incluem o `portfolioId` quando o dado é específico da carteira.
+
 ## Configuracao
 
 Configuracoes principais do worker em [src/Lodira.Worker/appsettings.json](src/Lodira.Worker/appsettings.json):
@@ -117,14 +154,14 @@ dotnet run --project src/Lodira.Worker
 
 Para usar OpenAI, defina `AI__Provider="OpenAI"`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves no repositorio.
 
-## Validacao realizada neste ambiente
+## Validação automatizada
 
-- `npm run build`: aprovado em 2026-08-27
-- `npm run lint`: aprovado em 2026-08-27
-- `dotnet build Lodira.sln`: aprovado em 2026-08-27
-- `dotnet test Lodira.sln`: 71 aprovados, 0 falhos, em 2026-08-27
+- `dotnet build Lodira.sln`: aprovado
+- `dotnet test Lodira.sln`: 106 aprovados, 0 falhos
+- `npm run build`: aprovado
+- `npm run lint`: aprovado
 
-O Incremento 6 foi validado por testes automatizados. O E2E real de uma nova analise Gemini nao foi executado nesta etapa porque nao havia credencial configurada no ambiente.
+O E2E real com serviços externos, como CVM/FNet e providers de IA, depende da configuração correspondente no ambiente.
 
 ## Warning conhecido
 

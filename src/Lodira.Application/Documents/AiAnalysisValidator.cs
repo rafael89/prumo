@@ -23,6 +23,13 @@ public sealed class AiAnalysisValidator
         if (summary.Length == 0) throw new InvalidOperationException("Summary ausente.");
         if (impact.Length == 0) throw new InvalidOperationException("Impact ausente.");
 
+        var events = (payload.Events ?? Array.Empty<AiInvestmentEventPayload>()).Select(eventPayload =>
+        {
+            if (string.IsNullOrWhiteSpace(eventPayload.EventType) || !Enum.TryParse(eventPayload.EventType, true, out InvestmentEventType eventType)) throw new InvalidOperationException("EventType inválido ou ausente.");
+            if (string.IsNullOrWhiteSpace(eventPayload.Summary)) throw new InvalidOperationException("Resumo do evento ausente.");
+            return new AiInvestmentEventResult(eventType, eventPayload.OccurredAt, eventPayload.Summary.Trim(), (eventPayload.Facts ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToArray(), (eventPayload.AffectedAssets ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray());
+        }).ToArray();
+
         return new AiAnalysisResult(
             importance,
             classification,
@@ -33,7 +40,7 @@ public sealed class AiAnalysisValidator
             portfolioImpact,
             payload.AffectedAssets.Where(asset => !string.IsNullOrWhiteSpace(asset)).Select(asset => asset.Trim().ToUpperInvariant()).Distinct().ToArray(),
             payload.Confidence.Value,
-            LimitRawResponse(rawResponse));
+            LimitRawResponse(rawResponse), events);
     }
 
     private static string LimitRawResponse(string rawResponse) => string.IsNullOrWhiteSpace(rawResponse)

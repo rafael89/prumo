@@ -6,7 +6,10 @@ using Lodira.Infrastructure.DocumentSources;
 using Lodira.Infrastructure.Persistence;
 using Lodira.Infrastructure.Storage;
 using Lodira.Application.PortfolioImports;
+using Lodira.Application.Portfolio;
 using Lodira.Infrastructure.PortfolioImports;
+using Lodira.Application.Intelligence;
+using Lodira.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +27,9 @@ builder.Services.AddScoped<NewAssetBootstrapService>();
 builder.Services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
 builder.Services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(builder.Configuration["Storage:RootPath"] ?? "/storage"));
 builder.Services.AddHealthChecks();
+builder.Services.AddSingleton<IPortfolioAssessmentFreshnessEvaluator, PortfolioAssessmentFreshnessEvaluator>();
+builder.Services.AddSingleton<IPortfolioImpactAssessmentService, PortfolioImpactAssessmentService>();
+builder.Services.AddScoped<PortfolioAssessmentCurrentService>();
 
 var app = builder.Build();
 

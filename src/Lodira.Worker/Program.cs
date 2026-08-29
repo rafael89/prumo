@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Lodira.Application.Abstractions;
 using Lodira.Application.Documents;
+using Lodira.Application.Intelligence;
 using Lodira.Infrastructure.Ai;
 using Lodira.Infrastructure.DocumentSources;
 using Lodira.Infrastructure.Documents;
@@ -46,6 +47,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));
         services.AddScoped<DocumentAnalysisProcessor>();
         services.AddSingleton<AiAnalysisValidator>();
+        services.AddSingleton<IPortfolioImpactAssessmentService, PortfolioImpactAssessmentService>();
         services.AddSingleton<IPdfTextExtractor, PdfPigTextExtractor>();
         services.AddSingleton<ITextQualityValidator>(provider => new TextQualityValidator(provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<TextQualityOptions>>().Value));
         services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
