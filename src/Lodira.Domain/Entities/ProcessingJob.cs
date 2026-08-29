@@ -16,7 +16,7 @@ public sealed class ProcessingJob
         DocumentId = documentId;
         JobType = jobType;
         Status = ProcessingJobStatus.Queued;
-        AvailableAt = availableAt;
+        AvailableAt = availableAt.ToUniversalTime();
     }
 
     public Guid Id { get; private set; }

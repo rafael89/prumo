@@ -77,6 +77,24 @@ public sealed class AiAnalysisValidatorTests
         Assert.Contains("AffectedAssets", exception.Message);
     }
 
+    [Fact]
+    public void Normaliza_occurred_at_para_utc()
+    {
+        var payload = CreatePayload() with
+        {
+            Events = new[]
+            {
+                new AiInvestmentEventPayload("FinancialResult", DateTimeOffset.Parse("2026-08-29T10:00:00-03:00"), "Resultado", Array.Empty<string>(), Array.Empty<string>())
+            }
+        };
+
+        var result = validator.Validate(payload, "{}");
+
+        Assert.NotNull(result.Events);
+        Assert.Equal(TimeSpan.Zero, result.Events[0].OccurredAt!.Value.Offset);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-29T13:00:00Z"), result.Events[0].OccurredAt);
+    }
+
     private static AiAnalysisPayload CreatePayload()
     {
         return new AiAnalysisPayload(

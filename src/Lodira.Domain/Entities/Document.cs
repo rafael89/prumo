@@ -28,7 +28,7 @@ public sealed class Document
         Id = Guid.NewGuid();
         AssetId = assetId;
         DocumentType = documentType;
-        PublishedAt = publishedAt;
+        PublishedAt = publishedAt.ToUniversalTime();
         SourceName = sourceName.Trim();
         SourceIdentifier = string.IsNullOrWhiteSpace(sourceIdentifier) ? null : sourceIdentifier.Trim();
         SourceUrl = sourceUrl.Trim();
@@ -81,7 +81,7 @@ public sealed class Document
         var sourceIdentity = !string.IsNullOrWhiteSpace(sourceIdentifier)
             ? $"identifier:{sourceIdentifier.Trim()}"
             : $"url:{NormalizeUrl(sourceUrl)}";
-        var input = $"{sourceName.Trim().ToUpperInvariant()}|{ticker.Trim().ToUpperInvariant()}|{publishedAt:O}|{documentType}|{sourceIdentity}";
+        var input = $"{sourceName.Trim().ToUpperInvariant()}|{ticker.Trim().ToUpperInvariant()}|{publishedAt.ToUniversalTime():O}|{documentType}|{sourceIdentity}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
     }
 

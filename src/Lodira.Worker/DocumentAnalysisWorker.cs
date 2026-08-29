@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Lodira.Application.Abstractions;
 using Lodira.Domain.Enums;
@@ -62,21 +63,32 @@ public sealed class DocumentAnalysisWorker : BackgroundService
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            await FailJobAsync(dbContext, job, "Timeout na chamada ao provider de IA.", exception, cancellationToken);
+            await FailJobAsync(dbContext, job.Id, "Timeout na chamada ao provider de IA.", exception, cancellationToken);
         }
         catch (Exception exception)
         {
-            await FailJobAsync(dbContext, job, exception.Message, exception, cancellationToken);
+            await FailJobAsync(dbContext, job.Id, exception.Message, exception, cancellationToken);
         }
     }
 
-    private async Task FailJobAsync(LodiraDbContext dbContext, Domain.Entities.ProcessingJob job, string error, Exception exception, CancellationToken cancellationToken)
+    private async Task FailJobAsync(LodiraDbContext dbContext, Guid jobId, string error, Exception exception, CancellationToken cancellationToken)
     {
-        var retry = job.Fail(DateTimeOffset.UtcNow, error, options.MaxAttempts, options.RetryDelay);
-        if (job.Document is not null)
+        dbContext.ChangeTracker.Clear();
+        var job = await dbContext.ProcessingJobs.Include(item => item.Document).SingleOrDefaultAsync(item => item.Id == jobId, cancellationToken);
+        if (job is null)
         {
-            job.Document.MarkError();
+            logger.LogError(exception, "Job de analise {JobId} não foi encontrado após falha.", jobId);
+            return;
         }
+
+        if (job.Status != ProcessingJobStatus.Processing)
+        {
+            logger.LogWarning(exception, "Job de analise {JobId} já está no estado {Status} após falha; nenhum retry foi aplicado.", jobId, job.Status);
+            return;
+        }
+
+        var retry = job.Fail(DateTimeOffset.UtcNow, error, options.MaxAttempts, options.RetryDelay);
+        if (job.Document is not null) job.Document.MarkError();
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogError(exception, "Falha no job de analise {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}; erro={Error}", job.Id, retry, job.Attempts, options.MaxAttempts, error);

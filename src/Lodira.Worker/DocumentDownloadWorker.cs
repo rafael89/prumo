@@ -77,10 +77,18 @@ public sealed class DocumentDownloadWorker : BackgroundService
         }
         catch (Exception exception)
         {
-            var retry = job.Fail(DateTimeOffset.UtcNow, exception.Message, options.MaxAttempts, options.RetryDelay);
-            if (job.Document is not null) job.Document.MarkError();
+            dbContext.ChangeTracker.Clear();
+            var persistedJob = await dbContext.ProcessingJobs.Include(item => item.Document).SingleOrDefaultAsync(item => item.Id == job.Id, cancellationToken);
+            if (persistedJob is null || persistedJob.Status != ProcessingJobStatus.Processing)
+            {
+                logger.LogWarning(exception, "Job {JobId} não está disponível para retry após falha.", job.Id);
+                return;
+            }
+
+            var retry = persistedJob.Fail(DateTimeOffset.UtcNow, exception.Message, options.MaxAttempts, options.RetryDelay);
+            if (persistedJob.Document is not null) persistedJob.Document.MarkError();
             await dbContext.SaveChangesAsync(cancellationToken);
-            logger.LogError(exception, "Falha no job {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}", job.Id, retry, job.Attempts, options.MaxAttempts);
+            logger.LogError(exception, "Falha no job {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}", persistedJob.Id, retry, persistedJob.Attempts, options.MaxAttempts);
         }
     }
 

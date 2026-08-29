@@ -6,7 +6,7 @@ public sealed class PortfolioImportSession
 {
     private PortfolioImportSession() { }
     public PortfolioImportSession(Guid portfolioId, PortfolioImportSource source, string originalFileName, string fileHash, string normalizedJson, DateTimeOffset? referenceDate)
-    { Id = Guid.NewGuid(); PortfolioId = portfolioId; Source = source; OriginalFileName = originalFileName; FileHash = fileHash; NormalizedJson = normalizedJson; ReferenceDate = referenceDate; Status = PortfolioImportStatus.Previewed; CreatedAt = DateTimeOffset.UtcNow; }
+    { Id = Guid.NewGuid(); PortfolioId = portfolioId; Source = source; OriginalFileName = originalFileName; FileHash = fileHash; NormalizedJson = normalizedJson; ReferenceDate = referenceDate?.ToUniversalTime(); Status = PortfolioImportStatus.Previewed; CreatedAt = DateTimeOffset.UtcNow; }
     public Guid Id { get; private set; }
     public Guid PortfolioId { get; private set; }
     public PortfolioImportSource Source { get; private set; }
