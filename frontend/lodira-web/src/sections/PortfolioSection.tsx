@@ -50,14 +50,10 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
           {activePortfolio && (
             <>
-              <form onSubmit={handleCreatePosition} className="mt-4 grid gap-3 md:grid-cols-4">
+              <form onSubmit={handleCreatePosition} className="mt-4 grid gap-3 md:grid-cols-5 md:items-end">
                 <div>
                   <label htmlFor="ticker" className="text-sm font-medium text-slate-700">Ticker</label>
                   <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />
-                </div>
-                <div>
-                  <label htmlFor="asset-name" className="text-sm font-medium text-slate-700">Nome do ativo</label>
-                  <input id="asset-name" value={positionForm.name} onChange={(event) => setPositionForm((current) => ({ ...current, name: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="Brasilseguridade" />
                 </div>
                 <div>
                   <label htmlFor="asset-type" className="text-sm font-medium text-slate-700">Tipo do ativo</label>
@@ -66,23 +62,15 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="sector" className="text-sm font-medium text-slate-700">Setor</label>
-                  <input id="sector" value={positionForm.sector} onChange={(event) => setPositionForm((current) => ({ ...current, sector: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="Seguros" />
-                </div>
-                <div>
                   <label htmlFor="quantity" className="text-sm font-medium text-slate-700">Quantidade</label>
                   <input id="quantity" inputMode="decimal" value={positionForm.quantity} onChange={(event) => setPositionForm((current) => ({ ...current, quantity: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="100" />
-                </div>
-                <div>
-                  <label htmlFor="average-price" className="text-sm font-medium text-slate-700">Pre&ccedil;o m&eacute;dio</label>
-                  <input id="average-price" inputMode="decimal" value={positionForm.averagePrice} onChange={(event) => setPositionForm((current) => ({ ...current, averagePrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="29,15" />
                 </div>
                 <div>
                   <label htmlFor="current-price" className="text-sm font-medium text-slate-700">Pre&ccedil;o de refer&ecirc;ncia</label>
                   <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
                 </div>
                 <div className="flex items-end">
-                  <button type="submit" disabled={createPosition.isPending} className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+                  <button type="submit" disabled={createPosition.isPending} className="h-[46px] w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                     {createPosition.isPending ? 'Salvando...' : 'Adicionar posi\u00e7\u00e3o'}
                   </button>
                 </div>
@@ -98,11 +86,10 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
               {dashboard.data && dashboard.data.positions.length > 0 && (
                 <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                  <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 md:grid">
+                  <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 md:grid">
                     <span>Ativo</span>
                     <span>Tipo</span>
                     <span className="text-right">Qtde</span>
-                    <span className="text-right">Pre&ccedil;o m&eacute;dio</span>
                     <span className="text-right" title="Preço informado na última atualização da carteira.">Pre&ccedil;o ref.</span>
                     <span className="text-right">Valor atual</span>
                     <span className="text-right">Peso</span>
@@ -112,14 +99,13 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                     {dashboard.data.positions.map((position) => (
                       <div key={position.id} className="px-4 py-3">
                         {editingPositionId === position.id ? (
-                          <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-end">
+                          <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-end">
                             <div>
                               <p className="text-sm font-semibold">{position.ticker}</p>
                               <p className="text-xs text-slate-500">{position.name}</p>
                             </div>
                             <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
                             <input value={editForm.quantity} onChange={(event) => setEditForm((current) => ({ ...current, quantity: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
-                            <input value={editForm.averagePrice} onChange={(event) => setEditForm((current) => ({ ...current, averagePrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
                             <input value={editForm.currentPrice} onChange={(event) => setEditForm((current) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
                             <div className="text-right text-sm text-slate-500">{formatCurrency(position.currentValue, privacyHidden)}</div>
                             <div className="text-right text-sm text-slate-500">{position.portfolioWeight.toFixed(2)}%</div>
@@ -129,20 +115,19 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                             </div>
                           </form>
                         ) : (
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
                             <div>
                               <p className="text-sm font-semibold">{position.ticker}</p>
                               <p className="text-xs text-slate-500">{position.name}</p>
                             </div>
                             <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
                             <div className="text-right text-sm text-slate-600">{formatNumber(position.quantity)}</div>
-                            <div className="text-right text-sm text-slate-600">{formatCurrency(position.averagePrice, privacyHidden)}</div>
                             <div className="text-right text-sm text-slate-600">{formatCurrency(position.currentPrice, privacyHidden)}</div>
                             <div className="text-right text-sm text-slate-900">{formatCurrency(position.currentValue, privacyHidden)}</div>
                             <div className="text-right text-sm text-slate-600">{position.portfolioWeight.toFixed(2)}%</div>
                             <div className="flex justify-center gap-2">
-                              <button type="button" aria-label="Editar posição" title="Editar posição" onClick={() => startEditing(position)} className="h-10 w-10 rounded-full border border-slate-300 text-slate-700 hover:border-amber-400 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faPen} /></button>
-                              <button type="button" aria-label="Excluir posição" title="Excluir posição" onClick={() => deletePosition.mutate(position.id)} disabled={deletePosition.isPending} className="h-10 w-10 rounded-full border border-rose-200 text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-60"><FontAwesomeIcon icon={faTrash} /></button>
+                              <button type="button" aria-label="Editar posição" title="Editar posição" onClick={() => startEditing(position)} className="h-9 w-9 rounded-full border border-slate-300 text-slate-700 hover:border-amber-400 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faPen} /></button>
+                              <button type="button" aria-label="Excluir posição" title="Excluir posição" onClick={() => deletePosition.mutate(position.id)} disabled={deletePosition.isPending} className="h-9 w-9 rounded-full border border-rose-200 text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-60"><FontAwesomeIcon icon={faTrash} /></button>
                             </div>
                           </div>
                         )}

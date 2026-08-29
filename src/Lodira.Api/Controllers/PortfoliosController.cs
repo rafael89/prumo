@@ -106,7 +106,7 @@ public sealed class PortfoliosController : ControllerBase
         var positionsQuery = dbContext.PortfolioPositions.AsNoTracking().Where(position => position.PortfolioId == portfolioId);
         var positionCount = await positionsQuery.CountAsync(cancellationToken);
         var totalValue = await positionsQuery.SumAsync(position => position.CurrentPrice.HasValue ? position.Quantity * position.CurrentPrice.Value : 0m, cancellationToken);
-        var positions = await positionsQuery.Include(position => position.Asset).OrderByDescending(position => position.PortfolioWeight).ThenBy(position => position.Asset!.Ticker)
+        var positions = await positionsQuery.Include(position => position.Asset).OrderBy(position => position.Asset!.Ticker).ThenBy(position => position.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
         var strategy = await dbContext.PortfolioAllocationStrategies.AsNoTracking().Include(s => s.Allocations).SingleOrDefaultAsync(s => s.PortfolioId == portfolioId && s.ArchivedAt == null, cancellationToken);
         var health = await LoadHealthForDashboard(portfolioId, strategy, cancellationToken);

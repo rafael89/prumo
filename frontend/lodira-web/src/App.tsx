@@ -283,24 +283,24 @@ function App() {
     }
 
     const quantity = Number(positionForm.quantity.replace(',', '.'))
-    const averagePrice = Number(positionForm.averagePrice.replace(',', '.'))
+    const averagePrice = 0
     const currentPrice = parseOptionalNumber(positionForm.currentPrice)
 
-    if (!positionForm.ticker.trim() || !positionForm.name.trim()) {
-      setFeedback({ tone: 'error', message: 'Ticker e nome do ativo são obrigatórios.' })
+    if (!positionForm.ticker.trim()) {
+      setFeedback({ tone: 'error', message: 'O ticker do ativo é obrigatório.' })
       return
     }
 
-    if (Number.isNaN(quantity) || Number.isNaN(averagePrice) || (currentPrice !== null && Number.isNaN(currentPrice))) {
-      setFeedback({ tone: 'error', message: 'Preencha quantidade, preço médio e cotação com números válidos.' })
+    if (Number.isNaN(quantity) || (currentPrice !== null && Number.isNaN(currentPrice))) {
+      setFeedback({ tone: 'error', message: 'Preencha quantidade e cotação com números válidos.' })
       return
     }
 
     createPosition.mutate({
       ticker: positionForm.ticker.trim(),
-      name: positionForm.name.trim(),
+      name: positionForm.ticker.trim(),
       assetType: positionForm.assetType,
-      sector: positionForm.sector.trim() || null,
+      sector: null,
       quantity,
       averagePrice,
       currentPrice,
@@ -352,7 +352,7 @@ function App() {
           {portfolios.isLoading && <p className="text-slate-500">Carregando carteiras...</p>}
           {portfolios.isError && <p className="text-rose-700">API indisponível. Inicie o backend em `http://localhost:5041`.</p>}
 
-          {route === '/portfolio' && !portfolios.isError && <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start [&>*]:min-w-0">
+          {route === '/portfolio' && !portfolios.isError && <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start [&>*]:min-w-0">
             <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} />
             {activePortfolio && <div className="order-2 self-stretch xl:col-start-2 xl:row-start-1 [&>section]:!h-full [&>section]:!px-0 [&>section]:!pb-0 [&>section>div]:!h-full"><B3ImportSection portfolioId={activePortfolio.id} /></div>}
             {activePortfolio && <DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} />}
