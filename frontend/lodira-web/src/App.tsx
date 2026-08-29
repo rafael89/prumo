@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
-import { B3ImportSection, ContributionSection, ObjectiveSection, PortfolioHealthSection, RadarSection, StrategyPreferencesSection } from './sections/FeatureSections'
+import { B3ImportSection, ContributionSection, PortfolioHealthSection, RadarSection, TargetAllocationSection } from './sections/FeatureSections'
 import { PortfolioSection } from './sections/PortfolioSection'
 import { DocumentsSection } from './sections/DocumentsSection'
 import { DashboardOverview, type Dashboard, type DashboardGuidance } from './sections/DashboardOverview'
@@ -304,7 +304,7 @@ function App() {
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} privacyHidden={privacyHidden} onGenerateGuidance={(amount) => sendJson<DashboardGuidance, { amount: number }>(`/api/portfolios/${activePortfolio?.id ?? ''}/contribution-guidance`, 'POST', { amount })} />}
-        {route === '/portfolio' && activePortfolio && <><ObjectiveSection portfolioId={activePortfolio.id} /><PortfolioHealthSection portfolioId={activePortfolio.id} /><StrategyPreferencesSection portfolioId={activePortfolio.id} /></>}
+        {route === '/portfolio' && activePortfolio && <><TargetAllocationSection portfolioId={activePortfolio.id} /><PortfolioHealthSection portfolioId={activePortfolio.id} /></>}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} privacyHidden={privacyHidden} />}
         <section className="mx-auto max-w-[89.5rem] px-6 pb-12">
           {feedback && (

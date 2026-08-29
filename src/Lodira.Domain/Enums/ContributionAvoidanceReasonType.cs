@@ -1,2 +1,2 @@
 namespace Lodira.Domain.Enums;
-public enum ContributionAvoidanceReasonType { CapitalDecisionBlock, CapitalDecisionCaution, ConcentrationLimit, ClassNotNeeded, LowerPriority, NoRemainingCapacity }
+public enum ContributionAvoidanceReasonType { CapitalDecisionBlock, CapitalDecisionCaution, ClassNotNeeded, LowerPriority }

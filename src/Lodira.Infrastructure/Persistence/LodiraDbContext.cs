@@ -17,10 +17,8 @@ public sealed class LodiraDbContext : DbContext
     public DbSet<ProcessingJob> ProcessingJobs => Set<ProcessingJob>();
     public DbSet<DocumentAnalysis> DocumentAnalyses => Set<DocumentAnalysis>();
     public DbSet<RadarItemState> RadarItemStates => Set<RadarItemState>();
-    public DbSet<PortfolioAllocationStrategy> PortfolioAllocationStrategies => Set<PortfolioAllocationStrategy>();
-    public DbSet<StrategyAllocation> StrategyAllocations => Set<StrategyAllocation>();
+    public DbSet<TargetAllocation> TargetAllocations => Set<TargetAllocation>();
     public DbSet<PortfolioImportSession> PortfolioImportSessions => Set<PortfolioImportSession>();
-    public DbSet<InvestmentObjective> InvestmentObjectives => Set<InvestmentObjective>();
     public DbSet<InvestmentEvent> InvestmentEvents => Set<InvestmentEvent>();
     public DbSet<InvestmentEventEvidence> InvestmentEventEvidence => Set<InvestmentEventEvidence>();
     public DbSet<PortfolioAssessment> PortfolioAssessments => Set<PortfolioAssessment>();

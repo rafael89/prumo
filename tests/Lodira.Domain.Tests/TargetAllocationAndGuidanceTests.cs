@@ -1,0 +1,12 @@
+using Lodira.Application.Contributions;
+using Lodira.Application.Portfolio;
+using Lodira.Domain.Entities;
+using Lodira.Domain.Enums;
+namespace Lodira.Domain.Tests;
+public sealed class TargetAllocationAndGuidanceTests
+{
+    [Fact] public void Target_key_is_order_independent_and_changes_when_target_changes(){var p=Guid.NewGuid();var a=new[]{new TargetAllocation(p,AssetClass.Fii,50),new TargetAllocation(p,AssetClass.FixedIncome,50)};var b=new[]{new TargetAllocation(p,AssetClass.FixedIncome,50),new TargetAllocation(p,AssetClass.Fii,50)};Assert.Equal(TargetAllocationKeyCalculator.Calculate(a),TargetAllocationKeyCalculator.Calculate(b));var c=new[]{new TargetAllocation(p,AssetClass.Fii,60),new TargetAllocation(p,AssetClass.FixedIncome,40)};Assert.NotEqual(TargetAllocationKeyCalculator.Calculate(a),TargetAllocationKeyCalculator.Calculate(c));}
+    [Fact] public void Health_uses_only_class_targets_and_rejects_unconfigured(){var p=new Portfolio("Teste");var result=new PortfolioHealthCalculator().Calculate(p,Array.Empty<TargetAllocation>());Assert.Equal(PortfolioHealthStatus.NotConfigured,result.Status);}
+    [Fact] public void Guidance_allocates_without_individual_asset_limit_and_preserves_sum(){var p=Guid.NewGuid();var health=new PortfolioHealthResult(PortfolioHealthStatus.Unbalanced,new[]{new AllocationDeviation(AssetClass.Fii,0,100, -100,100,AllocationDeviationDirection.Underweight)},new MainDeviation(AssetClass.Fii,0,100,-100,AllocationDeviationDirection.Underweight),new[]{new CapitalNeed(AssetClass.Fii,0,100,100,1)},"1",DateTimeOffset.UtcNow);var result=new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(p,5000,health,new[]{new GuidancePosition(Guid.NewGuid(),"FII",AssetClass.Fii,14000,14)},Array.Empty<GuidanceAssessment>()));Assert.Equal(5000,result.AllocatedAmount);Assert.Equal(0,result.UnallocatedAmount);}
+    [Fact] public void Block_leaves_capital_unallocated(){var id=Guid.NewGuid();var health=new PortfolioHealthResult(PortfolioHealthStatus.Unbalanced,Array.Empty<AllocationDeviation>(),null,new[]{new CapitalNeed(AssetClass.Fii,0,100,100,1)},"1",DateTimeOffset.UtcNow);var result=new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(Guid.NewGuid(),5000,health,new[]{new GuidancePosition(id,"FII",AssetClass.Fii,100,1)},new[]{new GuidanceAssessment(id,CapitalDecisionImpact.Block,AssessmentStatus.Detected,"e","v1")}));Assert.Equal(5000,result.UnallocatedAmount);Assert.Empty(result.Allocations);}
+}

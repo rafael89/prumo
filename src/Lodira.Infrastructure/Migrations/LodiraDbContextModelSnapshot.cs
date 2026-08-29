@@ -3,20 +3,17 @@ using System;
 using Lodira.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Lodira.Infrastructure.Persistence.Migrations
+namespace Lodira.Infrastructure.Migrations
 {
     [DbContext(typeof(LodiraDbContext))]
-    [Migration("20260829151400_InitialCreate")]
-    partial class InitialCreate
+    partial class LodiraDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -301,49 +298,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.ToTable("InvestmentEventEvidence");
                 });
 
-            modelBuilder.Entity("Lodira.Domain.Entities.InvestmentObjective", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("ArchivedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("PortfolioId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("PrimaryGoal")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal?>("TargetAmount")
-                        .HasPrecision(20, 8)
-                        .HasColumnType("numeric(20,8)");
-
-                    b.Property<int>("TargetMetric")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TimeHorizon")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PortfolioId")
-                        .IsUnique()
-                        .HasFilter("\"ArchivedAt\" IS NULL");
-
-                    b.HasIndex("PortfolioId", "Version")
-                        .IsUnique();
-
-                    b.ToTable("InvestmentObjectives");
-                });
-
             modelBuilder.Entity("Lodira.Domain.Entities.Portfolio", b =>
                 {
                     b.Property<Guid>("Id")
@@ -367,64 +321,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Portfolios");
-                });
-
-            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAllocationStrategy", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("ArchivedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("CapitalPreservationPriority")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ContributionPolicy")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("GrowthPriority")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("IncomePriority")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal?>("MaximumAssetWeight")
-                        .HasPrecision(20, 8)
-                        .HasColumnType("numeric(20,8)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.Property<Guid>("PortfolioId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("TemplateKey")
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PortfolioId")
-                        .IsUnique()
-                        .HasFilter("\"ArchivedAt\" IS NULL");
-
-                    b.HasIndex("PortfolioId", "Version")
-                        .IsUnique();
-
-                    b.ToTable("PortfolioAllocationStrategies");
                 });
 
             modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAssessment", b =>
@@ -459,14 +355,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.Property<int?>("InvestmentEventVersion")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("ObjectiveVersion")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ObjectiveVersionKey")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
                     b.Property<Guid>("PortfolioId")
                         .HasColumnType("uuid");
 
@@ -477,14 +365,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("StrategyVersion")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("StrategyVersionKey")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
                     b.Property<string>("SuggestedBehavior")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -494,6 +374,10 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("TargetAllocationKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("UserState")
                         .HasColumnType("integer");
@@ -507,9 +391,9 @@ namespace Lodira.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("InvestmentEventId");
 
-                    b.HasIndex("PortfolioId", "InvestmentEventId", "PortfolioSnapshotKey", "StrategyVersionKey", "ObjectiveVersionKey", "AssessmentVersion")
+                    b.HasIndex("PortfolioId", "InvestmentEventId", "PortfolioSnapshotKey", "TargetAllocationKey", "AssessmentVersion")
                         .IsUnique()
-                        .HasFilter("\"PortfolioSnapshotKey\" IS NOT NULL");
+                        .HasFilter("\"PortfolioSnapshotKey\" IS NOT NULL AND \"TargetAllocationKey\" IS NOT NULL");
 
                     b.ToTable("PortfolioAssessments");
                 });
@@ -690,7 +574,7 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.ToTable("RadarItemStates");
                 });
 
-            modelBuilder.Entity("Lodira.Domain.Entities.StrategyAllocation", b =>
+            modelBuilder.Entity("Lodira.Domain.Entities.TargetAllocation", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -699,7 +583,7 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     b.Property<int>("AssetClass")
                         .HasColumnType("integer");
 
-                    b.Property<Guid>("StrategyId")
+                    b.Property<Guid>("PortfolioId")
                         .HasColumnType("uuid");
 
                     b.Property<decimal>("TargetPercentage")
@@ -708,10 +592,10 @@ namespace Lodira.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StrategyId", "AssetClass")
+                    b.HasIndex("PortfolioId", "AssetClass")
                         .IsUnique();
 
-                    b.ToTable("StrategyAllocations");
+                    b.ToTable("TargetAllocations");
                 });
 
             modelBuilder.Entity("InvestmentEventAssets", b =>
@@ -783,24 +667,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Lodira.Domain.Entities.InvestmentObjective", b =>
-                {
-                    b.HasOne("Lodira.Domain.Entities.Portfolio", null)
-                        .WithMany("InvestmentObjectives")
-                        .HasForeignKey("PortfolioId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAllocationStrategy", b =>
-                {
-                    b.HasOne("Lodira.Domain.Entities.Portfolio", null)
-                        .WithMany("AllocationStrategies")
-                        .HasForeignKey("PortfolioId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAssessment", b =>
                 {
                     b.HasOne("Lodira.Domain.Entities.InvestmentEvent", "InvestmentEvent")
@@ -855,11 +721,11 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Lodira.Domain.Entities.StrategyAllocation", b =>
+            modelBuilder.Entity("Lodira.Domain.Entities.TargetAllocation", b =>
                 {
-                    b.HasOne("Lodira.Domain.Entities.PortfolioAllocationStrategy", null)
-                        .WithMany("Allocations")
-                        .HasForeignKey("StrategyId")
+                    b.HasOne("Lodira.Domain.Entities.Portfolio", null)
+                        .WithMany("TargetAllocations")
+                        .HasForeignKey("PortfolioId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -871,16 +737,9 @@ namespace Lodira.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Lodira.Domain.Entities.Portfolio", b =>
                 {
-                    b.Navigation("AllocationStrategies");
-
-                    b.Navigation("InvestmentObjectives");
-
                     b.Navigation("Positions");
-                });
 
-            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAllocationStrategy", b =>
-                {
-                    b.Navigation("Allocations");
+                    b.Navigation("TargetAllocations");
                 });
 #pragma warning restore 612, 618
         }

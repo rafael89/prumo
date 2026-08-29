@@ -1,9 +1,4 @@
 using Lodira.Domain.Entities;
 using Lodira.Application.Portfolio;
-
 namespace Lodira.Application.Abstractions;
-
-public interface IPortfolioAssessmentFreshnessEvaluator
-{
-    FreshnessResult Evaluate(PortfolioAssessment assessment, string? currentPortfolioSnapshotKey, int? currentStrategyVersion, int? currentObjectiveVersion, InvestmentEvent? currentEvent, string currentAssessmentPolicyVersion);
-}
+public interface IPortfolioAssessmentFreshnessEvaluator { FreshnessResult Evaluate(PortfolioAssessment assessment, string? currentPortfolioSnapshotKey, string? currentTargetAllocationKey, InvestmentEvent? currentEvent, string currentAssessmentPolicyVersion); }

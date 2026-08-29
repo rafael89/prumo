@@ -34,10 +34,9 @@ public sealed class RadarController : ControllerBase
         if (!string.IsNullOrWhiteSpace(asset)) query = query.Where(x => x.InvestmentEvent!.AffectedAssets.Any(a => EF.Functions.ILike(a.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Name, $"%{asset.Trim()}%")));
         var portfolio = await db.Portfolios.AsNoTracking().Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
-        var strategy = await db.PortfolioAllocationStrategies.AsNoTracking().SingleOrDefaultAsync(x => x.PortfolioId == portfolioId && x.ArchivedAt == null, ct);
-        var objective = await db.InvestmentObjectives.AsNoTracking().SingleOrDefaultAsync(x => x.PortfolioId == portfolioId && x.ArchivedAt == null, ct);
+        var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var loadedAssessments = await query.OrderByDescending(x => x.GeneratedAt).ThenBy(x => x.Id).ToListAsync(ct);
-        var assessments = (await currentAssessmentService.EnsureFreshAsync(portfolio, strategy, objective, loadedAssessments, ct)).OrderByDescending(x => x.GeneratedAt).ThenBy(x => x.Id).ToList();
+        var assessments = (await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct)).OrderByDescending(x => x.GeneratedAt).ThenBy(x => x.Id).ToList();
         var items = assessments.Select(ToDto).ToList();
         if (requiresAttention.HasValue) items = items.Where(x => x.RequiresAttention == requiresAttention.Value).ToList();
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100);

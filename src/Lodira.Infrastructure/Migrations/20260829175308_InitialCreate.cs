@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Lodira.Infrastructure.Persistence.Migrations
+namespace Lodira.Infrastructure.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration
@@ -97,60 +97,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "InvestmentObjectives",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    PortfolioId = table.Column<Guid>(type: "uuid", nullable: false),
-                    PrimaryGoal = table.Column<int>(type: "integer", nullable: false),
-                    TargetMetric = table.Column<int>(type: "integer", nullable: false),
-                    TargetAmount = table.Column<decimal>(type: "numeric(20,8)", precision: 20, scale: 8, nullable: true),
-                    TimeHorizon = table.Column<int>(type: "integer", nullable: false),
-                    Version = table.Column<int>(type: "integer", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    ArchivedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_InvestmentObjectives", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_InvestmentObjectives_Portfolios_PortfolioId",
-                        column: x => x.PortfolioId,
-                        principalTable: "Portfolios",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "PortfolioAllocationStrategies",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    PortfolioId = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: false),
-                    TemplateKey = table.Column<string>(type: "character varying(80)", maxLength: 80, nullable: true),
-                    Version = table.Column<int>(type: "integer", nullable: false),
-                    IncomePriority = table.Column<int>(type: "integer", nullable: false),
-                    GrowthPriority = table.Column<int>(type: "integer", nullable: false),
-                    CapitalPreservationPriority = table.Column<int>(type: "integer", nullable: false),
-                    ContributionPolicy = table.Column<int>(type: "integer", nullable: false),
-                    MaximumAssetWeight = table.Column<decimal>(type: "numeric(20,8)", precision: 20, scale: 8, nullable: true),
-                    ArchivedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_PortfolioAllocationStrategies", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_PortfolioAllocationStrategies_Portfolios_PortfolioId",
-                        column: x => x.PortfolioId,
-                        principalTable: "Portfolios",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "PortfolioPositions",
                 columns: table => new
                 {
@@ -175,6 +121,26 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_PortfolioPositions_Portfolios_PortfolioId",
+                        column: x => x.PortfolioId,
+                        principalTable: "Portfolios",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TargetAllocations",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    PortfolioId = table.Column<Guid>(type: "uuid", nullable: false),
+                    AssetClass = table.Column<int>(type: "integer", nullable: false),
+                    TargetPercentage = table.Column<decimal>(type: "numeric(20,8)", precision: 20, scale: 8, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TargetAllocations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_TargetAllocations_Portfolios_PortfolioId",
                         column: x => x.PortfolioId,
                         principalTable: "Portfolios",
                         principalColumn: "Id",
@@ -234,26 +200,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                         name: "FK_ProcessingJobs_Documents_DocumentId",
                         column: x => x.DocumentId,
                         principalTable: "Documents",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "StrategyAllocations",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    StrategyId = table.Column<Guid>(type: "uuid", nullable: false),
-                    AssetClass = table.Column<int>(type: "integer", nullable: false),
-                    TargetPercentage = table.Column<decimal>(type: "numeric(20,8)", precision: 20, scale: 8, nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_StrategyAllocations", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_StrategyAllocations_PortfolioAllocationStrategies_StrategyId",
-                        column: x => x.StrategyId,
-                        principalTable: "PortfolioAllocationStrategies",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -380,10 +326,7 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                     WhyItMatters = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: false),
                     SuggestedBehavior = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
                     Confidence = table.Column<int>(type: "integer", nullable: false),
-                    StrategyVersion = table.Column<int>(type: "integer", nullable: true),
-                    ObjectiveVersion = table.Column<int>(type: "integer", nullable: true),
-                    StrategyVersionKey = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    ObjectiveVersionKey = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    TargetAllocationKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     AssessmentVersion = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     PortfolioSnapshotKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     InvestmentEventVersion = table.Column<int>(type: "integer", nullable: true),
@@ -476,32 +419,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_InvestmentObjectives_PortfolioId",
-                table: "InvestmentObjectives",
-                column: "PortfolioId",
-                unique: true,
-                filter: "\"ArchivedAt\" IS NULL");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_InvestmentObjectives_PortfolioId_Version",
-                table: "InvestmentObjectives",
-                columns: new[] { "PortfolioId", "Version" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PortfolioAllocationStrategies_PortfolioId",
-                table: "PortfolioAllocationStrategies",
-                column: "PortfolioId",
-                unique: true,
-                filter: "\"ArchivedAt\" IS NULL");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PortfolioAllocationStrategies_PortfolioId_Version",
-                table: "PortfolioAllocationStrategies",
-                columns: new[] { "PortfolioId", "Version" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
                 name: "IX_PortfolioAssessments_InvestmentEventId",
                 table: "PortfolioAssessments",
                 column: "InvestmentEventId");
@@ -509,9 +426,9 @@ namespace Lodira.Infrastructure.Persistence.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_PortfolioAssessments_PortfolioId_InvestmentEventId_Portfoli~",
                 table: "PortfolioAssessments",
-                columns: new[] { "PortfolioId", "InvestmentEventId", "PortfolioSnapshotKey", "StrategyVersionKey", "ObjectiveVersionKey", "AssessmentVersion" },
+                columns: new[] { "PortfolioId", "InvestmentEventId", "PortfolioSnapshotKey", "TargetAllocationKey", "AssessmentVersion" },
                 unique: true,
-                filter: "\"PortfolioSnapshotKey\" IS NOT NULL");
+                filter: "\"PortfolioSnapshotKey\" IS NOT NULL AND \"TargetAllocationKey\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_PortfolioImportSessions_PortfolioId_Source_FileHash",
@@ -552,9 +469,9 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_StrategyAllocations_StrategyId_AssetClass",
-                table: "StrategyAllocations",
-                columns: new[] { "StrategyId", "AssetClass" },
+                name: "IX_TargetAllocations_PortfolioId_AssetClass",
+                table: "TargetAllocations",
+                columns: new[] { "PortfolioId", "AssetClass" },
                 unique: true);
         }
 
@@ -566,9 +483,6 @@ namespace Lodira.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "InvestmentEventEvidence");
-
-            migrationBuilder.DropTable(
-                name: "InvestmentObjectives");
 
             migrationBuilder.DropTable(
                 name: "PortfolioAssessments");
@@ -586,19 +500,16 @@ namespace Lodira.Infrastructure.Persistence.Migrations
                 name: "RadarItemStates");
 
             migrationBuilder.DropTable(
-                name: "StrategyAllocations");
+                name: "TargetAllocations");
 
             migrationBuilder.DropTable(
                 name: "InvestmentEvents");
 
             migrationBuilder.DropTable(
-                name: "PortfolioAllocationStrategies");
+                name: "Portfolios");
 
             migrationBuilder.DropTable(
                 name: "DocumentAnalyses");
-
-            migrationBuilder.DropTable(
-                name: "Portfolios");
 
             migrationBuilder.DropTable(
                 name: "Documents");

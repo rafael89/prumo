@@ -136,23 +136,20 @@ public sealed class DocumentAnalysisProcessor
             var portfolios = await dbContext.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).Where(x => x.Positions.Any(p => assetIds.Contains(p.AssetId))).ToListAsync(cancellationToken);
             foreach (var portfolio in portfolios)
             {
-                var strategy = await dbContext.PortfolioAllocationStrategies.Where(x => x.PortfolioId == portfolio.Id && x.ArchivedAt == null).SingleOrDefaultAsync(cancellationToken);
-                var objective = await dbContext.InvestmentObjectives.Where(x => x.PortfolioId == portfolio.Id && x.ArchivedAt == null).SingleOrDefaultAsync(cancellationToken);
-                var health = strategy is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, strategy);
+                var targets = await dbContext.TargetAllocations.Where(x => x.PortfolioId == portfolio.Id).ToListAsync(cancellationToken);
+                var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
+                if (targetKey is null) continue;
+                var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
                 var relevantPositions = portfolio.Positions
                     .Where(x => assetIds.Contains(x.AssetId))
                     .Select(x => new RelevantPositionContext(x.AssetId, x.Asset?.Ticker ?? string.Empty, x.Asset?.AssetClass ?? AssetClass.Other, x.CurrentValue ?? 0, x.PortfolioWeight))
                     .ToList();
-                var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, objective, strategy, health));
-                var strategyVersion = strategy?.Version;
-                var objectiveVersion = objective?.Version;
+                var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health));
                 var assessmentVersion = portfolioImpactAssessmentService.Version;
                 var portfolioSnapshotKey = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
-                var strategyKey = strategyVersion ?? 0;
-                var objectiveKey = objectiveVersion ?? 0;
-                if (await dbContext.PortfolioAssessments.AnyAsync(x => x.PortfolioId == portfolio.Id && x.InvestmentEventId == investmentEvent.Id && x.PortfolioSnapshotKey == portfolioSnapshotKey && x.StrategyVersionKey == strategyKey && x.ObjectiveVersionKey == objectiveKey && x.AssessmentVersion == assessmentVersion, cancellationToken)) continue;
+                if (await dbContext.PortfolioAssessments.AnyAsync(x => x.PortfolioId == portfolio.Id && x.InvestmentEventId == investmentEvent.Id && x.PortfolioSnapshotKey == portfolioSnapshotKey && x.TargetAllocationKey == targetKey && x.AssessmentVersion == assessmentVersion, cancellationToken)) continue;
                 logger.LogInformation("PortfolioAssessment reevaluation requested PortfolioId={PortfolioId} AssessmentVersion={AssessmentVersion} PortfolioSnapshotKey={PortfolioSnapshotKey} InvestmentEventId={InvestmentEventId} InvestmentEventVersion={InvestmentEventVersion}", portfolio.Id, assessmentVersion, portfolioSnapshotKey, investmentEvent.Id, investmentEvent.Version);
-                dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, AssessmentStatus.Detected, AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, strategy?.Version, objective?.Version, portfolioImpactAssessmentService.Version, portfolioSnapshotKey, investmentEvent.Version));
+                dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, AssessmentStatus.Detected, AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, portfolioImpactAssessmentService.Version, portfolioSnapshotKey, investmentEvent.Version));
             }
         }
     }

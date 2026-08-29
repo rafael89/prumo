@@ -23,8 +23,6 @@ public sealed record PortfolioImpactAssessmentContext(
     InvestmentEvent InvestmentEvent,
     DomainPortfolio Portfolio,
     IReadOnlyList<RelevantPositionContext> RelevantPositions,
-    InvestmentObjective? Objective,
-    PortfolioAllocationStrategy? Strategy,
     PortfolioHealthResult? PortfolioHealth);
 
 public sealed record PortfolioImpactAssessmentOutput(

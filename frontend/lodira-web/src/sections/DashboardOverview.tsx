@@ -56,7 +56,6 @@ export type Dashboard = {
     summary: string
     allocationDeviations: Array<{ assetClass: number; currentPercentage: number; targetPercentage: number; deviationPercentagePoints: number }>
     mainDeviation: { assetClass: number; currentPercentage: number; targetPercentage: number; deviationPercentagePoints: number } | null
-    concentrations: Array<{ ticker: string; currentWeight: number; configuredMaximumWeight: number | null; exceedsConfiguredMaximum: boolean }>
   }
   recentUpdates?: DashboardAssessment[]
 }
@@ -66,7 +65,7 @@ export type DashboardGuidance = {
   allocationStyle: number | string
   contributionAmount: number
   allocatedAmount: number
-  allocations: Array<{ assetId: string; ticker: string; amount: number; projectedAssetWeight: number; reason: string }>
+  allocations: Array<{ assetId: string; ticker: string; amount: number; reason: string }>
   avoidedCandidates: Array<{ assetId: string; ticker: string; reasonType: number; reason: string }>
   unallocatedAmount: number
   reasons: string[]
@@ -131,7 +130,6 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
   const health = data.portfolioHealthSummary
   const overview = data.portfolioOverview
   const deviations = health?.allocationDeviations.slice(0, 2) ?? []
-  const concentrationViolations = health?.concentrations.filter(item => item.exceedsConfiguredMaximum).slice(0, 2) ?? []
   const notConfigured = health?.status === 'NotConfigured'
   const aligned = health?.status === 'Aligned'
 
@@ -145,20 +143,16 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
     </h2>
     {overview?.mainDeviationSummary && <p className="mt-2 text-sm leading-6 text-slate-600">{overview.mainDeviationSummary}</p>}
 
-    {(deviations.length > 0 || concentrationViolations.length > 0) && <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100">
+    {deviations.length > 0 && <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100">
       {deviations.map(item => <div key={item.assetClass} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
         <strong>{assetClassLabels[item.assetClass] ?? 'Outros ativos'}</strong>
         <span className="text-slate-500">Atual {formatPercentage(item.currentPercentage)}% · alvo {formatPercentage(item.targetPercentage)}%</span>
       </div>)}
-      {concentrationViolations.map(item => <div key={item.ticker} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
-        <strong>{item.ticker} acima do limite configurado</strong>
-        <span className="text-slate-500">{formatPercentage(item.currentWeight)}%</span>
-      </div>)}
     </div>}
 
     {notConfigured && <div className="mt-5 rounded-2xl bg-stone-50 p-4 text-sm leading-6 text-slate-600">
-      Configure sua estratégia para que o Lodira possa avaliar a distribuição da carteira e orientar seus aportes.
-      <Link to="/portfolio" className="mt-3 flex w-fit items-center gap-2 font-semibold text-slate-900">Configurar estratégia <FontAwesomeIcon icon={faArrowRight} /></Link>
+      Configure as alocações-alvo para que o Lodira possa avaliar a distribuição da carteira e orientar seus aportes.
+      <Link to="/portfolio" className="mt-3 flex w-fit items-center gap-2 font-semibold text-slate-900">Configurar alocação-alvo <FontAwesomeIcon icon={faArrowRight} /></Link>
     </div>}
   </article>
 }
