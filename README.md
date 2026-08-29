@@ -2,7 +2,7 @@
 
 Aplicacao self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira.
 
-O repositorio contempla os incrementos funcionais de descoberta e analise de documentos, Radar, priorizacao, orientação de aporte mensal, importação de carteira B3 em XLSX e as melhorias de UX do Incremento 10.
+O repositorio contempla os incrementos funcionais de descoberta e analise de documentos, Radar, priorizacao, orientação de aporte sob demanda, importação de carteira B3 em XLSX e as melhorias de UX do Incremento 10.
 
 ## Stack
 
@@ -14,12 +14,12 @@ O repositorio contempla os incrementos funcionais de descoberta e analise de doc
 
 ## Funcionalidades atuais
 
-- Carteiras e posições com detalhe do ativo, busca e paginação server-side.
+- Carteiras e posições com detalhe do ativo; o Dashboard oferece paginação server-side das posições.
 - Importação do Relatório Consolidado Mensal da B3 em XLSX, com prévia e sincronização.
 - Descoberta e processamento de documentos da CVM/FNet.
 - Análise global do evento e avaliação do impacto em cada carteira.
 - Radar com prioridade, filtros, estados por portfolio e paginação.
-- Orientação de aporte mensal baseada em alocações-alvo e eventos que requerem atenção.
+- Orientação de aporte sob demanda baseada em alocações-alvo e impactos de eventos relevantes.
 - Privacy mode para ocultar valores financeiros na sessão atual.
 - Frontend organizado em sections para Dashboard, Carteira e Documentos, com Radar, Aporte e importação B3.
 
@@ -28,16 +28,16 @@ O repositorio contempla os incrementos funcionais de descoberta e analise de doc
 ```text
 B3 XLSX -> prévia -> confirmação -> carteira atualizada
 CVM/FNet -> descoberta -> download -> extração/validação -> análise IA
-Documento -> DocumentAnalysis global -> PortfolioAssessment por portfolio -> Radar/Aporte
+Documento -> DocumentAnalysis global -> InvestmentEvent -> PortfolioAssessment por portfolio -> Radar/Aporte
 ```
 
-O backend é a fonte de verdade. A regra `RequiresAttention` é compartilhada pelo Radar e pela orientação de aporte; o frontend apenas apresenta os resultados da API.
+O backend é a fonte de verdade para os cálculos financeiros e a inteligência de produto. O Radar determina `RequiresAttention` pela `RadarAttentionNowPolicy`; a orientação de aporte usa os impactos dos assessments (`CapitalDecisionImpact`) para selecionar e priorizar candidatos. O frontend gerencia apresentação, filtros, estado de tela e entrada dos formulários.
 
 ## Renomeacao tecnica e compatibilidade
 
 O nome oficial do produto e Lodira, com a solucao e os projetos organizados sob esse nome. O diretorio local pode continuar sendo `prumo` sem impacto no build ou na execucao.
 
-Para preservar ambientes existentes, os valores padrao do PostgreSQL continuam usando o banco, usuario e senha `prumo`, o `UserSecretsId` historico do worker foi mantido e as migrations preservam seu historico, operacoes e dados persistidos. Essas referencias sao deliberadas e nao representam o namespace atual.
+Para preservar o ambiente local existente, os valores padrao do PostgreSQL continuam usando o banco, usuario e senha `prumo`, e o `UserSecretsId` historico do worker foi mantido. O historico de migrations foi consolidado na baseline oficial descrita abaixo; nao ha compromisso de upgrade a partir das migrations antigas.
 
 ## Executar localmente
 
@@ -87,15 +87,9 @@ O `PortfolioAnalysisContext` e reconstruido no momento da analise e fornece a ca
 
 Os calculos financeiros continuam no backend e preservam a precisao interna. No prompt, valores monetarios sao apresentados com duas casas em `pt-BR` e percentuais com duas casas, sem depender da cultura da maquina. A concentracao inclui o maior peso individual e a soma dos tres maiores pesos.
 
-## Dependencia de PDF
-
-O projeto utiliza `UglyToad.PdfPig` na versao `1.7.0-custom-5`, conforme registrado em [src/Lodira.Infrastructure/Lodira.Infrastructure.csproj](src/Lodira.Infrastructure/Lodira.Infrastructure.csproj). A dependencia foi mantida neste incremento porque ja estava instalada no repositrio e e a versao referenciada pelo estado atual do projeto; nao houve troca de biblioteca por preferencia.
-
-Nao ha OCR neste incremento. PDFs sem texto confiavel devem falhar na validacao de qualidade e seguir a politica de retry/erro do job.
-
 ## Migrations
 
-As migrations de documentos, jobs e analises ficam em [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations). O incremento adiciona a migration manual `20260827203000_AddDocumentAnalyses`, que cria a tabela `DocumentAnalyses` e relaxa o indice de `ProcessingJobs` para permitir historico de execucoes sem perder a protecao contra duplicacao acidental em andamento.
+As migrations ficam em [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations). O estado atual e representado por uma unica `InitialCreate` gerada diretamente do modelo EF.
 
 Para aplicar migrations com ambiente compativel:
 
@@ -103,7 +97,7 @@ Para aplicar migrations com ambiente compativel:
 dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api
 ```
 
-As migrations mais recentes incluem contexto de portfolio no Radar, estratégia de alocação, classes de ativos, sessões de importação B3, CNPJ dos ativos e ajustes de escopo dos estados do Radar. A migration pendente precisa ser aplicada ao banco antes de usar as funcionalidades correspondentes.
+O banco deve ser inicializado com `dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api` antes de usar as funcionalidades correspondentes.
 
 ## Estrutura do frontend
 
@@ -117,7 +111,7 @@ frontend/lodira-web/src/
   sections/FeatureSections.tsx    # Radar, Aporte e importação B3
 ```
 
-As listas de carteira, documentos e Radar são paginadas no backend. Filtros resetam a página para 1 e as query keys incluem o `portfolioId` quando o dado é específico da carteira.
+As listas de posições do Dashboard, documentos e Radar são paginadas no backend. Filtros resetam a página para 1 e as query keys incluem o `portfolioId` quando o dado é específico da carteira.
 
 ## Configuracao
 
@@ -157,12 +151,39 @@ Para usar OpenAI, defina `AI__Provider="OpenAI"`, `AI__ApiKey` e `AI__Model`. Nu
 ## Validação automatizada
 
 - `dotnet build Lodira.sln`: aprovado
-- `dotnet test Lodira.sln`: 106 aprovados, 0 falhos
+- `dotnet test Lodira.sln`: 161 aprovados, 0 falhos
 - `npm run build`: aprovado
-- `npm run lint`: aprovado
+- `npm run lint`: executado; 2 warnings conhecidos no frontend
 
 O E2E real com serviços externos, como CVM/FNet e providers de IA, depende da configuração correspondente no ambiente.
 
 ## Warning conhecido
 
 Avisos `NU1900` podem aparecer quando o indice de vulnerabilidades do NuGet esta indisponivel. Eles nao impedem a compilacao ou os testes.
+
+## Baseline atual de migrations
+
+O historico de migrations foi consolidado em uma unica baseline oficial:
+
+```text
+20260829151400_InitialCreate
+```
+
+A pasta [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations) contem somente essa migration, seu Designer e `LodiraDbContextModelSnapshot.cs`. A baseline foi validada em banco PostgreSQL `prumo` vazio usando exclusivamente `dotnet ef database update`.
+
+A partir do primeiro banco Beta com dados importantes, migrations devem ser append-only. Este squash nao deve ser repetido depois desse marco.
+
+Checkpoint local:
+
+```text
+Commit: be47836
+Tag: lodira-2.0-r6-migration-squash
+```
+
+O banco vazio nao depende de seed manual: `POST /api/portfolios` cria uma carteira e Strategy/Objective podem ser configurados posteriormente.
+
+As chaves OpenAI/Gemini devem ser fornecidas por variaveis de ambiente, como `AI__ApiKey`; nenhuma chave real de provider esta versionada. Os valores `prumo` usados em `appsettings` e `docker-compose.yml` sao defaults locais de desenvolvimento.
+
+Ownership futuro deve iniciar em `Portfolio.UserId`. Positions, imports, Objective, Strategy, StrategyAllocation, PortfolioAssessment e RadarItemState sao dependentes da carteira. Assets, Documents, DocumentAnalysis e InvestmentEvent permanecem globais nesta etapa.
+
+Debitos conhecidos mantidos fora deste marco: teste real de concorrencia PostgreSQL para `PortfolioAssessment`, configuracao Beta dedicada, HSTS/Auth e warnings conhecidos de frontend/EF.
