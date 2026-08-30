@@ -56,7 +56,7 @@ public sealed class GeminiAnalysisServiceTests
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, typeof(InvalidOperationException))]
     [InlineData(HttpStatusCode.Forbidden, typeof(InvalidOperationException))]
-    [InlineData(HttpStatusCode.TooManyRequests, typeof(HttpRequestException))]
+    [InlineData(HttpStatusCode.TooManyRequests, typeof(AiProviderRateLimitException))]
     [InlineData(HttpStatusCode.InternalServerError, typeof(HttpRequestException))]
     public async Task TrataErrosHttp(HttpStatusCode statusCode, Type exceptionType)
     {

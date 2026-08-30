@@ -55,6 +55,11 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
         logger.LogInformation("Provider {Provider} respondeu HTTP {StatusCode}; durationMs={DurationMs}", "Gemini", (int)response.StatusCode, Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
 
+        if (response.StatusCode == (HttpStatusCode)429)
+        {
+            throw new AiProviderRateLimitException("Gemini limitou a requisiÃ§Ã£o (HTTP 429).", response.StatusCode, ParseRetryAfter(response));
+        }
+
         if (!response.IsSuccessStatusCode) throw CreateHttpException(response.StatusCode, rawResponse);
 
         var envelope = ParseEnvelope(rawResponse);
@@ -139,6 +144,17 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
     };
 
     private static string TrimError(string value) => string.IsNullOrWhiteSpace(value) ? "resposta de erro vazia" : value.Length <= 500 ? value : value[..500];
+
+    private static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
+    {
+        if (response.Headers.RetryAfter?.Delta is { } delta && delta > TimeSpan.Zero) return delta;
+        if (response.Headers.RetryAfter?.Date is { } date)
+        {
+            var delay = date - DateTimeOffset.UtcNow;
+            if (delay > TimeSpan.Zero) return delay;
+        }
+        return null;
+    }
     private sealed record GeminiEnvelope(string? Text, string? FinishReason, string? BlockReason, string? SafetyReason, string? ErrorMessage, GeminiUsage? Usage);
     private sealed record GeminiUsage(int? PromptTokens, int? CandidateTokens, int? TotalTokens);
 

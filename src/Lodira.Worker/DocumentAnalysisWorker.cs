@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Lodira.Application.Abstractions;
 using Lodira.Domain.Enums;
+using Lodira.Infrastructure.Ai;
 using Lodira.Infrastructure.Persistence;
 
 namespace Lodira.Worker;
@@ -54,6 +55,15 @@ public sealed class DocumentAnalysisWorker : BackgroundService
 
         try
         {
+            if (job.Document is not null && await HasNewerDocumentAsync(dbContext, job.Document, cancellationToken))
+            {
+                job.Document.MarkIgnored();
+                job.Complete(DateTimeOffset.UtcNow);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                logger.LogInformation("Job de analise {JobId} ignorado: documento {DocumentId} nao e o mais recente do ativo {AssetId}.", job.Id, job.DocumentId, job.Document.AssetId);
+                return;
+            }
+
             await processor.ProcessAsync(job, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -71,6 +81,13 @@ public sealed class DocumentAnalysisWorker : BackgroundService
         }
     }
 
+    private static Task<bool> HasNewerDocumentAsync(LodiraDbContext dbContext, Lodira.Domain.Entities.Document document, CancellationToken cancellationToken) =>
+        dbContext.Documents.AnyAsync(candidate =>
+            candidate.AssetId == document.AssetId
+            && candidate.Id != document.Id
+            && candidate.PublishedAt > document.PublishedAt,
+            cancellationToken);
+
     private async Task FailJobAsync(LodiraDbContext dbContext, Guid jobId, string error, Exception exception, CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
@@ -87,10 +104,22 @@ public sealed class DocumentAnalysisWorker : BackgroundService
             return;
         }
 
-        var retry = job.Fail(DateTimeOffset.UtcNow, error, options.MaxAttempts, options.RetryDelay);
+        var retryDelay = exception is AiProviderRateLimitException { RetryAfter: not null } rateLimit
+            ? rateLimit.RetryAfter!.Value
+            : ComputeRetryDelay(job.Attempts);
+        if (retryDelay > options.MaxRetryDelay) retryDelay = options.MaxRetryDelay;
+        var retry = job.Fail(DateTimeOffset.UtcNow, error, options.MaxAttempts, retryDelay);
         if (job.Document is not null) job.Document.MarkError();
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogError(exception, "Falha no job de analise {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}; erro={Error}", job.Id, retry, job.Attempts, options.MaxAttempts, error);
+    }
+
+    private TimeSpan ComputeRetryDelay(int attempt)
+    {
+        var multiplier = Math.Pow(2, Math.Max(0, attempt - 1));
+        var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
+        var delay = TimeSpan.FromTicks((long)(options.RetryDelay.Ticks * multiplier * jitter));
+        return delay <= options.MaxRetryDelay ? delay : options.MaxRetryDelay;
     }
 }

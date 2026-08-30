@@ -26,15 +26,27 @@ IHost host = Host.CreateDefaultBuilder(args)
         }
         else if (string.Equals(aiProvider, "OpenAI", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddHttpClient<IAiAnalysisService, OpenAiAnalysisService>();
+            services.AddHttpClient<OpenAiAnalysisService>();
+            services.AddScoped<IAiAnalysisService>(provider => new RateLimitedAiAnalysisService(
+                provider.GetRequiredService<OpenAiAnalysisService>(),
+                provider.GetRequiredService<IAiRequestRateLimiter>(),
+                provider.GetRequiredService<ILogger<RateLimitedAiAnalysisService>>()));
         }
         else if (string.Equals(aiProvider, "Gemini", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddHttpClient<IAiAnalysisService, GeminiAnalysisService>();
+            services.AddHttpClient<GeminiAnalysisService>();
+            services.AddScoped<IAiAnalysisService>(provider => new RateLimitedAiAnalysisService(
+                provider.GetRequiredService<GeminiAnalysisService>(),
+                provider.GetRequiredService<IAiRequestRateLimiter>(),
+                provider.GetRequiredService<ILogger<RateLimitedAiAnalysisService>>()));
         }
         else
         {
-            services.AddHttpClient<IAiAnalysisService, HttpAiAnalysisService>();
+            services.AddHttpClient<HttpAiAnalysisService>();
+            services.AddScoped<IAiAnalysisService>(provider => new RateLimitedAiAnalysisService(
+                provider.GetRequiredService<HttpAiAnalysisService>(),
+                provider.GetRequiredService<IAiRequestRateLimiter>(),
+                provider.GetRequiredService<ILogger<RateLimitedAiAnalysisService>>()));
         }
 
         services.AddDbContext<LodiraDbContext>(options => options.UseNpgsql(context.Configuration.GetConnectionString("Postgres")));
@@ -44,6 +56,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddHttpClient("documents");
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));
         services.Configure<AiProviderOptions>(context.Configuration.GetSection("AI"));
+        services.AddSingleton<IAiRequestRateLimiter, AiRequestRateLimiter>();
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));
         services.AddScoped<DocumentAnalysisProcessor>();
         services.AddSingleton<AiAnalysisValidator>();

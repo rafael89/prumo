@@ -21,7 +21,7 @@ public sealed class NewAssetBootstrapService
         logger.LogInformation("CVM bootstrap iniciado para {AssetCount} novo(s) FII", assets.Count);
         var candidates = await source.FindAsync(assets.Select(a => new DocumentSourceAsset(a.Ticker, a.Cnpj)).ToArray(), ct);
         logger.LogInformation("CVM bootstrap descobriu {DocumentCount} candidato(s) para novos FIIs", candidates.Count);
-        foreach (var candidate in candidates.GroupBy(c => c.Ticker, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderByDescending(c => c.PublishedAt).ThenByDescending(c => c.SourceIdentifier ?? string.Empty, StringComparer.Ordinal).First()))
+        foreach (var candidate in LatestDocumentSelector.SelectPerTicker(candidates))
         {
             var asset = assets.Single(a => a.Ticker.Equals(candidate.Ticker, StringComparison.OrdinalIgnoreCase));
             var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);

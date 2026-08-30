@@ -3,6 +3,7 @@ using Lodira.Application.Abstractions;
 using Lodira.Domain.Entities;
 using Lodira.Domain.Enums;
 using Lodira.Infrastructure.Persistence;
+using Lodira.Infrastructure.PortfolioImports;
 
 namespace Lodira.Worker;
 
@@ -62,10 +63,11 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
             return;
         }
 
-        logger.LogInformation("Fonte {SourceName} retornou {DocumentCount} documento(s) candidato(s)", source.Name, candidates.Count);
+        var latestCandidates = LatestDocumentSelector.SelectPerTicker(candidates).ToList();
+        logger.LogInformation("Fonte {SourceName} retornou {DocumentCount} candidato(s); {LatestDocumentCount} documento(s) mais recente(s) selecionado(s) para processamento", source.Name, candidates.Count, latestCandidates.Count);
         var newDocuments = 0;
         var duplicatedDocuments = 0;
-        foreach (var candidate in candidates)
+        foreach (var candidate in latestCandidates)
         {
             logger.LogInformation("Processando documento candidato do ticker {Ticker}: tipo={DocumentType}, identificador={SourceIdentifier}, url={SourceUrl}", candidate.Ticker, candidate.DocumentType, candidate.SourceIdentifier, candidate.SourceUrl);
             var asset = await dbContext.Assets.SingleOrDefaultAsync(item => item.Ticker == candidate.Ticker.ToUpper(), cancellationToken);
