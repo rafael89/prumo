@@ -113,6 +113,7 @@ function App() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [importProcessing, setImportProcessing] = useState(false)
+  const [failedNoticeDismissed, setFailedNoticeDismissed] = useState(false)
   const [positionPage, setPositionPage] = useState(1)
   const documentIdFromUrl = new URLSearchParams(location.search).get('documentId') ?? (route.startsWith('/documents/') ? route.slice('/documents/'.length) : null)
   useEffect(() => {
@@ -155,6 +156,9 @@ function App() {
     portfolios.data?.find((item) => item.id === selectedPortfolioId)
     ?? portfolios.data?.[0]
     ?? null
+  useEffect(() => {
+    if (activePortfolio?.id) setFailedNoticeDismissed(localStorage.getItem(`lodira.failed-notice.${activePortfolio.id}`) === '1')
+  }, [activePortfolio?.id])
 
   const dashboard = useQuery({
     queryKey: ['dashboard', activePortfolio?.id, positionPage],
@@ -167,6 +171,11 @@ function App() {
     queryFn: () => getJson<ProcessingStatus>(`/api/portfolios/${activePortfolio!.id}/document-processing-status`),
     enabled: Boolean(activePortfolio),
     refetchInterval: query => query.state.data?.status === 'Pending' || query.state.data?.status === 'Processing' ? 2000 : false,
+  })
+  const reprocessFailed = useMutation({
+    mutationFn: () => sendJson<{ requeuedCount: number }, { errorContains: string | null }>(`/api/portfolios/${activePortfolio!.id}/documents/reprocess-failed`, 'POST', { errorContains: null }),
+    onSuccess: async () => { setFailedNoticeDismissed(false); if (activePortfolio?.id) localStorage.removeItem(`lodira.failed-notice.${activePortfolio.id}`); await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }); await queryClient.invalidateQueries({ queryKey: ['documents'] }) },
+    onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
 
   const selectedAsset = dashboard.data?.positions.find((position) => position.assetId === selectedAssetId) ?? null
@@ -318,7 +327,7 @@ function App() {
           <div className="mx-auto flex max-w-[89.5rem] flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
             <div className="order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Visão geral</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aportes</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents', true)}>Documentos</Link></div>
-            <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.status !== 'Completed' && <span role="status" className={`rounded-full px-3 py-2 text-xs font-semibold ${processingStatus.data.status === 'Failed' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'}`}>{processingStatus.data.status === 'Processing' ? 'Processando documentos...' : processingStatus.data.status === 'Pending' ? 'Documentos aguardando processamento...' : processingStatus.data.message}</span>}<button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
+            <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.failedCount > 0 && !failedNoticeDismissed && <div role="status" className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"><span>{processingStatus.data.failedCount} documento(s) com erro</span><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="underline">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar'}</button><button type="button" aria-label="Marcar aviso como visto" onClick={() => { setFailedNoticeDismissed(true); if (activePortfolio?.id) localStorage.setItem(`lodira.failed-notice.${activePortfolio.id}`, '1') }} className="text-base leading-none">×</button></div>}{processingStatus.data && processingStatus.data.status !== 'Completed' && processingStatus.data.status !== 'Failed' && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{processingStatus.data.status === 'Processing' ? 'Processando documentos...' : 'Documentos aguardando processamento...'}</span>}<button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} privacyHidden={privacyHidden} onGenerateGuidance={(amount) => sendJson<DashboardGuidance, { amount: number }>(`/api/portfolios/${activePortfolio?.id ?? ''}/contribution-guidance`, 'POST', { amount })} />}

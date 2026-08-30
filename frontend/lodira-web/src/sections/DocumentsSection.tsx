@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons'
@@ -43,11 +43,22 @@ function analysisTone(importance: string) {
   return 'border-slate-300 bg-white text-slate-900'
 }
 
+function DocumentJobDetails({ document }: any) {
+  if (!document?.lastError) return null
+  return <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p className="font-semibold">Último erro ({document.jobStatus ?? 'Falha'})</p><p className="mt-2 break-words">{document.lastError}</p>{document.retryAt && <p className="mt-2 text-xs">Próxima tentativa: {formatDate(document.retryAt)}</p>}</div>
+}
+
 export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden, initialDocumentId }: any) {
+  const queryClient = useQueryClient()
   const [documentPage, setDocumentPage] = useState(1)
   const [documentFilter, setDocumentFilter] = useState('')
   const [documentStatus, setDocumentStatus] = useState('')
   const [documentTypeFilter, setDocumentTypeFilter] = useState('')
+  const [errorFilter, setErrorFilter] = useState('')
+  const reprocessFailed = useMutation({
+    mutationFn: () => sendJson<{ requeuedCount: number }>(`/api/portfolios/${portfolioId}/documents/reprocess-failed`, { errorContains: errorFilter.trim() || null }),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['documents'] }); await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }) },
+  })
 
   useEffect(() => {
     setDocumentPage(1)
@@ -104,6 +115,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
           <select aria-label="Filtrar documentos por status" value={documentStatus} onChange={(event) => { setDocumentStatus(event.target.value); setDocumentPage(1) }} className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Todos os status</option>{processingStatuses.map((label, index) => <option key={label} value={index}>{label}</option>)}</select>
           <select aria-label="Filtrar documentos por tipo" value={documentTypeFilter} onChange={(event) => { setDocumentTypeFilter(event.target.value); setDocumentPage(1) }} className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Todos os tipos</option>{documentTypes.map((label, index) => <option key={label} value={index}>{label}</option>)}</select>
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-900"><input value={errorFilter} onChange={(event) => setErrorFilter(event.target.value)} placeholder="Filtrar erro (opcional)..." className="min-w-48 flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 outline-none focus:border-rose-400" /><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="rounded-lg bg-rose-700 px-3 py-2 font-semibold text-white disabled:opacity-50">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar falhos'}</button>{reprocessFailed.data && <span>{reprocessFailed.data.requeuedCount} job(s) reaberto(s).</span>}</div>
         {documents.isLoading && <p className="py-5 text-sm text-slate-500">Carregando documentos...</p>}
         {!documents.isLoading && documents.data?.items.length === 0 && <p className="py-5 text-sm text-slate-500">Nenhum documento encontrado.</p>}
         <div className="mt-3 divide-y divide-slate-200">
@@ -116,6 +128,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
           })}
         </div>
         {documents.data && <Pagination page={documents.data.page} totalPages={documents.data.totalPages} onPageChange={setDocumentPage} />}
+        <DocumentJobDetails document={selectedDocument} />
       </div>
       <section id="document-details" className="scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
         {!selectedDocument && <p className="text-sm text-slate-500">Selecione um documento para ver os detalhes.</p>}
@@ -126,4 +139,10 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
       </section>
     </div>
   )
+}
+
+async function sendJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${apiUrl}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!response.ok) throw new Error('Não foi possível reprocessar os documentos.')
+  return response.json()
 }

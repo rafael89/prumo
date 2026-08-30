@@ -52,7 +52,7 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         var prompt = DocumentAnalysisPrompt.BuildGlobal(documentText, context);
         using var request = new HttpRequestMessage(HttpMethod.Post, string.Format(EndpointTemplate, Uri.EscapeDataString(model)))
         {
-            Content = JsonContent.Create(new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseSchema = AnalysisSchema } })
+            Content = JsonContent.Create(new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = AnalysisSchema } })
         };
         request.Headers.Add("x-goog-api-key", options.ApiKey);
         logger.LogInformation("Enviando análise ao provider {Provider}; model={Model}; textLength={TextLength}", "Gemini", options.Model, documentText.Length);

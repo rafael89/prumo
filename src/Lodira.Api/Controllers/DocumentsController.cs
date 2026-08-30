@@ -43,6 +43,7 @@ public sealed class DocumentsController : ControllerBase
         var totalItems = await query.CountAsync(cancellationToken);
         var documents = await query.OrderByDescending(document => document.PublishedAt).ThenByDescending(document => document.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).Select(document => CreateResponse(document)).ToListAsync(cancellationToken);
+        documents = await AttachJobDetailsAsync(documents, cancellationToken);
 
         return Ok(new PaginatedResponse<DocumentResponse>(documents, page, pageSize, totalItems, (int)Math.Ceiling(totalItems / (double)pageSize)));
     }
@@ -55,7 +56,33 @@ public sealed class DocumentsController : ControllerBase
             .Include(item => item.Asset)
             .SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
 
-        return document is null ? NotFound() : Ok(CreateResponse(document));
+        if (document is null) return NotFound();
+        var response = (await AttachJobDetailsAsync(new[] { CreateResponse(document) }, cancellationToken)).Single();
+        return Ok(response);
+    }
+
+    [HttpPost("portfolios/{portfolioId:guid}/documents/reprocess-failed")]
+    public async Task<ActionResult<ReprocessFailedDocumentsResponse>> ReprocessFailedDocuments(Guid portfolioId, [FromBody] ReprocessFailedDocumentsRequest? request, CancellationToken cancellationToken)
+    {
+        if (!await dbContext.Portfolios.AnyAsync(portfolio => portfolio.Id == portfolioId, cancellationToken)) return NotFound();
+        var errorFilter = request?.ErrorContains?.Trim();
+        var jobs = await dbContext.ProcessingJobs
+            .Include(job => job.Document)
+            .Where(job => job.JobType == ProcessingJobType.AnalyzeDocument
+                && job.Status == ProcessingJobStatus.Failed
+                && dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == job.Document!.AssetId)
+                && (string.IsNullOrEmpty(errorFilter) || (job.LastError != null && EF.Functions.ILike(job.LastError, $"%{errorFilter}%"))))
+            .ToListAsync(cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var job in jobs)
+        {
+            job.Requeue(now);
+            job.Document?.MarkWaitingProcessing();
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(new ReprocessFailedDocumentsResponse(jobs.Count));
     }
 
     [HttpGet("portfolios/{portfolioId:guid}/document-processing-status")]
@@ -133,6 +160,21 @@ public sealed class DocumentsController : ControllerBase
             document.ProcessedAt);
     }
 
+    private async Task<List<DocumentResponse>> AttachJobDetailsAsync(IEnumerable<DocumentResponse> documents, CancellationToken cancellationToken)
+    {
+        var responses = documents.ToList();
+        var documentIds = responses.Select(document => document.Id).ToArray();
+        var jobs = await dbContext.ProcessingJobs.AsNoTracking()
+            .Where(job => documentIds.Contains(job.DocumentId) && job.JobType == ProcessingJobType.AnalyzeDocument)
+            .OrderByDescending(job => job.StartedAt ?? job.CompletedAt ?? job.AvailableAt)
+            .ToListAsync(cancellationToken);
+        return responses.Select(document =>
+        {
+            var job = jobs.FirstOrDefault(item => item.DocumentId == document.Id);
+            return job is null ? document : document with { JobStatus = job.Status.ToString(), Attempts = job.Attempts, RetryAt = job.Status == ProcessingJobStatus.Queued ? job.AvailableAt : null, LastError = job.LastError };
+        }).ToList();
+    }
+
     private static DocumentAnalysisResponse CreateAnalysisResponse(Domain.Entities.DocumentAnalysis analysis, PortfolioDocumentAssessment? assessment = null)
     {
         return new DocumentAnalysisResponse(
@@ -164,7 +206,14 @@ public sealed record DocumentResponse(
     string? FilePath,
     DocumentProcessingStatus ProcessingStatus,
     DateTimeOffset DiscoveredAt,
-    DateTimeOffset? ProcessedAt);
+    DateTimeOffset? ProcessedAt,
+    string? JobStatus = null,
+    int Attempts = 0,
+    DateTimeOffset? RetryAt = null,
+    string? LastError = null);
+
+public sealed record ReprocessFailedDocumentsRequest(string? ErrorContains = null);
+public sealed record ReprocessFailedDocumentsResponse(int RequeuedCount);
 
 public sealed record ProcessingStatusResponse(string Status, int ActiveCount, int FailedCount, string Message);
 

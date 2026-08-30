@@ -82,4 +82,15 @@ public sealed class ProcessingJob
         AvailableAt = failedAt.Add(retryDelay);
         return true;
     }
+
+    public void Requeue(DateTimeOffset availableAt)
+    {
+        if (Status != ProcessingJobStatus.Failed)
+            throw new InvalidOperationException("Somente jobs falhos podem ser reabertos.");
+
+        Status = ProcessingJobStatus.Queued;
+        AvailableAt = availableAt.ToUniversalTime();
+        CompletedAt = null;
+        StartedAt = null;
+    }
 }
