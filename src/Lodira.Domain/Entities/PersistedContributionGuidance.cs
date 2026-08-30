@@ -28,4 +28,5 @@ public sealed class PersistedContributionGuidance
     public string MetadataJson { get; private set; } = string.Empty;
     public DateTimeOffset GeneratedAt { get; private set; }
     public List<PersistedContributionGuidanceAllocation> Allocations { get; private set; } = new();
+    public void ReplaceAllocations(IEnumerable<PersistedContributionGuidanceAllocation> allocations) { Allocations.Clear(); Allocations.AddRange(allocations); }
 }

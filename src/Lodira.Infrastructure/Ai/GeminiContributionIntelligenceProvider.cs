@@ -7,12 +7,13 @@ using Lodira.Application.Explainability;
 
 namespace Lodira.Infrastructure.Ai;
 
-public sealed class GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options) : IContributionIntelligenceProvider
+public sealed class GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter) : IContributionIntelligenceProvider
 {
     private readonly AiProviderOptions settings = options.Value;
     public async Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal amount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
+        using var permit = await limiter.AcquireAsync(ct);
         var prompt = JsonSerializer.Serialize(new { portfolioId, contributionAmount = amount, candidates });
         var request = new { contents = new[] { new { parts = new[] { new { text = "Escolha a distribuição mais coerente entre os candidatos elegíveis. Não invente evidências. Responda somente no schema.\n" + prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = Schema } };
         var raw = await SendAsync(settings.Model, request, ct);

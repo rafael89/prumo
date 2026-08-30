@@ -331,7 +331,6 @@ function App() {
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} privacyHidden={privacyHidden} onGenerateGuidance={(amount) => sendJson<DashboardGuidance, { amount: number }>(`/api/portfolios/${activePortfolio?.id ?? ''}/contribution-guidance`, 'POST', { amount })} />}
-        {route === '/portfolio' && activePortfolio && <TargetAllocationSection portfolioId={activePortfolio.id} />}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} privacyHidden={privacyHidden} />}
         <section className="mx-auto max-w-[89.5rem] px-6 pb-12">
           {feedback && (
@@ -344,6 +343,7 @@ function App() {
 
           {route === '/portfolio' && !portfolios.isError && <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start [&>*]:min-w-0">
             <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} />
+            <div className="order-2 self-start xl:col-start-2 xl:row-start-1"><TargetAllocationSection portfolioId={activePortfolio?.id ?? ''} /></div>
             {activePortfolio && <div className="order-2 self-stretch xl:col-start-2 xl:row-start-1 [&>section]:!h-full [&>section]:!px-0 [&>section]:!pb-0 [&>section>div]:!h-full"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
             {activePortfolio && <DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} initialDocumentId={documentIdFromUrl} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} />}
           </div>}

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowRight, faCircleCheck, faCircleInfo, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
+import { faArrowRight, faCircleCheck, faCircleInfo, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
 
 type Position = {
   id: string
@@ -218,7 +218,7 @@ function ContributionCard({ preview: rawPreview, privacyHidden, onGenerateGuidan
           <label htmlFor="dashboard-contribution" className="text-sm font-medium text-slate-700">Quanto pretende aportar?</label>
           <div className="mt-2 flex min-w-0 gap-2 sm:flex-row">
             <input id="dashboard-contribution" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="w-28 min-w-0 shrink-0 rounded-xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" />
-            <button type="submit" disabled={mutation.isPending} className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50">{mutation.isPending ? 'Calculando...' : 'Gerar orientação'}</button>
+            <button type="submit" disabled={mutation.isPending} className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faWandMagicSparkles} className="mr-2" />{mutation.isPending ? 'Calculando...' : 'Gerar orientação'}</button>
           </div>
           {validationError && <p className="mt-2 text-xs text-rose-700">{validationError}</p>}
           {mutation.isError && <p className="mt-2 text-xs text-rose-700">Não foi possível gerar a orientação. Confira o valor e tente novamente.</p>}
@@ -270,7 +270,7 @@ function RecentUpdatesCard({ items }: { items: DashboardAssessment[] }) {
     <CardHeader eyebrow="Mudanças recentes" linkLabel="Ver todas" to="/radar" />
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
       {items.slice(0, 5).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-2 py-4 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>{item.suggestedBehavior && <p className="mt-1 text-xs leading-5 text-slate-600">{item.suggestedBehavior}</p>}</div>
+        <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
     </div>}

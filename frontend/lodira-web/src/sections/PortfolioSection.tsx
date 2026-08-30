@@ -2,7 +2,7 @@
 import { useState, type FormEvent } from 'react'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPen, faTrash } from '@fortawesome/free-solid-svg-icons'
+import { faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
  type PortfolioSectionProps = { portfolios: any; activePortfolio: any; portfolioName: string; setPortfolioName: (value: string) => void; handleCreatePortfolio: (event: FormEvent<HTMLFormElement>) => void; createPortfolio: any; deletePortfolio: any; renamePortfolio: any; editingPortfolioId: string | null; setEditingPortfolioId: (id: string | null) => void; editingPortfolioName: string; setEditingPortfolioName: (value: string) => void; setSelectedPortfolioId: (id: string | null) => void; setSelectedDocumentId: (id: string | null) => void; setPositionPage: (page: number) => void; setFeedback: (value: any) => void; privacyHidden: boolean; positionForm: any; setPositionForm: (value: any) => void; assetTypeOptions: any; handleCreatePosition: (event: FormEvent<HTMLFormElement>) => void; createPosition: any; dashboard: any; editingPositionId: string | null; startEditing: (position: any) => void; handleUpdatePosition: (event: FormEvent<HTMLFormElement>, positionId: string) => void; editForm: any; setEditForm: (value: any) => void; updatePosition: any; setEditingPositionId: (id: string | null) => void; deletePosition: any; selectedAsset: any; setSelectedAssetId: (id: string | null) => void }
 function formatCurrency(value: number | null | undefined, hidden = false) { if (hidden) return 'R$ ••••••'; if (value == null) return 'Sem valor'; return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value) }
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
@@ -71,7 +71,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                 </div>
                 <div className="flex items-end">
                   <button type="submit" disabled={createPosition.isPending} className="h-[46px] w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
-                    {createPosition.isPending ? 'Salvando...' : 'Adicionar posi\u00e7\u00e3o'}
+                    <FontAwesomeIcon icon={faPlus} className="mr-2" />{createPosition.isPending ? 'Salvando...' : 'Adicionar'}
                   </button>
                 </div>
               </form>

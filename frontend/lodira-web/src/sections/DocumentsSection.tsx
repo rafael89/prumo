@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons'
+import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass, faRotate } from '@fortawesome/free-solid-svg-icons'
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
 const priorityLabels: Record<string, string> = { Critical: 'Crítica', High: 'Alta', Medium: 'Média', Low: 'Baixa' }
@@ -59,6 +59,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     mutationFn: () => sendJson<{ requeuedCount: number }>(`/api/portfolios/${portfolioId}/documents/reprocess-failed`, { errorContains: errorFilter.trim() || null }),
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['documents'] }); await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }) },
   })
+  const processingStatus = useQuery({ queryKey: ['document-processing-status', portfolioId], queryFn: () => getJson(`/api/portfolios/${portfolioId}/document-processing-status`), enabled: Boolean(portfolioId), refetchInterval: 2000 })
 
   useEffect(() => {
     setDocumentPage(1)
@@ -115,7 +116,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
           <select aria-label="Filtrar documentos por status" value={documentStatus} onChange={(event) => { setDocumentStatus(event.target.value); setDocumentPage(1) }} className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Todos os status</option>{processingStatuses.map((label, index) => <option key={label} value={index}>{label}</option>)}</select>
           <select aria-label="Filtrar documentos por tipo" value={documentTypeFilter} onChange={(event) => { setDocumentTypeFilter(event.target.value); setDocumentPage(1) }} className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Todos os tipos</option>{documentTypes.map((label, index) => <option key={label} value={index}>{label}</option>)}</select>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-900"><input value={errorFilter} onChange={(event) => setErrorFilter(event.target.value)} placeholder="Filtrar erro (opcional)..." className="min-w-48 flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 outline-none focus:border-rose-400" /><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="rounded-lg bg-rose-700 px-3 py-2 font-semibold text-white disabled:opacity-50">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar falhos'}</button>{reprocessFailed.data && <span>{reprocessFailed.data.requeuedCount} job(s) reaberto(s).</span>}</div>
+        {processingStatus.data?.failedCount > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-900"><span className="font-semibold">{processingStatus.data.failedCount} documento(s) com falha</span><input value={errorFilter} onChange={(event) => setErrorFilter(event.target.value)} placeholder="Filtrar erro (opcional)..." className="min-w-48 flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 outline-none focus:border-rose-400" /><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="rounded-lg bg-rose-700 px-3 py-2 font-semibold text-white disabled:opacity-50"><FontAwesomeIcon icon={faRotate} className="mr-2" />{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar falhos'}</button>{reprocessFailed.data && <span>{reprocessFailed.data.requeuedCount} job(s) reaberto(s).</span>}</div>}
         {documents.isLoading && <p className="py-5 text-sm text-slate-500">Carregando documentos...</p>}
         {!documents.isLoading && documents.data?.items.length === 0 && <p className="py-5 text-sm text-slate-500">Nenhum documento encontrado.</p>}
         <div className="mt-3 divide-y divide-slate-200">

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Lodira.Application.Abstractions;
 using Lodira.Application.Documents;
 using Lodira.Application.Intelligence;
+using Lodira.Application.Contributions;
 using Lodira.Infrastructure.Ai;
 using Lodira.Infrastructure.DocumentSources;
 using Lodira.Infrastructure.Documents;
@@ -56,6 +57,12 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddHttpClient("documents");
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));
         services.Configure<AiProviderOptions>(context.Configuration.GetSection("AI"));
+        if (string.Equals(aiProvider, "Gemini", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddHttpClient<GeminiContributionIntelligenceProvider>();
+            services.AddScoped<IContributionIntelligenceProvider>(provider => provider.GetRequiredService<GeminiContributionIntelligenceProvider>());
+        }
+        else services.AddSingleton<IContributionIntelligenceProvider, DeterministicContributionIntelligenceProvider>();
         services.AddSingleton<IAiRequestRateLimiter, AiRequestRateLimiter>();
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));
         services.AddScoped<DocumentAnalysisProcessor>();
@@ -68,6 +75,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddHostedService<DocumentDiscoveryWorker>();
         services.AddHostedService<DocumentDownloadWorker>();
         services.AddHostedService<DocumentAnalysisWorker>();
+        services.AddHostedService<ContributionGuidanceWorker>();
     })
     .Build();
 
