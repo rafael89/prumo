@@ -58,6 +58,29 @@ public sealed class DocumentsController : ControllerBase
         return document is null ? NotFound() : Ok(CreateResponse(document));
     }
 
+    [HttpGet("portfolios/{portfolioId:guid}/document-processing-status")]
+    public async Task<ActionResult<ProcessingStatusResponse>> GetDocumentProcessingStatus(Guid portfolioId, CancellationToken cancellationToken)
+    {
+        if (!await dbContext.Portfolios.AnyAsync(portfolio => portfolio.Id == portfolioId, cancellationToken)) return NotFound();
+
+        var statuses = await dbContext.Documents
+            .Where(document => dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == document.AssetId))
+            .Select(document => document.ProcessingStatus)
+            .ToListAsync(cancellationToken);
+        var processing = statuses.Count(status => status == DocumentProcessingStatus.Processing);
+        var pending = statuses.Count(status => status is DocumentProcessingStatus.Discovered or DocumentProcessingStatus.Downloaded or DocumentProcessingStatus.WaitingProcessing);
+        var failed = statuses.Count(status => status == DocumentProcessingStatus.Error);
+        var state = processing > 0 ? "Processing" : pending > 0 ? "Pending" : failed > 0 ? "Failed" : "Completed";
+        var message = state switch
+        {
+            "Processing" => "Estamos processando seus documentos.",
+            "Pending" => "Há documentos aguardando processamento.",
+            "Failed" => "Não foi possível processar um ou mais documentos.",
+            _ => "Nenhum processamento pendente."
+        };
+        return Ok(new ProcessingStatusResponse(state, pending + processing, failed, message));
+    }
+
     [HttpGet("documents/{documentId:guid}/analysis")]
     public async Task<ActionResult<DocumentAnalysisResponse>> GetLatestAnalysis(Guid documentId, [FromQuery] Guid? portfolioId, CancellationToken cancellationToken)
     {
@@ -142,6 +165,8 @@ public sealed record DocumentResponse(
     DocumentProcessingStatus ProcessingStatus,
     DateTimeOffset DiscoveredAt,
     DateTimeOffset? ProcessedAt);
+
+public sealed record ProcessingStatusResponse(string Status, int ActiveCount, int FailedCount, string Message);
 
 public sealed record DocumentAnalysisResponse(
     Guid Id,

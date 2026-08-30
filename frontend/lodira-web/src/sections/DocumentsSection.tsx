@@ -58,6 +58,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     queryKey: ['documents', portfolioId, documentPage, documentFilter, documentStatus, documentTypeFilter],
     queryFn: () => getJson(`/api/portfolios/${portfolioId}/documents?page=${documentPage}&pageSize=10&asset=${encodeURIComponent(documentFilter)}${documentStatus ? `&status=${documentStatus}` : ''}${documentTypeFilter ? `&type=${documentTypeFilter}` : ''}`),
     enabled: Boolean(portfolioId),
+    refetchInterval: query => query.state.data?.items?.some((item: any) => [0, 1, 2, 3].includes(item.processingStatus)) ? 2000 : false,
   })
 
   const selectedDocument = documents.data?.items.find((item) => item.id === selectedDocumentId) ?? null
@@ -65,6 +66,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     queryKey: ['document-analysis', selectedDocument?.id ?? null, portfolioId],
     queryFn: () => selectedDocument ? getOptionalJson(`/api/documents/${selectedDocument.id}/analysis?portfolioId=${portfolioId}`) : Promise.resolve(null),
     enabled: Boolean(selectedDocument?.id),
+    refetchInterval: selectedDocument && [0, 1, 2, 3].includes(selectedDocument.processingStatus) ? 2000 : false,
   })
 
   if (!portfolioId) return null

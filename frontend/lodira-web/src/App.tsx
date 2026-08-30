@@ -15,6 +15,7 @@ type AssetType = 0 | 1 | 2 | 3
 type Feedback = { tone: 'success' | 'error'; message: string } | null
 
 type PortfolioSummary = { id: string; name: string; totalValue: number; positionCount: number }
+type ProcessingStatus = { status: 'Pending' | 'Processing' | 'Completed' | 'Failed'; activeCount: number; failedCount: number; message: string }
 type Position = {
   id: string; assetId: string; assetClass: number
   ticker: string
@@ -111,6 +112,7 @@ function App() {
   const [privacyHidden, setPrivacyHidden] = useState(false)
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const [importProcessing, setImportProcessing] = useState(false)
   const [positionPage, setPositionPage] = useState(1)
   useEffect(() => {
     if (feedback?.tone !== 'success') return
@@ -154,6 +156,13 @@ function App() {
     queryKey: ['dashboard', activePortfolio?.id, positionPage],
     queryFn: () => getJson<Dashboard>(`/api/portfolios/${activePortfolio!.id}/dashboard?page=${positionPage}&pageSize=10`),
     enabled: Boolean(activePortfolio),
+  })
+
+  const processingStatus = useQuery({
+    queryKey: ['document-processing-status', activePortfolio?.id],
+    queryFn: () => getJson<ProcessingStatus>(`/api/portfolios/${activePortfolio!.id}/document-processing-status`),
+    enabled: Boolean(activePortfolio),
+    refetchInterval: query => query.state.data?.status === 'Pending' || query.state.data?.status === 'Processing' ? 2000 : false,
   })
 
   const selectedAsset = dashboard.data?.positions.find((position) => position.assetId === selectedAssetId) ?? null
@@ -305,7 +314,7 @@ function App() {
           <div className="mx-auto flex max-w-[89.5rem] flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
             <div className="order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Visão geral</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aportes</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents', true)}>Documentos</Link></div>
-            <div className="order-2 flex items-center gap-2 md:order-3"><button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
+            <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.status !== 'Completed' && <span role="status" className={`rounded-full px-3 py-2 text-xs font-semibold ${processingStatus.data.status === 'Failed' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'}`}>{processingStatus.data.status === 'Processing' ? 'Processando documentos...' : processingStatus.data.status === 'Pending' ? 'Documentos aguardando processamento...' : processingStatus.data.message}</span>}<button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} privacyHidden={privacyHidden} onGenerateGuidance={(amount) => sendJson<DashboardGuidance, { amount: number }>(`/api/portfolios/${activePortfolio?.id ?? ''}/contribution-guidance`, 'POST', { amount })} />}
@@ -322,7 +331,7 @@ function App() {
 
           {route === '/portfolio' && !portfolios.isError && <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start [&>*]:min-w-0">
             <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} />
-            {activePortfolio && <div className="order-2 self-stretch xl:col-start-2 xl:row-start-1 [&>section]:!h-full [&>section]:!px-0 [&>section]:!pb-0 [&>section>div]:!h-full"><B3ImportSection portfolioId={activePortfolio.id} /></div>}
+            {activePortfolio && <div className="order-2 self-stretch xl:col-start-2 xl:row-start-1 [&>section]:!h-full [&>section]:!px-0 [&>section]:!pb-0 [&>section>div]:!h-full"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
             {activePortfolio && <DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} />}
           </div>}
         </section>
