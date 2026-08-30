@@ -4,8 +4,8 @@ services:
     environment:
       PGDATA: /var/lib/postgresql/18/docker
       POSTGRES_DB: ${POSTGRES_DB:-prumo}
-      POSTGRES_USER: ${POSTGRES_USER:-prumo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prumo}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
     ports:
       - "5432:5432"
     volumes:
@@ -19,7 +19,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-prumo};Password=${POSTGRES_PASSWORD:-prumo}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
     ports:
       - "8080:8080"
     volumes:
@@ -34,7 +34,7 @@ services:
       target: worker
     environment:
       DOTNET_ENVIRONMENT: Production
-      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-prumo};Password=${POSTGRES_PASSWORD:-prumo}
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
     volumes:
       - document-storage:/storage/documents
     depends_on:

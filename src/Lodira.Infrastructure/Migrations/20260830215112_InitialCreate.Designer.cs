@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Lodira.Infrastructure.Migrations
 {
     [DbContext(typeof(LodiraDbContext))]
-    [Migration("20260830214502_DocumentMetadataAndBootstrapPolicy")]
-    partial class DocumentMetadataAndBootstrapPolicy
+    [Migration("20260830215112_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

@@ -15,7 +15,7 @@ public sealed class LodiraDbContextFactory : IDesignTimeDbContextFactory<LodiraD
             .Build();
 
         var connectionString = configuration.GetConnectionString("Postgres")
-            ?? "Host=localhost;Port=5432;Database=prumo;Username=prumo;Password=prumo";
+            ?? "Host=localhost;Port=5432;Database=prumo;Username=postgres;Password=dev123";
 
         var options = new DbContextOptionsBuilder<LodiraDbContext>()
             .UseNpgsql(connectionString)
