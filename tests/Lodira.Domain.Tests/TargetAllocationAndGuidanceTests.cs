@@ -2,6 +2,7 @@ using Lodira.Application.Contributions;
 using Lodira.Application.Portfolio;
 using Lodira.Domain.Entities;
 using Lodira.Domain.Enums;
+using Lodira.Application.Explainability;
 
 namespace Lodira.Domain.Tests;
 
@@ -23,6 +24,45 @@ public sealed class TargetAllocationAndGuidanceTests
     {
         var result = new PortfolioHealthCalculator().Calculate(new Portfolio("Teste"), Array.Empty<TargetAllocation>());
         Assert.Equal(PortfolioHealthStatus.NotConfigured, result.Status);
+    }
+
+    [Fact]
+    public void Applying_buy_updates_quantity_and_weighted_average_but_preserves_market_price()
+    {
+        var position = new PortfolioPosition(Guid.NewGuid(), Guid.NewGuid(), 10, 100, 120);
+        position.ApplyBuy(5, 200);
+        Assert.Equal(15, position.Quantity);
+        Assert.Equal(2000m / 15m, position.AveragePrice);
+        Assert.Equal(120, position.CurrentPrice);
+        Assert.Equal(1800, position.CurrentValue);
+    }
+
+    [Fact]
+    public void Applying_buy_rejects_non_positive_values()
+    {
+        var position = new PortfolioPosition(Guid.NewGuid(), Guid.NewGuid(), 1, 10, 10);
+        Assert.Throws<ArgumentOutOfRangeException>(() => position.ApplyBuy(0, 10));
+        Assert.Throws<ArgumentOutOfRangeException>(() => position.ApplyBuy(1, 0));
+    }
+
+    [Fact]
+    public void Intelligence_validation_rejects_unknown_blocked_and_over_budget_candidates()
+    {
+        var allowed = Guid.NewGuid(); var blocked = Guid.NewGuid();
+        var candidates = new[] { new ContributionCandidate(allowed, "AAA", AssetClass.Fii, 100, 10, 50, 50, 1000, false, Array.Empty<ContributionAssessmentContext>()), new ContributionCandidate(blocked, "BBB", AssetClass.Fii, 100, 10, 50, 50, 1000, true, Array.Empty<ContributionAssessmentContext>()) };
+        var result = new ContributionIntelligenceResult(new[] { new ContributionCandidateEvaluation(blocked, 1, 100, "x", 1, Array.Empty<EvidenceReference>()) }, "x", ContributionIntelligenceAvailability.IntelligenceAvailable, new("e", "p", "pr", "x", "m", DateTimeOffset.UtcNow));
+        Assert.False(ContributionIntelligenceValidator.IsValid(result, 1000, candidates));
+    }
+
+    [Fact]
+    public void Valid_intelligence_result_changes_choice_within_the_same_class()
+    {
+        var first = Guid.NewGuid(); var second = Guid.NewGuid(); var health = CreateHealth((AssetClass.Fii, 100, 100));
+        var fallback = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(Guid.NewGuid(), 100, health, new[] { new GuidancePosition(first, "AAA", AssetClass.Fii, 50, 50), new GuidancePosition(second, "BBB", AssetClass.Fii, 50, 50) }, Array.Empty<GuidanceAssessment>()));
+        var result = new ContributionIntelligenceResult(new[] { new ContributionCandidateEvaluation(second, 1, 100, "Evidência mais favorável", .9m, new[] { new EvidenceReference("event", "e1", "Evento relevante") }) }, "BBB priorizado", ContributionIntelligenceAvailability.IntelligenceAvailable, new("e", "p", "pr", "Fake", "test", DateTimeOffset.UtcNow));
+        var applied = ContributionIntelligenceApplier.Apply(fallback, result, new[] { new GuidancePosition(first, "AAA", AssetClass.Fii, 50, 50), new GuidancePosition(second, "BBB", AssetClass.Fii, 50, 50) });
+        Assert.Equal(second, applied.Allocations.Single().AssetId);
+        Assert.Equal("Evidência mais favorável", applied.Allocations.Single().Reason);
     }
 
     [Fact]

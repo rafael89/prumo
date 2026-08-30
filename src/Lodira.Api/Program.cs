@@ -9,6 +9,8 @@ using Lodira.Application.PortfolioImports;
 using Lodira.Application.Portfolio;
 using Lodira.Infrastructure.PortfolioImports;
 using Lodira.Application.Intelligence;
+using Lodira.Application.Contributions;
+using Lodira.Infrastructure.Ai;
 using Lodira.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +23,7 @@ builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>
 builder.Services.AddDbContext<LodiraDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 builder.Services.Configure<CvmFnetOptions>(builder.Configuration.GetSection("Documents"));
+builder.Services.Configure<AiProviderOptions>(builder.Configuration.GetSection("AI"));
 builder.Services.AddHttpClient<CvmFnetDocumentSource>();
 builder.Services.AddSingleton<IPortfolioImporter, B3XlsxPortfolioImporter>();
 builder.Services.AddScoped<NewAssetBootstrapService>();
@@ -30,6 +33,12 @@ builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<IPortfolioAssessmentFreshnessEvaluator, PortfolioAssessmentFreshnessEvaluator>();
 builder.Services.AddSingleton<IPortfolioImpactAssessmentService, PortfolioImpactAssessmentService>();
 builder.Services.AddScoped<PortfolioAssessmentCurrentService>();
+if (string.Equals(builder.Configuration["AI:Provider"], "Gemini", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddHttpClient<GeminiContributionIntelligenceProvider>();
+    builder.Services.AddScoped<IContributionIntelligenceProvider>(p => p.GetRequiredService<GeminiContributionIntelligenceProvider>());
+}
+else builder.Services.AddSingleton<IContributionIntelligenceProvider, DeterministicContributionIntelligenceProvider>();
 
 var app = builder.Build();
 

@@ -45,6 +45,15 @@ public sealed class PortfolioPosition
             : 0;
     }
 
+    public void ApplyBuy(decimal quantity, decimal unitPrice)
+    {
+        if (quantity <= 0) throw new ArgumentOutOfRangeException(nameof(quantity));
+        if (unitPrice <= 0) throw new ArgumentOutOfRangeException(nameof(unitPrice));
+        var newQuantity = Quantity + quantity;
+        var newAveragePrice = ((Quantity * AveragePrice) + (quantity * unitPrice)) / newQuantity;
+        Update(newQuantity, newAveragePrice, CurrentPrice);
+    }
+
     public static decimal? CalculateCurrentValue(decimal quantity, decimal? currentPrice)
     {
         return currentPrice.HasValue ? quantity * currentPrice.Value : null;

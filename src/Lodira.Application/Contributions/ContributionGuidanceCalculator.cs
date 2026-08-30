@@ -5,7 +5,7 @@ using Lodira.Domain.Enums;
 namespace Lodira.Application.Contributions;
 
 public sealed record GuidancePosition(Guid AssetId, string Ticker, AssetClass AssetClass, decimal CurrentValue, decimal CurrentWeight);
-public sealed record GuidanceAssessment(Guid AssetId, CapitalDecisionImpact Impact, AssessmentStatus Status, string? Evidence, string AssessmentVersion);
+public sealed record GuidanceAssessment(Guid AssetId, CapitalDecisionImpact Impact, AssessmentStatus Status, string? Evidence, string AssessmentVersion, AttentionPriority AttentionPriority = AttentionPriority.Low, ActionRequirement ActionRequirement = ActionRequirement.None, string Summary = "", string WhyItMatters = "", string SuggestedBehavior = "", decimal Confidence = 0);
 public sealed record ContributionGuidanceInput(Guid PortfolioId, decimal ContributionAmount, PortfolioHealthResult Health, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<GuidanceAssessment> Assessments);
 public sealed record ContributionAllocation(Guid AssetId, string Ticker, AssetClass AssetClass, decimal Amount, string Reason, IReadOnlyList<string> Evidence);
 public sealed record AvoidedCandidate(Guid AssetId, string Ticker, AssetClass AssetClass, ContributionAvoidanceReasonType ReasonType, string Reason, IReadOnlyList<string> Evidence);

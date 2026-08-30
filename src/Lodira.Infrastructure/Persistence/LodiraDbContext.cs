@@ -22,6 +22,10 @@ public sealed class LodiraDbContext : DbContext
     public DbSet<InvestmentEvent> InvestmentEvents => Set<InvestmentEvent>();
     public DbSet<InvestmentEventEvidence> InvestmentEventEvidence => Set<InvestmentEventEvidence>();
     public DbSet<PortfolioAssessment> PortfolioAssessments => Set<PortfolioAssessment>();
+    public DbSet<PersistedContributionGuidance> ContributionGuidances => Set<PersistedContributionGuidance>();
+    public DbSet<PersistedContributionGuidanceAllocation> ContributionGuidanceAllocations => Set<PersistedContributionGuidanceAllocation>();
+    public DbSet<PortfolioTransaction> PortfolioTransactions => Set<PortfolioTransaction>();
+    public DbSet<PortfolioTransactionItem> PortfolioTransactionItems => Set<PortfolioTransactionItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

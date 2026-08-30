@@ -9,6 +9,7 @@ using Lodira.Domain.Enums;
 using Lodira.Domain.Rules;
 using Lodira.Infrastructure.Persistence;
 using Lodira.Infrastructure.PortfolioImports;
+using Lodira.Application.Portfolio;
 
 namespace Lodira.Api.Controllers;
 
@@ -66,7 +67,7 @@ public sealed class PortfolioImportsController : ControllerBase
             else { position.Update(item.Quantity, item.AveragePrice ?? position.AveragePrice, item.CurrentPrice ?? position.CurrentPrice); updated++; }
         }
         PortfolioCalculator.RecalculateWeights(portfolio.Positions);
-        session.MarkConfirmed(); session.MarkCompleted(); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        session.MarkConfirmed(); session.SetPortfolioSnapshotKey(PortfolioSnapshotKeyCalculator.Calculate(portfolio)); session.MarkCompleted(); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
         logger.LogInformation("Import confirmed: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, CreatedAssetCount={CreatedAssetCount}, AddedToPortfolioAssetCount={AddedToPortfolioAssetCount}, UpdatedPositionCount={UpdatedPositionCount}", session.Id, portfolioId, createdAssets, addedToPortfolio, updated);
         try { await bootstrap.DiscoverLatestOnlyAsync(addedAssetIds, ct); } catch (Exception exception) { logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId); }
         return Ok(new ImportConfirmationDto("Completed", createdAssets, addedToPortfolio, updated));

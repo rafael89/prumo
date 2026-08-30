@@ -17,7 +17,7 @@ namespace Lodira.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -298,6 +298,109 @@ namespace Lodira.Infrastructure.Migrations
                     b.ToTable("InvestmentEventEvidence");
                 });
 
+            modelBuilder.Entity("Lodira.Domain.Entities.PersistedContributionGuidance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EngineVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("GeneratedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IntelligenceAvailability")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("MetadataJson")
+                        .IsRequired()
+                        .HasMaxLength(100000)
+                        .HasColumnType("character varying(100000)");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PortfolioSnapshotKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Reasoning")
+                        .IsRequired()
+                        .HasMaxLength(10000)
+                        .HasColumnType("character varying(10000)");
+
+                    b.Property<decimal>("RequestedAmount")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<string>("TargetAllocationKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PortfolioId", "PortfolioSnapshotKey", "TargetAllocationKey", "RequestedAmount", "GeneratedAt");
+
+                    b.ToTable("ContributionGuidances");
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PersistedContributionGuidanceAllocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Confidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)");
+
+                    b.Property<Guid>("ContributionGuidanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasMaxLength(100000)
+                        .HasColumnType("character varying(100000)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("ContributionGuidanceId", "AssetId")
+                        .IsUnique();
+
+                    b.ToTable("ContributionGuidanceAllocations");
+                });
+
             modelBuilder.Entity("Lodira.Domain.Entities.Portfolio", b =>
                 {
                     b.Property<Guid>("Id")
@@ -435,6 +538,10 @@ namespace Lodira.Infrastructure.Migrations
                     b.Property<Guid>("PortfolioId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("PortfolioSnapshotKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<DateTimeOffset?>("ReferenceDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -495,6 +602,69 @@ namespace Lodira.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("PortfolioPositions");
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ContributionGuidanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContributionGuidanceId");
+
+                    b.HasIndex("PortfolioId", "OccurredAt");
+
+                    b.ToTable("PortfolioTransactions");
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioTransactionItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PortfolioTransactionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("PortfolioTransactionId");
+
+                    b.ToTable("PortfolioTransactionItems");
                 });
 
             modelBuilder.Entity("Lodira.Domain.Entities.ProcessingJob", b =>
@@ -667,6 +837,23 @@ namespace Lodira.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Lodira.Domain.Entities.PersistedContributionGuidanceAllocation", b =>
+                {
+                    b.HasOne("Lodira.Domain.Entities.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Lodira.Domain.Entities.PersistedContributionGuidance", "ContributionGuidance")
+                        .WithMany("Allocations")
+                        .HasForeignKey("ContributionGuidanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ContributionGuidance");
+                });
+
             modelBuilder.Entity("Lodira.Domain.Entities.PortfolioAssessment", b =>
                 {
                     b.HasOne("Lodira.Domain.Entities.InvestmentEvent", "InvestmentEvent")
@@ -699,6 +886,37 @@ namespace Lodira.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Asset");
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioTransaction", b =>
+                {
+                    b.HasOne("Lodira.Domain.Entities.PersistedContributionGuidance", null)
+                        .WithMany()
+                        .HasForeignKey("ContributionGuidanceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Lodira.Domain.Entities.Portfolio", null)
+                        .WithMany()
+                        .HasForeignKey("PortfolioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioTransactionItem", b =>
+                {
+                    b.HasOne("Lodira.Domain.Entities.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Lodira.Domain.Entities.PortfolioTransaction", "PortfolioTransaction")
+                        .WithMany("Items")
+                        .HasForeignKey("PortfolioTransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PortfolioTransaction");
                 });
 
             modelBuilder.Entity("Lodira.Domain.Entities.ProcessingJob", b =>
@@ -735,11 +953,21 @@ namespace Lodira.Infrastructure.Migrations
                     b.Navigation("Evidence");
                 });
 
+            modelBuilder.Entity("Lodira.Domain.Entities.PersistedContributionGuidance", b =>
+                {
+                    b.Navigation("Allocations");
+                });
+
             modelBuilder.Entity("Lodira.Domain.Entities.Portfolio", b =>
                 {
                     b.Navigation("Positions");
 
                     b.Navigation("TargetAllocations");
+                });
+
+            modelBuilder.Entity("Lodira.Domain.Entities.PortfolioTransaction", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

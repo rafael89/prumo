@@ -18,8 +18,10 @@ public sealed class PortfolioImportSession
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? ConfirmedAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
+    public string? PortfolioSnapshotKey { get; private set; }
     public string? Error { get; private set; }
     public void MarkConfirmed() { Status = PortfolioImportStatus.Confirmed; ConfirmedAt = DateTimeOffset.UtcNow; }
     public void MarkCompleted() { Status = PortfolioImportStatus.Completed; CompletedAt = DateTimeOffset.UtcNow; }
+    public void SetPortfolioSnapshotKey(string snapshotKey) { PortfolioSnapshotKey = string.IsNullOrWhiteSpace(snapshotKey) ? throw new ArgumentException("A chave do snapshot é obrigatória.", nameof(snapshotKey)) : snapshotKey.Trim(); }
     public void MarkFailed(string error) { Status = PortfolioImportStatus.Failed; Error = error; }
 }
