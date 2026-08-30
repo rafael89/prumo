@@ -124,7 +124,12 @@ public sealed class DocumentAnalysisProcessor
     private async Task EnsureExistingAnalysisFeedsRadarAsync(DocumentAnalysis analysis, CancellationToken cancellationToken)
     {
         if (analysis.Importance is not (AnalysisImportance.Critical or AnalysisImportance.Relevant)) return;
-        if (await dbContext.InvestmentEvents.AnyAsync(item => item.DocumentAnalysisId == analysis.Id, cancellationToken)) return;
+        var existingEvents = await dbContext.InvestmentEvents.Include(item => item.AffectedAssets).Where(item => item.DocumentAnalysisId == analysis.Id).ToListAsync(cancellationToken);
+        if (existingEvents.Count > 0)
+        {
+            foreach (var investmentEvent in existingEvents) await EnsureAssessmentsForEventAsync(analysis, investmentEvent, cancellationToken);
+            return;
+        }
         var document = analysis.Document;
         var ticker = document?.Asset?.Ticker;
         if (document is null || string.IsNullOrWhiteSpace(ticker)) return;
@@ -133,6 +138,24 @@ public sealed class DocumentAnalysisProcessor
             new AiInvestmentEventResult(InvestmentEventType.Other, document.PublishedAt, analysis.Summary, Array.Empty<string>(), new[] { ticker })
         }, cancellationToken);
         logger.LogInformation("Evento documental reconstruído para análise já persistida {AnalysisId}.", analysis.Id);
+    }
+
+    private async Task EnsureAssessmentsForEventAsync(DocumentAnalysis analysis, InvestmentEvent investmentEvent, CancellationToken cancellationToken)
+    {
+        var assetIds = investmentEvent.AffectedAssets.Select(asset => asset.Id).ToArray();
+        if (assetIds.Length == 0) return;
+        var portfolios = await dbContext.Portfolios.Include(portfolio => portfolio.Positions).ThenInclude(position => position.Asset).Where(portfolio => portfolio.Positions.Any(position => assetIds.Contains(position.AssetId))).ToListAsync(cancellationToken);
+        foreach (var portfolio in portfolios)
+        {
+            var targets = await dbContext.TargetAllocations.Where(target => target.PortfolioId == portfolio.Id).ToListAsync(cancellationToken);
+            var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
+            var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
+            var relevantPositions = portfolio.Positions.Where(position => assetIds.Contains(position.AssetId)).Select(position => new RelevantPositionContext(position.AssetId, position.Asset?.Ticker ?? string.Empty, position.Asset?.AssetClass ?? AssetClass.Other, position.CurrentValue ?? 0, position.PortfolioWeight)).ToList();
+            var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health));
+            var snapshotKey = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
+            if (await dbContext.PortfolioAssessments.AnyAsync(item => item.PortfolioId == portfolio.Id && item.InvestmentEventId == investmentEvent.Id && item.PortfolioSnapshotKey == snapshotKey && item.TargetAllocationKey == targetKey && item.AssessmentVersion == portfolioImpactAssessmentService.Version, cancellationToken)) continue;
+            dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, AssessmentStatus.Detected, AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, portfolioImpactAssessmentService.Version, snapshotKey, investmentEvent.Version));
+        }
     }
 
     private async Task PersistEventsAndAssessmentsAsync(DocumentAnalysis analysis, IReadOnlyList<AiInvestmentEventResult> results, CancellationToken cancellationToken)

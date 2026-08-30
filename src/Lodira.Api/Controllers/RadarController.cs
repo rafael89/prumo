@@ -49,6 +49,34 @@ public sealed class RadarController : ControllerBase
         return Ok(new RadarResponse(pageItems.Where(x => x.RequiresAttention).ToList(), pageItems.Where(x => !x.RequiresAttention).ToList(), items.Count(x => x.RequiresAttention), items.Count(x => x.UserState == AssessmentUserState.Unread), page, pageSize, total, (int)Math.Ceiling(total / (double)pageSize)));
     }
 
+    [HttpPost("repair")]
+    public async Task<ActionResult<RadarRepairResponse>> Repair([FromQuery] Guid portfolioId, CancellationToken ct)
+    {
+        var portfolioExists = await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct);
+        if (!portfolioExists) return NotFound();
+        var candidates = await db.DocumentAnalyses
+            .Where(analysis => (analysis.Importance == AnalysisImportance.Critical || analysis.Importance == AnalysisImportance.Relevant)
+                && db.InvestmentEvents.Any(eventItem => eventItem.DocumentAnalysisId == analysis.Id)
+                && !db.PortfolioAssessments.Any(assessment => assessment.PortfolioId == portfolioId && assessment.InvestmentEvent!.DocumentAnalysisId == analysis.Id)
+                && db.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == analysis.Document!.AssetId))
+            .Select(analysis => analysis.DocumentId)
+            .ToListAsync(ct);
+        var activeJobs = await db.ProcessingJobs
+            .Where(job => job.JobType == ProcessingJobType.AnalyzeDocument
+                && (job.Status == ProcessingJobStatus.Queued || job.Status == ProcessingJobStatus.Processing)
+                && candidates.Contains(job.DocumentId))
+            .Select(job => job.DocumentId)
+            .ToHashSetAsync(ct);
+        var queued = 0;
+        foreach (var documentId in candidates.Where(documentId => !activeJobs.Contains(documentId)))
+        {
+            db.ProcessingJobs.Add(new ProcessingJob(documentId, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow));
+            queued++;
+        }
+        await db.SaveChangesAsync(ct);
+        return Ok(new RadarRepairResponse(queued));
+    }
+
     [HttpPatch("{assessmentId:guid}/seen")]
     public async Task<ActionResult<RadarItemDto>> MarkSeen(Guid assessmentId, [FromQuery] Guid portfolioId, CancellationToken ct)
     {
@@ -78,5 +106,6 @@ public sealed class RadarController : ControllerBase
 
 public sealed record SetRadarStatusRequest(string Status);
 public sealed record RadarResponse(IReadOnlyList<RadarItemDto> AttentionNow, IReadOnlyList<RadarItemDto> RecentUpdates, int RequiresAttention, int Unread, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0);
+public sealed record RadarRepairResponse(int QueuedCount);
 public sealed record RadarEvidenceDto(Guid DocumentId, Guid DocumentAnalysisId, string Reference);
 public sealed record RadarItemDto(Guid AssessmentId, Guid InvestmentEventId, Guid DocumentAnalysisId, IReadOnlyList<string> AffectedAssets, InvestmentEventType EventType, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, bool RequiresAttention, string EventSummary, string Summary, string WhyItMatters, string SuggestedBehavior, IntelligenceConfidence Confidence, DateTimeOffset GeneratedAt, IReadOnlyList<RadarEvidenceDto> Evidence, FreshnessStatus Freshness = FreshnessStatus.Fresh, IReadOnlyList<FreshnessReason>? FreshnessReasons = null, IReadOnlyList<EvidenceReference>? EvidenceReferences = null);

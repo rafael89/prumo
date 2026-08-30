@@ -83,6 +83,9 @@ const priorityLabels = ['Baixa', 'Média', 'Alta', 'Crítica']
 const actionLabels = ['Sem ação', 'Acompanhar', 'Revisar', 'Agir']
 const capitalImpactLabels = ['Favorável a aumentar exposição', 'Sem impacto relevante', 'Cautela ao aumentar exposição', 'Evitar aumentar exposição agora']
 
+void actionLabels
+void capitalImpactLabels
+
 function formatCurrency(value: number | null | undefined, hidden = false) {
   if (hidden) return 'R$ ••••••'
   if (value == null) return 'Sem valor'
@@ -133,7 +136,7 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
   const notConfigured = health?.status === 'NotConfigured'
   const aligned = health?.status === 'Aligned'
 
-  return <article className="order-1 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+  return <article className="order-2 min-w-0 self-start rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <CardHeader eyebrow="Saúde da carteira" linkLabel="Ver detalhes" to="/portfolio" />
     <h2 className="mt-4 flex items-center justify-between gap-4 text-xl font-semibold tracking-tight text-slate-950">
       <span>{health?.summary ?? overview?.healthSummary ?? 'Estado da carteira indisponível.'}</span>
@@ -165,21 +168,16 @@ function priorityClasses(priority: number) {
 }
 
 function RadarCard({ items }: { items: DashboardAssessment[] }) {
-  return <article className="order-1 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:col-span-1">
+  return <article className="order-1 min-w-0 self-start rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-1">
     <CardHeader eyebrow="Radar" linkLabel="Ver Radar" to="/radar" />
-    {items.length === 0 ? <div className="mt-6 rounded-2xl bg-emerald-50 p-5 text-emerald-950">
+    {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
-    </div> : <div className="mt-5 divide-y divide-slate-100">
-      {items.slice(0, 3).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-3 py-4 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
+    </div> : <div className="mt-4 divide-y divide-slate-100">
+      {items.slice(0, 3).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
         <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
           {item.whyItMatters && <p className="mt-1 text-xs leading-5 text-slate-600">{item.whyItMatters}</p>}
-          {item.actionRequirement > 0 && item.suggestedBehavior && <p className="mt-1 text-xs leading-5 text-slate-500">{item.suggestedBehavior}</p>}
-          <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500">
-            {item.actionRequirement > 0 && <span className="rounded-full bg-slate-100 px-2.5 py-1">{actionLabels[item.actionRequirement]}</span>}
-            {item.capitalDecisionImpact >= 2 && <span className={`rounded-full px-2.5 py-1 ${item.capitalDecisionImpact === 3 ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>{capitalImpactLabels[item.capitalDecisionImpact]}</span>}
-          </div>
         </div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
@@ -277,14 +275,15 @@ function GuidanceResult({ guidance, privacyHidden }: { guidance: DashboardGuidan
 }
 
 function RecentUpdatesCard({ items }: { items: DashboardAssessment[] }) {
+  const [visibleCount, setVisibleCount] = useState(5)
   return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-    <CardHeader eyebrow="Mudanças recentes" linkLabel="Ver todas" to="/radar" />
+    <CardHeader eyebrow="Últimas notícias" linkLabel="Ver todas" to="/radar" />
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, 5).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-2 py-4 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
+      {items.slice(0, visibleCount).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-2 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}
+    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900">Mostrar mais <FontAwesomeIcon icon={faArrowRight} /></button>}
   </article>
 }
 
@@ -301,11 +300,11 @@ export function DashboardOverview({ dashboard, activePortfolio, privacyHidden, o
       <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1><p className="mt-2 text-sm text-slate-600">Aqui está o que importa sobre sua carteira agora.</p></div>
       {data.portfolioOverview?.lastPortfolioUpdate && <p className="text-xs text-slate-500">Carteira atualizada em {formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}</p>}
     </header>
-    <div className="grid min-w-0 gap-4 lg:grid-cols-[1.15fr_.85fr]">
+    <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[7fr_3fr]">
       <PortfolioHealthCard data={data} />
       <RadarCard items={data.attentionNow ?? []} />
-      <div className="order-2 min-w-0 lg:col-span-2"><ContributionCard preview={data.contributionPreview} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
-      <div className="order-3 min-w-0 lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} /></div>
+      <div className="order-2 min-w-0 self-start lg:col-span-2"><ContributionCard preview={data.contributionPreview} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
+      <div className="order-3 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} /></div>
     </div>
   </section>
 }
