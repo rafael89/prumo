@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowRight, faCircleCheck, faCircleInfo, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
+
+const contributionApiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
 
 type Position = {
   id: string
@@ -21,6 +23,7 @@ type Position = {
 
 type DashboardAssessment = {
   assessmentId: string
+  documentId: string | null
   asset: string
   eventSummary: string
   whyItMatters: string
@@ -61,6 +64,8 @@ export type Dashboard = {
 }
 
 export type DashboardGuidance = {
+  guidanceId?: string
+  jobStatus?: string
   status: number | string
   allocationStyle: number | string
   contributionAmount: number
@@ -185,11 +190,22 @@ function RadarCard({ items }: { items: DashboardAssessment[] }) {
   </article>
 }
 
-function ContributionCard({ preview: rawPreview, privacyHidden, onGenerateGuidance }: { preview: Dashboard['contributionPreview']; privacyHidden: boolean; onGenerateGuidance: (amount: number) => Promise<DashboardGuidance> }) {
+function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onGenerateGuidance }: { preview: Dashboard['contributionPreview']; portfolioId: string; privacyHidden: boolean; onGenerateGuidance: (amount: number) => Promise<DashboardGuidance> }) {
   const [amount, setAmount] = useState('')
   const [validationError, setValidationError] = useState<string | null>(null)
   const mutation = useMutation({ mutationFn: onGenerateGuidance })
   const guidance = mutation.data
+  const persistedGuidance = useQuery({
+    queryKey: ['dashboard-contribution-guidance', portfolioId, guidance?.guidanceId],
+    queryFn: async () => {
+      const response = await fetch(`${contributionApiUrl}/api/portfolios/${portfolioId}/contribution-guidance/${guidance?.guidanceId}`)
+      if (!response.ok) throw new Error('Não foi possível atualizar a orientação.')
+      return response.json() as Promise<DashboardGuidance>
+    },
+    enabled: Boolean(guidance?.guidanceId && guidance.jobStatus && guidance.jobStatus !== 'Completed' && guidance.jobStatus !== 'Failed'),
+    refetchInterval: query => query.state.data?.jobStatus === 'Completed' || query.state.data?.jobStatus === 'Failed' ? false : 1500
+  })
+  const visibleGuidance = persistedGuidance.data?.jobStatus === 'Completed' ? persistedGuidance.data : guidance
   const hasNoNeeds = matchesEnum(rawPreview?.status, 2, 'NoNeeds')
   const preview = hasNoNeeds && rawPreview ? { ...rawPreview, summary: 'Sua carteira está alinhada; o próximo aporte buscará preservar suas alocações-alvo.' } : rawPreview
   const isNoNeeds = false
@@ -208,7 +224,7 @@ function ContributionCard({ preview: rawPreview, privacyHidden, onGenerateGuidan
 
   return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <CardHeader eyebrow="Próximo aporte" linkLabel="Ver aportes" to="/contributions" />
-    <div className={`mt-5 grid min-w-0 gap-6 lg:gap-8 ${guidance ? 'lg:grid-cols-[minmax(0,.75fr)_minmax(0,1.35fr)_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(17rem,.7fr)_minmax(0,1.3fr)]'}`}>
+    <div className={`mt-5 grid min-w-0 gap-6 lg:gap-8 ${visibleGuidance ? 'lg:grid-cols-[minmax(0,.75fr)_minmax(0,1.35fr)_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(17rem,.7fr)_minmax(0,1.3fr)]'}`}>
       <div className="min-w-0 lg:border-r lg:border-slate-100 lg:pr-8">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Necessidade atual</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{preview?.summary ?? 'A orientação de aporte ainda não está disponível.'}</h2>
@@ -226,11 +242,11 @@ function ContributionCard({ preview: rawPreview, privacyHidden, onGenerateGuidan
       </div>
 
       <div className="min-w-0">
-        {!guidance ? <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm leading-6 text-slate-500">
+        {!visibleGuidance ? <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm leading-6 text-slate-500">
           {isAvailable ? 'Informe um valor para ver a orientação calculada pelo Lodira.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
-        </div> : <GuidanceResult guidance={guidance} privacyHidden={privacyHidden} />}
+        </div> : <GuidanceResult guidance={visibleGuidance} privacyHidden={privacyHidden} />}
       </div>
-      {guidance && <ContributionSummary guidance={guidance} />}
+      {visibleGuidance && <ContributionSummary guidance={visibleGuidance} />}
     </div>
   </article>
 }
@@ -279,7 +295,10 @@ function RecentUpdatesCard({ items }: { items: DashboardAssessment[] }) {
   return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <CardHeader eyebrow="Últimas notícias" linkLabel="Ver todas" to="/radar" />
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, visibleCount).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-2 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
+      {items.slice(0, visibleCount).map(item => item.documentId ? <Link key={item.assessmentId} to={`/documents/${item.documentId}`} className="grid min-w-0 gap-2 py-3 first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
+        {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
+      </Link> : <div key={item.assessmentId} className="grid min-w-0 gap-2 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
@@ -303,7 +322,7 @@ export function DashboardOverview({ dashboard, activePortfolio, privacyHidden, o
     <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[7fr_3fr]">
       <PortfolioHealthCard data={data} />
       <RadarCard items={data.attentionNow ?? []} />
-      <div className="order-2 min-w-0 self-start lg:col-span-2"><ContributionCard preview={data.contributionPreview} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
+      <div className="order-2 min-w-0 self-start lg:col-span-2"><ContributionCard preview={data.contributionPreview} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
       <div className="order-3 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} /></div>
     </div>
   </section>

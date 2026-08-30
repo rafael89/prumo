@@ -29,4 +29,9 @@ public sealed class PersistedContributionGuidance
     public DateTimeOffset GeneratedAt { get; private set; }
     public List<PersistedContributionGuidanceAllocation> Allocations { get; private set; } = new();
     public void ReplaceAllocations(IEnumerable<PersistedContributionGuidanceAllocation> allocations) { Allocations.Clear(); Allocations.AddRange(allocations); }
+    public void UpdateIntelligence(string provider, string model, string availability, string reasoning, string metadataJson)
+    {
+        Provider = provider; Model = model; IntelligenceAvailability = availability;
+        Reasoning = reasoning; MetadataJson = metadataJson; GeneratedAt = DateTimeOffset.UtcNow;
+    }
 }
