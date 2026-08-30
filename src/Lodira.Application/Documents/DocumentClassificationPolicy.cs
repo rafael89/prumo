@@ -11,11 +11,11 @@ public static class DocumentClassificationPolicy
         var category = Normalize(sourceCategory);
         var type = Normalize(sourceType);
 
-        if (category is "FATOS RELEVANTES" or "FATO RELEVANTE" || type is "FATO RELEVANTE" or "FATOS RELEVANTES")
+        if (category is "FATOS RELEVANTES" or "FATO RELEVANTE" || type is "FATO RELEVANTE" or "FATOS RELEVANTES" or "FATO RELEV")
             return DocumentType.RelevantFact;
         if (type is "COMUNICADO AO MERCADO" or "COMUNICADO")
             return DocumentType.Communication;
-        if (category is "RELATORIOS" && type is "RELATORIO GERENCIAL")
+        if (category is "RELATORIOS" && (type is "RELATORIO GERENCIAL" or "RELAT GERENCIAL"))
             return DocumentType.ManagementReport;
         if (category is "INFORMES PERIODICOS" && type is "INFORME MENSAL")
             return DocumentType.MonthlyReport;
@@ -23,7 +23,7 @@ public static class DocumentClassificationPolicy
             return DocumentType.QuarterlyReport;
 
         // Compatibility with older CVM eventual files that expose only TP_DOC.
-        if (type is "RELATORIO GERENCIAL" or "RELATORIO DE GESTAO") return DocumentType.ManagementReport;
+        if (type is "RELATORIO GERENCIAL" or "RELAT GERENCIAL" or "RELATORIO DE GESTAO") return DocumentType.ManagementReport;
         if (type is "INFORME MENSAL") return DocumentType.MonthlyReport;
         if (type is "INFORME TRIMESTRAL") return DocumentType.QuarterlyReport;
         return DocumentType.Other;

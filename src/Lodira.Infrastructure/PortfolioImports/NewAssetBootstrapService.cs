@@ -20,7 +20,7 @@ public sealed class NewAssetBootstrapService
 
     public async Task DiscoverLatestOnlyAsync(IEnumerable<Guid> assetIds, CancellationToken ct)
     {
-        var assets = await db.Assets.Where(a => assetIds.Contains(a.Id) && a.AssetClass == AssetClass.Fii && a.Cnpj != null).ToListAsync(ct);
+        var assets = await db.Assets.Where(a => assetIds.Contains(a.Id) && a.AssetClass == AssetClass.Fii).ToListAsync(ct);
         if (assets.Count == 0) return;
         logger.LogInformation("CVM bootstrap iniciado para {AssetCount} novo(s) FII", assets.Count);
         var candidates = await source.FindAsync(assets.Select(a => new DocumentSourceAsset(a.Ticker, a.Cnpj)).ToArray(), ct);
@@ -54,7 +54,7 @@ public sealed class NewAssetBootstrapService
         {
             var covered = await db.Documents.AnyAsync(d => d.AssetId == asset.Id, ct) ||
                 await db.ProcessingJobs.AnyAsync(j => j.Document!.AssetId == asset.Id && (j.Status == ProcessingJobStatus.Queued || j.Status == ProcessingJobStatus.Processing), ct);
-            if (covered || string.IsNullOrWhiteSpace(asset.Cnpj)) { skipped++; continue; }
+            if (covered) { skipped++; continue; }
             candidates.Add(asset.Id);
         }
         await DiscoverLatestOnlyAsync(candidates, ct);

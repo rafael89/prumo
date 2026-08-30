@@ -133,7 +133,7 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
   const notConfigured = health?.status === 'NotConfigured'
   const aligned = health?.status === 'Aligned'
 
-  return <article className="order-4 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+  return <article className="order-1 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <CardHeader eyebrow="Saúde da carteira" linkLabel="Ver detalhes" to="/portfolio" />
     <h2 className="mt-4 flex items-center justify-between gap-4 text-xl font-semibold tracking-tight text-slate-950">
       <span>{health?.summary ?? overview?.healthSummary ?? 'Estado da carteira indisponível.'}</span>
@@ -165,7 +165,7 @@ function priorityClasses(priority: number) {
 }
 
 function RadarCard({ items }: { items: DashboardAssessment[] }) {
-  return <article className="order-1 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:col-span-2">
+  return <article className="order-1 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:col-span-1">
     <CardHeader eyebrow="Radar" linkLabel="Ver Radar" to="/radar" />
     {items.length === 0 ? <div className="mt-6 rounded-2xl bg-emerald-50 p-5 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
@@ -210,14 +210,14 @@ function ContributionCard({ preview: rawPreview, privacyHidden, onGenerateGuidan
 
   return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <CardHeader eyebrow="Próximo aporte" linkLabel="Ver aportes" to="/contributions" />
-    <div className="mt-5 grid min-w-0 gap-6 lg:grid-cols-[minmax(17rem,.7fr)_minmax(0,1.3fr)] lg:gap-8">
+    <div className={`mt-5 grid min-w-0 gap-6 lg:gap-8 ${guidance ? 'lg:grid-cols-[minmax(0,.75fr)_minmax(0,1.35fr)_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(17rem,.7fr)_minmax(0,1.3fr)]'}`}>
       <div className="min-w-0 lg:border-r lg:border-slate-100 lg:pr-8">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Necessidade atual</p>
         <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{preview?.summary ?? 'A orientação de aporte ainda não está disponível.'}</h2>
         {isAvailable && <form className="mt-5" onSubmit={event => { event.preventDefault(); submit() }}>
           <label htmlFor="dashboard-contribution" className="text-sm font-medium text-slate-700">Quanto pretende aportar?</label>
-          <div className="mt-2 flex min-w-0 gap-2 sm:flex-row">
-            <input id="dashboard-contribution" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="w-28 min-w-0 shrink-0 rounded-xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" />
+          <div className="mt-2 flex min-w-0 flex-wrap gap-2">
+            <input id="dashboard-contribution" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="w-28 min-w-0 flex-1 basis-24 rounded-xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" />
             <button type="submit" disabled={mutation.isPending} className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faWandMagicSparkles} className="mr-2" />{mutation.isPending ? 'Calculando...' : 'Gerar orientação'}</button>
           </div>
           {validationError && <p className="mt-2 text-xs text-rose-700">{validationError}</p>}
@@ -232,8 +232,19 @@ function ContributionCard({ preview: rawPreview, privacyHidden, onGenerateGuidan
           {isAvailable ? 'Informe um valor para ver a orientação calculada pelo Lodira.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
         </div> : <GuidanceResult guidance={guidance} privacyHidden={privacyHidden} />}
       </div>
+      {guidance && <ContributionSummary guidance={guidance} />}
     </div>
   </article>
+}
+
+function ContributionSummary({ guidance }: { guidance: DashboardGuidance }) {
+  const reasons = guidance.reasons.slice(0, 4)
+  return <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8">
+    <p className="text-sm font-semibold text-slate-900">Resumo</p>
+    <div className="mt-4 space-y-3 text-sm text-slate-600">
+      {reasons.length > 0 ? reasons.map((reason, index) => <div key={`${reason}-${index}`} className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={index === 2 ? faTriangleExclamation : faCircleCheck} className={`mt-1 shrink-0 ${index === 2 ? 'text-amber-500' : 'text-emerald-500'}`} /><span className="min-w-0 break-words">{reason}</span></div>) : <div className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 shrink-0 text-emerald-500" /><span className="min-w-0 break-words">Aporte calculado com base na estratégia da carteira.</span></div>}
+    </div>
+  </div>
 }
 
 function GuidanceResult({ guidance, privacyHidden }: { guidance: DashboardGuidance; privacyHidden: boolean }) {
@@ -290,11 +301,11 @@ export function DashboardOverview({ dashboard, activePortfolio, privacyHidden, o
       <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1><p className="mt-2 text-sm text-slate-600">Aqui está o que importa sobre sua carteira agora.</p></div>
       {data.portfolioOverview?.lastPortfolioUpdate && <p className="text-xs text-slate-500">Carteira atualizada em {formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}</p>}
     </header>
-    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[1.15fr_.85fr]">
       <PortfolioHealthCard data={data} />
       <RadarCard items={data.attentionNow ?? []} />
-      <div className="order-3 min-w-0 lg:col-span-1"><ContributionCard preview={data.contributionPreview} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
-      <div className="order-2 min-w-0 lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} /></div>
+      <div className="order-2 min-w-0 lg:col-span-2"><ContributionCard preview={data.contributionPreview} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
+      <div className="order-3 min-w-0 lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} /></div>
     </div>
   </section>
 }

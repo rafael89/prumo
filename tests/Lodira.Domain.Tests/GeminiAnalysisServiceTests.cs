@@ -26,7 +26,8 @@ public sealed class GeminiAnalysisServiceTests
         Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent", handler.RequestUri?.ToString());
         Assert.Contains("\"responseMimeType\":\"application/json\"", handler.RequestBody);
         Assert.Contains("\"responseJsonSchema\"", handler.RequestBody);
-        Assert.Contains("\"type\":[\"string\",\"null\"]", handler.RequestBody);
+        Assert.Contains("\"occurredAt\":{\"type\":\"string\",\"format\":\"date-time\"}", handler.RequestBody);
+        Assert.DoesNotContain("\"type\":[\"string\",\"null\"]", handler.RequestBody);
         Assert.DoesNotContain("additionalProperties", handler.RequestBody, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(new[] { "XPLG11" }, result.AffectedAssets);
     }

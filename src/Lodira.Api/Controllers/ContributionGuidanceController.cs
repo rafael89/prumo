@@ -26,7 +26,35 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         if (portfolio.Positions.Any(x => !x.CurrentValue.HasValue)) return BadRequest("Não há preço válido para todas as posições existentes.");
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(portfolio); var targetKey = TargetAllocationKeyCalculator.Calculate(targets)!; var amount = decimal.Round(request.Amount, 2);
         var existing = await db.ContributionGuidances.AsNoTracking().Include(x => x.Allocations).Where(x => x.PortfolioId == portfolioId && x.RequestedAmount == amount && x.PortfolioSnapshotKey == snapshot && x.TargetAllocationKey == targetKey).OrderByDescending(x => x.GeneratedAt).FirstOrDefaultAsync(ct);
-        if (existing is not null) return Ok(new { guidanceId = existing.Id, status = "QueuedOrCompleted", requestedAmount = existing.RequestedAmount, allocations = existing.Allocations, jobStatus = await db.ContributionGuidanceJobs.Where(x => x.ContributionGuidanceId == existing.Id).Select(x => x.Status.ToString()).FirstOrDefaultAsync(ct), reused = true });
+        if (existing is not null)
+        {
+            var positionsByAsset = await db.PortfolioPositions.AsNoTracking().Include(x => x.Asset).Where(x => x.PortfolioId == portfolioId).ToDictionaryAsync(x => x.AssetId, ct);
+            var allocations = existing.Allocations.Select(allocation => new
+            {
+                assetId = allocation.AssetId,
+                ticker = positionsByAsset.GetValueOrDefault(allocation.AssetId)?.Asset?.Ticker ?? string.Empty,
+                amount = allocation.Amount,
+                reason = allocation.Reason,
+                evidence = Array.Empty<string>()
+            }).ToArray();
+            return Ok(new
+            {
+                guidanceId = existing.Id,
+                status = "QueuedOrCompleted",
+                contributionAmount = existing.RequestedAmount,
+                requestedAmount = existing.RequestedAmount,
+                allocatedAmount = allocations.Sum(x => x.amount),
+                unallocatedAmount = existing.RequestedAmount - allocations.Sum(x => x.amount),
+                allocationStyle = allocations.Length == 1 ? "Concentrated" : allocations.Length > 1 ? "Distributed" : "NoAllocation",
+                allocations,
+                avoidedCandidates = Array.Empty<object>(),
+                reasons = new[] { existing.Reasoning },
+                evidence = Array.Empty<string>(),
+                intelligenceAvailability = existing.IntelligenceAvailability,
+                jobStatus = await db.ContributionGuidanceJobs.Where(x => x.ContributionGuidanceId == existing.Id).Select(x => x.Status.ToString()).FirstOrDefaultAsync(ct),
+                reused = true
+            });
+        }
         var health = new PortfolioHealthCalculator().Calculate(portfolio, targets); var total = portfolio.Positions.Sum(x => x.CurrentValue ?? 0); var positions = portfolio.Positions.Where(x => x.Asset is not null && x.CurrentValue.HasValue).Select(x => new GuidancePosition(x.AssetId, x.Asset!.Ticker, x.Asset.AssetClass, x.CurrentValue!.Value, total == 0 ? 0 : x.CurrentValue.Value / total * 100m)).ToList(); var ids = positions.Select(x => x.AssetId).ToHashSet();
         var assessments = await db.PortfolioAssessments.AsNoTracking().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed && x.InvestmentEvent!.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
         assessments = (await current.EnsureFreshAsync(portfolio, targets, assessments, ct)).ToList();

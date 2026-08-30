@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Lodira.Domain.Enums;
 using Lodira.Application.Radar;
+using Lodira.Application.Documents;
 using Lodira.Infrastructure.Persistence;
 using Lodira.Api.Models;
 
@@ -39,10 +40,16 @@ public sealed class DocumentsController : ControllerBase
             query = query.Where(document => EF.Functions.ILike(document.Asset!.Ticker, $"%{assetTerm}%") || EF.Functions.ILike(document.Asset.Name, $"%{assetTerm}%"));
         }
         if (status.HasValue) query = query.Where(document => document.ProcessingStatus == status.Value);
-        if (type.HasValue) query = query.Where(document => document.DocumentType == type.Value);
-        var totalItems = await query.CountAsync(cancellationToken);
-        var documents = await query.OrderByDescending(document => document.PublishedAt).ThenByDescending(document => document.Id)
-            .Skip((page - 1) * pageSize).Take(pageSize).Select(document => CreateResponse(document)).ToListAsync(cancellationToken);
+        var allDocuments = await query.OrderByDescending(document => document.PublishedAt).ThenByDescending(document => document.Id).ToListAsync(cancellationToken);
+        if (type.HasValue)
+        {
+            allDocuments = allDocuments.Where(document =>
+                (document.DocumentType != DocumentType.Other
+                    ? document.DocumentType
+                    : DocumentClassificationPolicy.Map(document.SourceCategory, document.SourceType, document.SourceSpecies)) == type.Value).ToList();
+        }
+        var totalItems = allDocuments.Count;
+        var documents = allDocuments.Skip((page - 1) * pageSize).Take(pageSize).Select(CreateResponse).ToList();
         documents = await AttachJobDetailsAsync(documents, cancellationToken);
 
         return Ok(new PaginatedResponse<DocumentResponse>(documents, page, pageSize, totalItems, (int)Math.Ceiling(totalItems / (double)pageSize)));

@@ -55,8 +55,13 @@ public sealed class DocumentAnalysisProcessor
             .SingleOrDefaultAsync(item => item.Id == job.DocumentId, cancellationToken)
             ?? throw new InvalidOperationException("Documento do job nao encontrado.");
 
-        if (await dbContext.DocumentAnalyses.AnyAsync(item => item.DocumentId == document.Id && aiAnalysisService.AcceptedModels.Contains(item.Model) && item.PromptVersion == aiAnalysisService.PromptVersion, cancellationToken))
+        var existingAnalysis = await dbContext.DocumentAnalyses
+            .Include(item => item.Document)
+            .ThenInclude(item => item!.Asset)
+            .FirstOrDefaultAsync(item => item.DocumentId == document.Id && aiAnalysisService.AcceptedModels.Contains(item.Model) && item.PromptVersion == aiAnalysisService.PromptVersion, cancellationToken);
+        if (existingAnalysis is not null)
         {
+            await EnsureExistingAnalysisFeedsRadarAsync(existingAnalysis, cancellationToken);
             document.MarkProcessed();
             job.Complete(DateTimeOffset.UtcNow);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -116,8 +121,35 @@ public sealed class DocumentAnalysisProcessor
         logger.LogInformation("Analise persistida com sucesso para o documento {DocumentId} e job {JobId}.", document.Id, job.Id);
     }
 
+    private async Task EnsureExistingAnalysisFeedsRadarAsync(DocumentAnalysis analysis, CancellationToken cancellationToken)
+    {
+        if (analysis.Importance is not (AnalysisImportance.Critical or AnalysisImportance.Relevant)) return;
+        if (await dbContext.InvestmentEvents.AnyAsync(item => item.DocumentAnalysisId == analysis.Id, cancellationToken)) return;
+        var document = analysis.Document;
+        var ticker = document?.Asset?.Ticker;
+        if (document is null || string.IsNullOrWhiteSpace(ticker)) return;
+        await PersistEventsAndAssessmentsAsync(analysis, new[]
+        {
+            new AiInvestmentEventResult(InvestmentEventType.Other, document.PublishedAt, analysis.Summary, Array.Empty<string>(), new[] { ticker })
+        }, cancellationToken);
+        logger.LogInformation("Evento documental reconstruído para análise já persistida {AnalysisId}.", analysis.Id);
+    }
+
     private async Task PersistEventsAndAssessmentsAsync(DocumentAnalysis analysis, IReadOnlyList<AiInvestmentEventResult> results, CancellationToken cancellationToken)
     {
+        if (results.Count == 0 && analysis.Importance is AnalysisImportance.Critical or AnalysisImportance.Relevant)
+        {
+            var analyzedDocument = await dbContext.Documents.Include(document => document.Asset).SingleAsync(document => document.Id == analysis.DocumentId, cancellationToken);
+            var ticker = analyzedDocument.Asset?.Ticker;
+            if (!string.IsNullOrWhiteSpace(ticker))
+            {
+                results = new[]
+                {
+                    new AiInvestmentEventResult(InvestmentEventType.Other, analyzedDocument.PublishedAt, analysis.Summary, Array.Empty<string>(), new[] { ticker })
+                };
+                logger.LogInformation("Nenhum evento estruturado foi retornado; criado evento documental para {DocumentId}.", analysis.DocumentId);
+            }
+        }
         foreach (var result in results)
         {
             var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{result.EventType}|{result.OccurredAt:O}|{result.Summary.Trim()}|{string.Join("|", result.Facts)}"))).ToLowerInvariant();
@@ -138,7 +170,6 @@ public sealed class DocumentAnalysisProcessor
             {
                 var targets = await dbContext.TargetAllocations.Where(x => x.PortfolioId == portfolio.Id).ToListAsync(cancellationToken);
                 var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
-                if (targetKey is null) continue;
                 var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
                 var relevantPositions = portfolio.Positions
                     .Where(x => assetIds.Contains(x.AssetId))

@@ -51,7 +51,7 @@ function documentTypeLabel(document: any) {
 
 function DocumentJobDetails({ document }: any) {
   if (!document?.lastError) return null
-  return <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p className="font-semibold">Último erro ({document.jobStatus ?? 'Falha'})</p><p className="mt-2 break-words">{document.lastError}</p>{document.retryAt && <p className="mt-2 text-xs">Próxima tentativa: {formatDate(document.retryAt)}</p>}</div>
+  return <div className="document-job-details mt-8 mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p className="font-semibold">Último erro ({document.jobStatus ?? 'Falha'})</p><p className="mt-2 break-words">{document.lastError}</p>{document.retryAt && <p className="mt-2 text-xs">Próxima tentativa: {formatDate(document.retryAt)}</p>}</div>
 }
 
 export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden, initialDocumentId }: any) {
@@ -107,7 +107,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
   if (!portfolioId) return null
 
   return (
-    <div className="order-4 mt-0 grid min-w-0 gap-8 self-start xl:col-start-2 xl:row-start-2 [&>*]:min-w-0">
+    <div className="order-4 mt-0 grid min-w-0 items-start gap-3 self-start xl:col-span-2 xl:col-start-1 xl:row-start-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] [&>*]:min-w-0">
       <div id="documentos" className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Documentos recentes</h2>

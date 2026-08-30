@@ -56,7 +56,7 @@ public sealed class DocumentDownloadWorker : BackgroundService
 
         try
         {
-            await DownloadAsync(job, scope.ServiceProvider.GetRequiredService<IFileStorage>(), cancellationToken);
+            await DownloadAsync(job, dbContext, scope.ServiceProvider.GetRequiredService<IFileStorage>(), cancellationToken);
             job.Document!.MarkWaitingProcessing();
             var analysisExists = await dbContext.ProcessingJobs.AnyAsync(
                 item => item.DocumentId == job.DocumentId
@@ -92,7 +92,7 @@ public sealed class DocumentDownloadWorker : BackgroundService
         }
     }
 
-    private async Task DownloadAsync(ProcessingJob job, IFileStorage storage, CancellationToken cancellationToken)
+    private async Task DownloadAsync(ProcessingJob job, LodiraDbContext dbContext, IFileStorage storage, CancellationToken cancellationToken)
     {
         if (job.Document is null || string.IsNullOrWhiteSpace(job.Document.DownloadUrl))
         {
@@ -104,6 +104,16 @@ public sealed class DocumentDownloadWorker : BackgroundService
         response.EnsureSuccessStatusCode();
         await using var content = await response.Content.ReadAsStreamAsync(cancellationToken);
         var storedFile = await storage.SaveAsync(job.Document.Id, content, "pdf", cancellationToken);
+        var duplicate = await dbContext.Documents.AsNoTracking()
+            .Where(document => document.Id != job.Document.Id && document.FileHash == storedFile.Hash && document.FilePath != null)
+            .Select(document => document.FilePath)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (duplicate is not null && File.Exists(duplicate))
+        {
+            await storage.DeleteAsync(storedFile.Path, cancellationToken);
+            storedFile = new StoredFile(duplicate, storedFile.Hash);
+            logger.LogInformation("Conteúdo duplicado por hash; documento {DocumentId} reutilizará {FilePath}.", job.Document.Id, duplicate);
+        }
         job.Document.MarkDownloaded(storedFile.Path, storedFile.Hash);
     }
 

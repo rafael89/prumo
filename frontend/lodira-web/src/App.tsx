@@ -322,7 +322,7 @@ function App() {
   }
 
   return (
-      <main className="min-h-screen bg-stone-50 text-slate-900">
+      <main className={`min-h-screen bg-stone-50 text-slate-900 ${activePortfolio ? '' : 'no-portfolio'}`}>
         <nav className="sticky top-0 z-20 border-b border-slate-200 bg-stone-50/95 px-4 py-4 backdrop-blur md:px-6">
           <div className="mx-auto flex max-w-[89.5rem] flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
@@ -332,6 +332,7 @@ function App() {
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} privacyHidden={privacyHidden} onGenerateGuidance={(amount) => sendJson<DashboardGuidance, { amount: number }>(`/api/portfolios/${activePortfolio?.id ?? ''}/contribution-guidance`, 'POST', { amount })} />}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} privacyHidden={privacyHidden} />}
+        {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar') && !activePortfolio && <EmptyPortfolioRoute />}
         <section className="mx-auto max-w-[89.5rem] px-6 pb-12">
           {feedback && (
             <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
@@ -343,12 +344,12 @@ function App() {
 
           {route === '/portfolio' && !portfolios.isError && <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start [&>*]:min-w-0">
             <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} />
-            <div className="order-2 self-start xl:col-start-2 xl:row-start-1"><TargetAllocationSection portfolioId={activePortfolio?.id ?? ''} /></div>
-            {activePortfolio && <div className="order-2 self-stretch xl:col-start-2 xl:row-start-1 [&>section]:!h-full [&>section]:!px-0 [&>section]:!pb-0 [&>section>div]:!h-full"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
+            {activePortfolio && <div className="target-allocation-frame order-2 self-start xl:col-start-2 xl:row-start-2 [&>section]:!px-0 [&>section]:!pb-0"><TargetAllocationSection portfolioId={activePortfolio.id} /></div>}
+            {activePortfolio && <div className="order-2 self-start xl:col-start-2 xl:row-start-1 [&>section]:!px-0 [&>section]:!pb-0"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
             {activePortfolio && <DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} initialDocumentId={documentIdFromUrl} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} />}
           </div>}
         </section>
-        {route === '/radar' && <div className="mx-auto grid max-w-[89.5rem] gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio?.id ?? null} /></div>}
+        {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-[89.5rem] gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-6xl px-6 pb-24"><DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} initialDocumentId={documentIdFromUrl} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
@@ -371,6 +372,10 @@ async function refreshPortfolioData(queryClient: QueryClient, portfolioId: strin
     await queryClient.invalidateQueries({ queryKey: ['targets'] })
     await queryClient.invalidateQueries({ queryKey: ['radar'] })
   }
+}
+
+function EmptyPortfolioRoute() {
+  return <div className="mx-auto max-w-3xl px-6 pb-24 pt-12"><div className="rounded-[1.75rem] border border-slate-200 bg-white p-8 text-center shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiro passo</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Crie uma carteira para continuar.</h1><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">Aportes e documentos ficam disponíveis depois que uma carteira for criada.</p><Link to="/portfolio" className="mt-6 inline-flex rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira</Link></div></div>
 }
 
 export default App

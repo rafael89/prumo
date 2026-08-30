@@ -75,6 +75,8 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
         services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(context.Configuration["Storage:RootPath"] ?? "/storage"));
         services.AddHostedService<DocumentDiscoveryWorker>();
+        services.AddHostedService<StorageMaintenanceWorker>();
+        services.AddHostedService<RadarRepairWorker>();
         services.AddHostedService<DocumentDownloadWorker>();
         services.AddHostedService<DocumentAnalysisWorker>();
         services.AddHostedService<ContributionGuidanceWorker>();
