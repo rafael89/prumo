@@ -76,6 +76,12 @@ public sealed class Document
     public void MarkError() => ProcessingStatus = DocumentProcessingStatus.Error;
     public void MarkIgnored() => ProcessingStatus = DocumentProcessingStatus.Ignored;
 
+    public void Reclassify(DocumentType documentType)
+    {
+        if (documentType == Domain.Enums.DocumentType.Other || this.DocumentType == documentType) return;
+        DocumentType = documentType;
+    }
+
     public static string CreateFingerprint(string ticker, DateTimeOffset publishedAt, DocumentType documentType, string sourceName, string? sourceIdentifier, string sourceUrl)
     {
         var sourceIdentity = !string.IsNullOrWhiteSpace(sourceIdentifier)

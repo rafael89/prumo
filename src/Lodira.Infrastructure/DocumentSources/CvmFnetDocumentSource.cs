@@ -77,7 +77,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
                     candidates.Add(new DocumentCandidate(
                         ticker,
-                        MapDocumentType(record.TipoDocumento),
+                        CvmDocumentTypeMapper.Map(record.TipoDocumento),
                         publishedAt,
                         string.IsNullOrWhiteSpace(record.IdDocumento) ? record.NomeArquivo : record.IdDocumento,
                         documentUrl,
@@ -168,17 +168,20 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         return DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy", "yyyy-MM-dd", "dd/MM/yyyy HH:mm:ss" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
     }
 
-    private static DocumentType MapDocumentType(string? value)
+    internal static class CvmDocumentTypeMapper
     {
-        var normalized = (value ?? string.Empty).Normalize(NormalizationForm.FormD);
-        normalized = new string(normalized.Where(character => CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark).ToArray()).ToUpperInvariant();
-        return normalized switch
+        public static DocumentType Map(string? value)
         {
-            var type when type.Contains("FATO RELEVANTE") => DocumentType.RelevantFact,
-            var type when type.Contains("COMUNICADO") => DocumentType.Communication,
-            var type when type.Contains("RELATORIO GERENCIAL") => DocumentType.ManagementReport,
-            _ => DocumentType.Other
-        };
+            var normalized = (value ?? string.Empty).Normalize(NormalizationForm.FormD);
+            normalized = new string(normalized.Where(character => CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark).ToArray()).ToUpperInvariant();
+            return normalized switch
+            {
+                var type when type.Contains("FATO RELEVANTE") => DocumentType.RelevantFact,
+                var type when type.Contains("COMUNICADO") => DocumentType.Communication,
+                var type when type.Contains("RELATORIO GERENCIAL") || type.Contains("RELATORIO DE GESTAO") || type.Contains("RELATORIO MENSAL") || type.Contains("INFORME MENSAL") || type.Contains("DEMONSTRACOES FINANCEIRAS") => DocumentType.ManagementReport,
+                _ => DocumentType.Other
+            };
+        }
     }
 
     private sealed record CvmDocumentRecord(string? Cnpj, string? DataCompetencia, string? DataRecebimento, string? TipoDocumento, string? NomeArquivo, string? IdDocumento, string? LinkArquivo);

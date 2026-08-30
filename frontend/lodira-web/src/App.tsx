@@ -114,6 +114,10 @@ function App() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [importProcessing, setImportProcessing] = useState(false)
   const [positionPage, setPositionPage] = useState(1)
+  const documentIdFromUrl = new URLSearchParams(location.search).get('documentId') ?? (route.startsWith('/documents/') ? route.slice('/documents/'.length) : null)
+  useEffect(() => {
+    if (route === '/documents' || route.startsWith('/documents/')) setSelectedDocumentId(documentIdFromUrl)
+  }, [route, documentIdFromUrl])
   useEffect(() => {
     if (feedback?.tone !== 'success') return
     const timeout = window.setTimeout(() => setFeedback(null), 4000)
@@ -332,11 +336,11 @@ function App() {
           {route === '/portfolio' && !portfolios.isError && <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start [&>*]:min-w-0">
             <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} />
             {activePortfolio && <div className="order-2 self-stretch xl:col-start-2 xl:row-start-1 [&>section]:!h-full [&>section]:!px-0 [&>section]:!pb-0 [&>section>div]:!h-full"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
-            {activePortfolio && <DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} />}
+            {activePortfolio && <DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} initialDocumentId={documentIdFromUrl} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} />}
           </div>}
         </section>
         {route === '/radar' && <div className="mx-auto grid max-w-[89.5rem] gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio?.id ?? null} /></div>}
-        {route === '/documents' && activePortfolio && <div className="mx-auto max-w-6xl px-6 pb-24"><DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
+        {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-6xl px-6 pb-24"><DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} initialDocumentId={documentIdFromUrl} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
   )

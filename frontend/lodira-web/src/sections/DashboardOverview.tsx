@@ -133,9 +133,9 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
   const notConfigured = health?.status === 'NotConfigured'
   const aligned = health?.status === 'Aligned'
 
-  return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  return <article className="order-2 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <CardHeader eyebrow="Saúde da carteira" linkLabel="Ver detalhes" to="/portfolio" />
-    <h2 className="mt-6 flex items-center justify-between gap-4 text-2xl font-semibold tracking-tight text-slate-950">
+    <h2 className="mt-4 flex items-center justify-between gap-4 text-xl font-semibold tracking-tight text-slate-950">
       <span>{health?.summary ?? overview?.healthSummary ?? 'Estado da carteira indisponível.'}</span>
       <span aria-hidden="true" className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-base shadow-sm ${aligned ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : notConfigured ? 'border-slate-200 bg-slate-100 text-slate-600' : 'border-amber-300 bg-amber-100 text-amber-700 shadow-amber-100'}`}>
         <FontAwesomeIcon icon={aligned ? faCircleCheck : notConfigured ? faCircleInfo : faTriangleExclamation} />
@@ -165,7 +165,7 @@ function priorityClasses(priority: number) {
 }
 
 function RadarCard({ items }: { items: DashboardAssessment[] }) {
-  return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  return <article className="order-1 min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <CardHeader eyebrow="Radar" linkLabel="Ver Radar" to="/radar" />
     {items.length === 0 ? <div className="mt-6 rounded-2xl bg-emerald-50 p-5 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
@@ -269,7 +269,7 @@ function RecentUpdatesCard({ items }: { items: DashboardAssessment[] }) {
   return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <CardHeader eyebrow="Mudanças recentes" linkLabel="Ver todas" to="/radar" />
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, 3).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-2 py-4 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
+      {items.slice(0, 5).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-2 py-4 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>{item.suggestedBehavior && <p className="mt-1 text-xs leading-5 text-slate-600">{item.suggestedBehavior}</p>}</div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}

@@ -63,6 +63,22 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
             return;
         }
 
+        var assetByTicker = assets.ToDictionary(asset => asset.Ticker, StringComparer.OrdinalIgnoreCase);
+        var reclassifiedDocuments = 0;
+        foreach (var candidate in candidates.Where(candidate => candidate.DocumentType != DocumentType.Other && assetByTicker.ContainsKey(candidate.Ticker)))
+        {
+            var asset = assetByTicker[candidate.Ticker];
+            var existing = await dbContext.Documents.FirstOrDefaultAsync(document =>
+                document.AssetId == asset.Id && document.SourceName == source.Name &&
+                ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && document.SourceIdentifier == candidate.SourceIdentifier) || document.SourceUrl == candidate.SourceUrl), cancellationToken);
+            if (existing?.DocumentType == DocumentType.Other)
+            {
+                existing.Reclassify(candidate.DocumentType);
+                reclassifiedDocuments++;
+            }
+        }
+        if (reclassifiedDocuments > 0) await dbContext.SaveChangesAsync(cancellationToken);
+
         var latestCandidates = LatestDocumentSelector.SelectPerTicker(candidates).ToList();
         logger.LogInformation("Fonte {SourceName} retornou {DocumentCount} candidato(s); {LatestDocumentCount} documento(s) mais recente(s) selecionado(s) para processamento", source.Name, candidates.Count, latestCandidates.Count);
         var newDocuments = 0;
@@ -78,7 +94,10 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
             }
 
             var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);
-            var exists = await dbContext.Documents.AnyAsync(document => document.Fingerprint == fingerprint, cancellationToken);
+            var exists = await dbContext.Documents.AnyAsync(document =>
+                document.Fingerprint == fingerprint ||
+                (document.AssetId == asset.Id && document.SourceName == source.Name &&
+                 ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && document.SourceIdentifier == candidate.SourceIdentifier) || document.SourceUrl == candidate.SourceUrl)), cancellationToken);
             if (exists)
             {
                 duplicatedDocuments++;

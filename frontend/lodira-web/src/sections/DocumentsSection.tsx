@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUpRightFromSquare, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons'
+import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons'
 
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
 const priorityLabels: Record<string, string> = { Critical: 'Crítica', High: 'Alta', Medium: 'Média', Low: 'Baixa' }
@@ -43,7 +43,7 @@ function analysisTone(importance: string) {
   return 'border-slate-300 bg-white text-slate-900'
 }
 
-export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden }: any) {
+export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden, initialDocumentId }: any) {
   const [documentPage, setDocumentPage] = useState(1)
   const [documentFilter, setDocumentFilter] = useState('')
   const [documentStatus, setDocumentStatus] = useState('')
@@ -51,8 +51,8 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
 
   useEffect(() => {
     setDocumentPage(1)
-    setSelectedDocumentId(null)
-  }, [portfolioId, setSelectedDocumentId])
+    setSelectedDocumentId(initialDocumentId ?? null)
+  }, [portfolioId, initialDocumentId, setSelectedDocumentId])
 
   const documents = useQuery({
     queryKey: ['documents', portfolioId, documentPage, documentFilter, documentStatus, documentTypeFilter],
@@ -61,7 +61,24 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     refetchInterval: query => query.state.data?.items?.some((item: any) => [0, 1, 2, 3].includes(item.processingStatus)) ? 2000 : false,
   })
 
-  const selectedDocument = documents.data?.items.find((item) => item.id === selectedDocumentId) ?? null
+  const selectedDocumentFromPage = documents.data?.items.find((item) => item.id === selectedDocumentId) ?? null
+  const selectedDocumentQuery = useQuery({
+    queryKey: ['document', selectedDocumentId],
+    queryFn: () => getJson(`/api/documents/${selectedDocumentId}`),
+    enabled: Boolean(selectedDocumentId && !selectedDocumentFromPage),
+  })
+  const selectedDocument = selectedDocumentFromPage ?? selectedDocumentQuery.data ?? null
+
+  useEffect(() => {
+    if (!selectedDocument?.id) return
+
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('document-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [selectedDocument?.id])
+
   const analysis = useQuery({
     queryKey: ['document-analysis', selectedDocument?.id ?? null, portfolioId],
     queryFn: () => selectedDocument ? getOptionalJson(`/api/documents/${selectedDocument.id}/analysis?portfolioId=${portfolioId}`) : Promise.resolve(null),
@@ -92,7 +109,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
         <div className="mt-3 divide-y divide-slate-200">
           {documents.data?.items.map((document) => {
             const isSelected = document.id === selectedDocument?.id
-            return <button id={`document-${document.id}`} key={document.id} type="button" onClick={() => { setSelectedDocumentId(document.id); window.requestAnimationFrame(() => document.getElementById(`document-${document.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })) }} className={`scroll-mt-28 flex w-full items-center justify-between gap-4 py-3 text-left text-sm transition ${isSelected ? 'text-slate-950' : 'text-slate-700 hover:text-slate-950'}`}>
+            return <button id={`document-${document.id}`} key={document.id} type="button" onClick={() => setSelectedDocumentId(document.id)} className={`scroll-mt-28 flex w-full items-center justify-between gap-4 py-3 text-left text-sm transition ${isSelected ? 'text-slate-950' : 'text-slate-700 hover:text-slate-950'}`}>
               <div className="min-w-0"><strong>{document.ticker}</strong><span className="ml-3 text-slate-500">{document.sourceName}</span><p className="mt-1 truncate text-xs text-slate-500">{formatDate(document.publishedAt)} - {documentTypes[document.documentType] ?? 'Documento'}</p></div>
               <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${isSelected ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{processingStatuses[document.processingStatus] ?? 'Desconhecido'}</span>
             </button>
@@ -100,11 +117,11 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
         </div>
         {documents.data && <Pagination page={documents.data.page} totalPages={documents.data.totalPages} onPageChange={setDocumentPage} />}
       </div>
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <section id="document-details" className="scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
         {!selectedDocument && <p className="text-sm text-slate-500">Selecione um documento para ver os detalhes.</p>}
         {selectedDocument && <div className="space-y-6"><div className="border-b border-slate-200 pb-4"><p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Detalhe do documento</p><h2 className="mt-3 text-3xl font-semibold">{selectedDocument.ticker}</h2><p className="mt-2 text-sm text-slate-500">{selectedDocument.assetName} - {selectedDocument.sourceName}</p><div className="mt-4 grid gap-2 text-sm text-slate-600 md:grid-cols-2"><span>Publicado em {formatDate(selectedDocument.publishedAt)}</span><span>Status {processingStatuses[selectedDocument.processingStatus] ?? 'Desconhecido'}</span><span>Processado em {formatDate(selectedDocument.processedAt)}</span><a href={selectedDocument.sourceUrl} target="_blank" rel="noreferrer" className="text-amber-700 hover:text-amber-800"><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="mr-2" />Abrir origem</a></div></div>
           {analysis.isLoading && <p className="text-sm text-slate-500">Carregando an&aacute;lise...</p>}{analysis.isError && <p className="text-sm text-rose-700">N&atilde;o foi poss&iacute;vel carregar a an&aacute;lise deste documento.</p>}{!analysis.isLoading && !analysis.isError && !analysis.data && <div className="rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">Nenhuma an&aacute;lise validada foi encontrada para este documento ainda.</div>}
-          {analysis.data && <div className={`rounded-[1.5rem] border p-5 ${analysisTone(analysis.data.importance)}`}><div className="grid gap-4 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Importância</p><p className="mt-2 text-2xl font-semibold">{importanceLabels[analysis.data.importance] ?? analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Classificação</p><p className="mt-2 text-lg font-semibold">{classificationLabels[analysis.data.classification] ?? analysis.data.classification}</p></div></div><div className="mt-6 grid gap-5"><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Resumo</p><p className="mt-2 text-sm leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Impacto</p><p className="mt-2 text-sm leading-7">{analysis.data.impact}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Impacto na minha carteira</p><p className="mt-2 text-sm leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p>{analysis.data.portfolioAssessment && <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-full border border-current/20 px-3 py-1">Prioridade {priorityLabels[analysis.data.portfolioAssessment.priority] ?? analysis.data.portfolioAssessment.priority}</span><span className="rounded-full border border-current/20 px-3 py-1">Peso {analysis.data.portfolioAssessment.currentWeight.toFixed(2)}%</span><span className="rounded-full border border-current/20 px-3 py-1">Valor {formatCurrency(analysis.data.portfolioAssessment.currentValue, privacyHidden)}</span>{analysis.data.portfolioAssessment.requiresAttention && <span className="rounded-full bg-amber-100 px-3 py-1">Requer atenção</span>}</div>}</article></div><div className="mt-6 grid gap-4 border-t border-current/10 pt-5 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Ação sugerida</p><p className="mt-2 text-lg font-semibold">{actionLabels[analysis.data.suggestedAction] ?? analysis.data.suggestedAction}</p><p className="mt-1 text-sm opacity-75">{analysis.data.requiresAction ? "Requer atenção" : "Não requer ação imediata"}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Confiança</p><p className="mt-2 text-lg font-semibold">{Math.round(analysis.data.confidence * 100)}%</p><p className="mt-1 text-sm opacity-75">Modelo {analysis.data.model} - Prompt {analysis.data.promptVersion}</p></div></div><div className="mt-6"><p className="text-xs font-semibold uppercase tracking-[0.16em]">Ativos afetados</p><div className="mt-3 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map((asset) => <span key={asset} className="rounded-full border border-current/15 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span className="text-sm opacity-75">Nenhum ativo listado.</span>}</div><p className="mt-4 text-xs opacity-75">Análise criada em {formatDate(analysis.data.createdAt)}</p></div></div>}
+          {analysis.data && <div className={`rounded-[1.5rem] border p-5 ${analysisTone(analysis.data.importance)}`}><div className="grid gap-4 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Importância</p><p className="mt-2 text-2xl font-semibold">{importanceLabels[analysis.data.importance] ?? analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Classificação</p><p className="mt-2 text-lg font-semibold">{classificationLabels[analysis.data.classification] ?? analysis.data.classification}</p></div></div><div className="mt-6 grid gap-5"><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Resumo</p><p className="mt-2 text-sm leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Impacto</p><p className="mt-2 text-sm leading-7">{analysis.data.impact}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Impacto na minha carteira</p><p className="mt-2 text-sm leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p>{analysis.data.portfolioAssessment && <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-full border border-current/20 px-3 py-1">Prioridade {priorityLabels[analysis.data.portfolioAssessment.priority] ?? analysis.data.portfolioAssessment.priority}</span><span className="rounded-full border border-current/20 px-3 py-1">Peso {analysis.data.portfolioAssessment.currentWeight.toFixed(2)}%</span><span className="rounded-full border border-current/20 px-3 py-1">Valor {formatCurrency(analysis.data.portfolioAssessment.currentValue, privacyHidden)}</span>{analysis.data.portfolioAssessment.requiresAttention && <span className="rounded-full bg-amber-100 px-3 py-1">Requer atenção</span>}</div>}</article></div><div className="mt-6 grid gap-4 border-t border-current/10 pt-5 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Ação sugerida</p><p className="mt-2 text-lg font-semibold">{actionLabels[analysis.data.suggestedAction] ?? analysis.data.suggestedAction}</p><p className="mt-1 text-sm opacity-75">{analysis.data.requiresAction ? "Requer atenção" : "Não requer ação imediata"}</p></div><div><div className="flex items-center gap-2"><p className="text-xs font-semibold uppercase tracking-[0.16em]">Confiança</p><span title="Estimativa da IA sobre a confiança na interpretação do documento. O backend valida o valor entre 0% e 100%; não é uma verificação factual independente." aria-label="Sobre a confiança da análise"><FontAwesomeIcon icon={faCircleInfo} className="text-xs opacity-60" /></span></div><p className="mt-2 text-lg font-semibold">{Math.round(analysis.data.confidence * 100)}%</p><p className="mt-1 text-sm opacity-75">Modelo {analysis.data.model} - Prompt {analysis.data.promptVersion}</p></div></div><div className="mt-6"><p className="text-xs font-semibold uppercase tracking-[0.16em]">Ativos afetados</p><div className="mt-3 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map((asset) => <span key={asset} className="rounded-full border border-current/15 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span className="text-sm opacity-75">Nenhum ativo listado.</span>}</div><p className="mt-4 text-xs opacity-75">Análise criada em {formatDate(analysis.data.createdAt)}</p></div></div>}
         </div>}
       </section>
     </div>
