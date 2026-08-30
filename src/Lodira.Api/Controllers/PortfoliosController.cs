@@ -112,11 +112,11 @@ public sealed class PortfoliosController : ControllerBase
         var health = await LoadHealthForDashboard(portfolioId, targets, cancellationToken);
         var snapshotPortfolio = await dbContext.Portfolios.AsNoTracking().Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, cancellationToken);
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
-        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed).OrderByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).ToListAsync(cancellationToken);
-        var assessments = (await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken)).OrderByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).ToList();
-        var attention = assessments.Where(RadarAttentionNowPolicy.RequiresAttention).Take(3).Select(CreateDashboardAssessment).ToList();
+        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed).ToListAsync(cancellationToken);
+        var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
+        var attention = assessments.Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Take(3).Select(CreateDashboardAssessment).ToList();
         var attentionIds = attention.Select(x => x.AssessmentId).ToHashSet();
-        var recent = assessments.Where(a => !attentionIds.Contains(a.Id)).Take(3).Select(CreateDashboardAssessment).ToList();
+        var recent = assessments.Where(a => !attentionIds.Contains(a.Id)).OrderByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Take(3).Select(CreateDashboardAssessment).ToList();
         var primaryNeed = health.CapitalNeeds.OrderBy(x => x.PriorityOrder).FirstOrDefault();
         return Ok(new DashboardResponse(
             portfolio.Id,

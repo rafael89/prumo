@@ -65,6 +65,19 @@ public sealed class GeminiAnalysisServiceTests
         Assert.Null(handler.Authorization);
     }
 
+    [Fact]
+    public async Task LeRetryDelayDoErroEstruturadoDoGemini()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("{\"error\":{\"details\":[{\"retryDelay\":\"7s\"}]}}", Encoding.UTF8, "application/json")
+        };
+
+        var exception = await Assert.ThrowsAsync<AiProviderRateLimitException>(() => CreateService(new StubHandler(_ => response)).AnalyzeAsync("texto", Context));
+
+        Assert.Equal(TimeSpan.FromSeconds(7), exception.RetryAfter);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, typeof(InvalidOperationException))]
     [InlineData(HttpStatusCode.Forbidden, typeof(InvalidOperationException))]

@@ -35,8 +35,13 @@ public sealed class RadarController : ControllerBase
         var portfolio = await db.Portfolios.AsNoTracking().Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
         var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
-        var loadedAssessments = await query.OrderByDescending(x => x.GeneratedAt).ThenBy(x => x.Id).ToListAsync(ct);
-        var assessments = (await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct)).OrderByDescending(x => x.GeneratedAt).ThenBy(x => x.Id).ToList();
+        var loadedAssessments = await query.ToListAsync(ct);
+        var assessments = (await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct))
+            .OrderByDescending(x => x.AttentionPriority)
+            .ThenByDescending(x => x.InvestmentEvent!.OccurredAt)
+            .ThenByDescending(x => x.GeneratedAt)
+            .ThenByDescending(x => x.Id)
+            .ToList();
         var items = assessments.Select(ToDto).ToList();
         if (requiresAttention.HasValue) items = items.Where(x => x.RequiresAttention == requiresAttention.Value).ToList();
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100);
