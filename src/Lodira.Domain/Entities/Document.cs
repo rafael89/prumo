@@ -18,7 +18,10 @@ public sealed class Document
         string? sourceIdentifier,
         string sourceUrl,
         string fingerprint,
-        string? downloadUrl = null)
+        string? downloadUrl = null,
+        string? sourceCategory = null,
+        string? sourceType = null,
+        string? sourceSpecies = null)
     {
         if (assetId == Guid.Empty) throw new ArgumentException("O ativo é obrigatório.", nameof(assetId));
         if (string.IsNullOrWhiteSpace(sourceName)) throw new ArgumentException("A fonte é obrigatória.", nameof(sourceName));
@@ -28,6 +31,9 @@ public sealed class Document
         Id = Guid.NewGuid();
         AssetId = assetId;
         DocumentType = documentType;
+        SourceCategory = Clean(sourceCategory);
+        SourceType = Clean(sourceType);
+        SourceSpecies = Clean(sourceSpecies);
         PublishedAt = publishedAt.ToUniversalTime();
         SourceName = sourceName.Trim();
         SourceIdentifier = string.IsNullOrWhiteSpace(sourceIdentifier) ? null : sourceIdentifier.Trim();
@@ -41,9 +47,13 @@ public sealed class Document
     public Guid Id { get; private set; }
     public Guid AssetId { get; private set; }
     public DocumentType DocumentType { get; private set; }
+    public DocumentType CanonicalDocumentType => DocumentType;
     public DateTimeOffset PublishedAt { get; private set; }
     public string SourceName { get; private set; } = string.Empty;
     public string? SourceIdentifier { get; private set; }
+    public string? SourceCategory { get; private set; }
+    public string? SourceType { get; private set; }
+    public string? SourceSpecies { get; private set; }
     public string SourceUrl { get; private set; } = string.Empty;
     public string? DownloadUrl { get; private set; }
     public string? FilePath { get; private set; }
@@ -82,14 +92,27 @@ public sealed class Document
         DocumentType = documentType;
     }
 
+    public void UpdateSourceMetadata(string? sourceCategory, string? sourceType, string? sourceSpecies, DocumentType canonicalDocumentType)
+    {
+        SourceCategory = Clean(sourceCategory) ?? SourceCategory;
+        SourceType = Clean(sourceType) ?? SourceType;
+        SourceSpecies = Clean(sourceSpecies) ?? SourceSpecies;
+        if (canonicalDocumentType != DocumentType.Other && (DocumentType == DocumentType.Other || DocumentType != canonicalDocumentType))
+        {
+            DocumentType = canonicalDocumentType;
+        }
+    }
+
     public static string CreateFingerprint(string ticker, DateTimeOffset publishedAt, DocumentType documentType, string sourceName, string? sourceIdentifier, string sourceUrl)
     {
         var sourceIdentity = !string.IsNullOrWhiteSpace(sourceIdentifier)
             ? $"identifier:{sourceIdentifier.Trim()}"
             : $"url:{NormalizeUrl(sourceUrl)}";
-        var input = $"{sourceName.Trim().ToUpperInvariant()}|{ticker.Trim().ToUpperInvariant()}|{publishedAt.ToUniversalTime():O}|{documentType}|{sourceIdentity}";
+        var input = $"{sourceName.Trim().ToUpperInvariant()}|{ticker.Trim().ToUpperInvariant()}|{publishedAt.ToUniversalTime():O}|{sourceIdentity}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
     }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string NormalizeUrl(string sourceUrl)
     {

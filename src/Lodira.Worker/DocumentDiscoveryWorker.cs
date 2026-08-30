@@ -65,15 +65,15 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
 
         var assetByTicker = assets.ToDictionary(asset => asset.Ticker, StringComparer.OrdinalIgnoreCase);
         var reclassifiedDocuments = 0;
-        foreach (var candidate in candidates.Where(candidate => candidate.DocumentType != DocumentType.Other && assetByTicker.ContainsKey(candidate.Ticker)))
+        foreach (var candidate in candidates.Where(candidate => assetByTicker.ContainsKey(candidate.Ticker)))
         {
             var asset = assetByTicker[candidate.Ticker];
             var existing = await dbContext.Documents.FirstOrDefaultAsync(document =>
                 document.AssetId == asset.Id && document.SourceName == source.Name &&
                 ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && document.SourceIdentifier == candidate.SourceIdentifier) || document.SourceUrl == candidate.SourceUrl), cancellationToken);
-            if (existing?.DocumentType == DocumentType.Other)
+            if (existing is not null)
             {
-                existing.Reclassify(candidate.DocumentType);
+                existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType);
                 reclassifiedDocuments++;
             }
         }
@@ -105,7 +105,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
                 continue;
             }
 
-            var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl);
+            var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl, candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
             dbContext.Documents.Add(document);
             dbContext.ProcessingJobs.Add(new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow));
             await dbContext.SaveChangesAsync(cancellationToken);

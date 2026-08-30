@@ -51,6 +51,23 @@ public sealed class NewAssetBootstrapServiceTests
         Assert.Equal(ProcessingJobType.DownloadDocument, db.ProcessingJobs.Single().JobType);
     }
 
+    [Fact]
+    public async Task Bootstrap_selects_context_by_priority_and_recent_material_fact()
+    {
+        var options = new DbContextOptionsBuilder<LodiraDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new LodiraDbContext(options);
+        var asset = new Asset("XPML11", "XP Malls", AssetType.Fii, null, AssetClass.Fii, "12345678000190");
+        db.Assets.Add(asset);
+        await db.SaveChangesAsync();
+
+        var service = new NewAssetBootstrapService(db, new BootstrapDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);
+        await service.DiscoverLatestOnlyAsync(new[] { asset.Id }, CancellationToken.None);
+
+        Assert.Equal(2, db.Documents.Count());
+        Assert.Contains(db.Documents, document => document.DocumentType == DocumentType.ManagementReport);
+        Assert.Contains(db.Documents, document => document.DocumentType == DocumentType.RelevantFact);
+    }
+
     private sealed class FakeSource : IDocumentSource
     {
         public string Name => "Fake CVM";
@@ -71,5 +88,16 @@ public sealed class NewAssetBootstrapServiceTests
         public Task<IReadOnlyList<DocumentCandidate>> FindAsync(IReadOnlyCollection<DocumentSourceAsset> assets, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DocumentCandidate>>([
             new("XPML11", DocumentType.ManagementReport, DateTimeOffset.Parse("2026-01-01T00:00:00Z"), "a", "https://example.test/a.pdf", "https://example.test/a.pdf"),
             new("XPML11", DocumentType.ManagementReport, DateTimeOffset.Parse("2026-07-01T00:00:00Z"), "b", "https://example.test/b.pdf", "https://example.test/b.pdf")]);
+    }
+
+    private sealed class BootstrapDocumentsSource : IDocumentSource
+    {
+        public string Name => "Fake CVM";
+        public Task<IReadOnlyList<DocumentCandidate>> FindAsync(IReadOnlyCollection<string> tickers, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DocumentCandidate>>([]);
+        public Task<IReadOnlyList<DocumentCandidate>> FindAsync(IReadOnlyCollection<DocumentSourceAsset> assets, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<DocumentCandidate>>([
+            new("XPML11", DocumentType.Other, DateTimeOffset.Parse("2026-08-26T00:00:00Z"), "notice", "https://example.test/notice", "https://example.test/notice", "Avisos", "Aviso operacional", null),
+            new("XPML11", DocumentType.MonthlyReport, DateTimeOffset.Parse("2026-08-20T00:00:00Z"), "monthly", "https://example.test/monthly", "https://example.test/monthly", "Informes Periódicos", "Informe Mensal", null),
+            new("XPML11", DocumentType.ManagementReport, DateTimeOffset.Parse("2026-08-05T00:00:00Z"), "management", "https://example.test/management", "https://example.test/management", "Relatórios", "Relatório Gerencial", null),
+            new("XPML11", DocumentType.RelevantFact, DateTimeOffset.Parse("2026-08-10T00:00:00Z"), "fact", "https://example.test/fact", "https://example.test/fact", "Fatos Relevantes", "Fato Relevante", null)]);
     }
 }

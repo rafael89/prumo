@@ -58,6 +58,25 @@ public sealed class CvmFnetDocumentSourceTests
     }
 
     [Fact]
+    public async Task PreservaCategoriaTipoEEspecieOficiaisQuandoDisponiveis()
+    {
+        const string csv = "CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;CATEGORIA;TP_DOC;ESPECIE;NM_ARQ;ID_DOC;LINK_ARQ\n" +
+            "11.111.111/0001-11;31/07/2026;07/08/2026;Relatórios;Relatório Gerencial;;relatorio.pdf;126;https://dados.cvm.gov.br/documentos/relatorio.pdf\n";
+        using var client = new HttpClient(new CsvHandler(csv));
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            DocumentosEventuaisUrlTemplate = "https://dados.cvm.gov.br/eventual_{0}.csv"
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidate = Assert.Single(await source.FindAsync(new[] { new DocumentSourceAsset("ABCD11", "11.111.111/0001-11") }));
+
+        Assert.Equal("Relatórios", candidate.SourceCategory);
+        Assert.Equal("Relatório Gerencial", candidate.SourceType);
+        Assert.Null(candidate.SourceSpecies);
+        Assert.Equal(DocumentType.ManagementReport, candidate.DocumentType);
+    }
+
+    [Fact]
     public async Task DescartaTickerSemResolucaoCvm()
     {
         using var client = new HttpClient(new CsvHandler("header\n"));

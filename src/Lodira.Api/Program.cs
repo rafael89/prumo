@@ -21,6 +21,7 @@ builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>
 builder.Services.AddDbContext<LodiraDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 builder.Services.Configure<CvmFnetOptions>(builder.Configuration.GetSection("Documents"));
+builder.Services.Configure<DocumentBootstrapOptions>(builder.Configuration.GetSection("DocumentBootstrap"));
 builder.Services.AddHttpClient<CvmFnetDocumentSource>();
 builder.Services.AddSingleton<IPortfolioImporter, B3XlsxPortfolioImporter>();
 builder.Services.AddScoped<NewAssetBootstrapService>();

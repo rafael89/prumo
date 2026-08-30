@@ -5,6 +5,7 @@ using Lodira.Application.Abstractions;
 using Lodira.Application.Documents;
 using Lodira.Application.Intelligence;
 using Lodira.Application.Contributions;
+using Lodira.Application.PortfolioImports;
 using Lodira.Infrastructure.Ai;
 using Lodira.Infrastructure.DocumentSources;
 using Lodira.Infrastructure.Documents;
@@ -53,6 +54,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddDbContext<LodiraDbContext>(options => options.UseNpgsql(context.Configuration.GetConnectionString("Postgres")));
         services.AddScoped<IProcessingJobQueue, PostgresProcessingJobQueue>();
         services.Configure<CvmFnetOptions>(context.Configuration.GetSection("Documents"));
+        services.Configure<DocumentBootstrapOptions>(context.Configuration.GetSection("DocumentBootstrap"));
         services.AddHttpClient<CvmFnetDocumentSource>();
         services.AddHttpClient("documents");
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));

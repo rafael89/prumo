@@ -11,6 +11,9 @@ public sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.HasKey(document => document.Id);
         builder.Property(document => document.SourceName).HasMaxLength(80).IsRequired();
         builder.Property(document => document.SourceIdentifier).HasMaxLength(200);
+        builder.Property(document => document.SourceCategory).HasMaxLength(200);
+        builder.Property(document => document.SourceType).HasMaxLength(200);
+        builder.Property(document => document.SourceSpecies).HasMaxLength(200);
         builder.Property(document => document.SourceUrl).HasMaxLength(2000).IsRequired();
         builder.Property(document => document.DownloadUrl).HasMaxLength(2000);
         builder.Property(document => document.FilePath).HasMaxLength(1000);

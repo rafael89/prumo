@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Lodira.Application.Abstractions;
+using Lodira.Application.Documents;
+using Lodira.Application.PortfolioImports;
 using Lodira.Domain.Entities;
 using Lodira.Domain.Enums;
 using Lodira.Infrastructure.Persistence;
@@ -12,7 +15,8 @@ public sealed class NewAssetBootstrapService
     private readonly LodiraDbContext db;
     private readonly IDocumentSource source;
     private readonly ILogger<NewAssetBootstrapService> logger;
-    public NewAssetBootstrapService(LodiraDbContext db, IDocumentSource source, ILogger<NewAssetBootstrapService> logger) { this.db = db; this.source = source; this.logger = logger; }
+    private readonly DocumentBootstrapOptions options;
+    public NewAssetBootstrapService(LodiraDbContext db, IDocumentSource source, ILogger<NewAssetBootstrapService> logger, IOptions<DocumentBootstrapOptions>? options = null) { this.db = db; this.source = source; this.logger = logger; this.options = options?.Value ?? new DocumentBootstrapOptions(); }
 
     public async Task DiscoverLatestOnlyAsync(IEnumerable<Guid> assetIds, CancellationToken ct)
     {
@@ -21,12 +25,17 @@ public sealed class NewAssetBootstrapService
         logger.LogInformation("CVM bootstrap iniciado para {AssetCount} novo(s) FII", assets.Count);
         var candidates = await source.FindAsync(assets.Select(a => new DocumentSourceAsset(a.Ticker, a.Cnpj)).ToArray(), ct);
         logger.LogInformation("CVM bootstrap descobriu {DocumentCount} candidato(s) para novos FIIs", candidates.Count);
-        foreach (var candidate in LatestDocumentSelector.SelectPerTicker(candidates))
+        foreach (var candidate in LatestDocumentSelector.SelectBootstrap(candidates, DateTimeOffset.UtcNow, options.MaterialFactLookbackMonths))
         {
             var asset = assets.Single(a => a.Ticker.Equals(candidate.Ticker, StringComparison.OrdinalIgnoreCase));
             var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);
-            if (await db.Documents.AnyAsync(d => d.Fingerprint == fingerprint, ct)) continue;
-            var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl);
+            var existing = await db.Documents.FirstOrDefaultAsync(d => d.Fingerprint == fingerprint || (d.AssetId == asset.Id && d.SourceName == source.Name && ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && d.SourceIdentifier == candidate.SourceIdentifier) || d.SourceUrl == candidate.SourceUrl)), ct);
+            if (existing is not null)
+            {
+                existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType);
+                continue;
+            }
+            var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl, candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
             var job = new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow);
             db.Documents.Add(document); db.ProcessingJobs.Add(job);
             logger.LogInformation("Portfolio import bootstrap scheduled: AssetId={AssetId}, Ticker={Ticker}, JobId={JobId}", asset.Id, asset.Ticker, job.Id);

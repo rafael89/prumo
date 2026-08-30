@@ -164,6 +164,10 @@ namespace Lodira.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("PublishedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("SourceCategory")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("SourceIdentifier")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -172,6 +176,14 @@ namespace Lodira.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SourceSpecies")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SourceType")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("SourceUrl")
                         .IsRequired()

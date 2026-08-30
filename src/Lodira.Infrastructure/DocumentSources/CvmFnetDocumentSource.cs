@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Lodira.Application.Abstractions;
+using Lodira.Application.Documents;
 using Lodira.Domain.Enums;
 
 namespace Lodira.Infrastructure.DocumentSources;
@@ -77,11 +78,14 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
                     candidates.Add(new DocumentCandidate(
                         ticker,
-                        CvmDocumentTypeMapper.Map(record.TipoDocumento),
+                        CvmDocumentTypeMapper.Map(record.Categoria, record.TipoDocumento, record.Especie),
                         publishedAt,
                         string.IsNullOrWhiteSpace(record.IdDocumento) ? record.NomeArquivo : record.IdDocumento,
                         documentUrl,
-                        documentUrl));
+                        documentUrl,
+                        record.Categoria,
+                        record.TipoDocumento,
+                        record.Especie));
                 }
             }
 
@@ -117,6 +121,8 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                 Get(fields, index, "DT_COMPTC"),
                 Get(fields, index, "DT_RECEB"),
                 Get(fields, index, "TP_DOC"),
+                GetAny(fields, index, "CATEGORIA", "CATEGORIA_DOCUMENTO", "DS_CATEGORIA"),
+                GetAny(fields, index, "ESPECIE", "ESPECIE_DOCUMENTO", "TP_ESPECIE", "DS_ESPECIE"),
                 Get(fields, index, "NM_ARQ"),
                 Get(fields, index, "ID_DOC"),
                 Get(fields, index, "LINK_ARQ")))
@@ -160,6 +166,9 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
     private static string? Get(IReadOnlyList<string> fields, IReadOnlyDictionary<string, int> index, string name) =>
         index.TryGetValue(name, out var position) && position < fields.Count ? fields[position] : null;
 
+    private static string? GetAny(IReadOnlyList<string> fields, IReadOnlyDictionary<string, int> index, params string[] names) =>
+        names.Select(name => Get(fields, index, name)).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
     private static string NormalizeCnpj(string? value) =>
         new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
 
@@ -170,19 +179,9 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
     internal static class CvmDocumentTypeMapper
     {
-        public static DocumentType Map(string? value)
-        {
-            var normalized = (value ?? string.Empty).Normalize(NormalizationForm.FormD);
-            normalized = new string(normalized.Where(character => CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark).ToArray()).ToUpperInvariant();
-            return normalized switch
-            {
-                var type when type.Contains("FATO RELEVANTE") => DocumentType.RelevantFact,
-                var type when type.Contains("COMUNICADO") => DocumentType.Communication,
-                var type when type.Contains("RELATORIO GERENCIAL") || type.Contains("RELATORIO DE GESTAO") || type.Contains("RELATORIO MENSAL") || type.Contains("INFORME MENSAL") || type.Contains("DEMONSTRACOES FINANCEIRAS") => DocumentType.ManagementReport,
-                _ => DocumentType.Other
-            };
-        }
+        public static DocumentType Map(string? category, string? type, string? species) =>
+            DocumentClassificationPolicy.Map(category, type, species);
     }
 
-    private sealed record CvmDocumentRecord(string? Cnpj, string? DataCompetencia, string? DataRecebimento, string? TipoDocumento, string? NomeArquivo, string? IdDocumento, string? LinkArquivo);
+    private sealed record CvmDocumentRecord(string? Cnpj, string? DataCompetencia, string? DataRecebimento, string? TipoDocumento, string? Categoria, string? Especie, string? NomeArquivo, string? IdDocumento, string? LinkArquivo);
 }

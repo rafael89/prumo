@@ -1,0 +1,24 @@
+using Lodira.Application.Documents;
+using Lodira.Domain.Enums;
+
+namespace Lodira.Domain.Tests;
+
+public sealed class DocumentClassificationPolicyTests
+{
+    [Theory]
+    [InlineData("Relatórios", "Relatório Gerencial", null, DocumentType.ManagementReport)]
+    [InlineData("Informes Periódicos", "Informe Mensal", null, DocumentType.MonthlyReport)]
+    [InlineData("Informes Periódicos", "Informe Trimestral", null, DocumentType.QuarterlyReport)]
+    [InlineData("Fatos Relevantes", "Fato Relevante", null, DocumentType.RelevantFact)]
+    [InlineData("Aviso aos Cotistas - Estruturado", "Rendimentos e Amortizações", null, DocumentType.Other)]
+    public void Maps_official_metadata_deterministically(string category, string type, string? species, DocumentType expected)
+    {
+        Assert.Equal(expected, DocumentClassificationPolicy.Map(category, type, species));
+    }
+
+    [Fact]
+    public void Unknown_type_remains_unknown_without_inference()
+    {
+        Assert.Equal(DocumentType.Other, DocumentClassificationPolicy.Map("Relatórios", "Anúncio de Encerramento", null));
+    }
+}

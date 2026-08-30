@@ -8,10 +8,11 @@ import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass, faRotate } f
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
 const priorityLabels: Record<string, string> = { Critical: 'Crítica', High: 'Alta', Medium: 'Média', Low: 'Baixa' }
 const processingStatuses = ['Descoberto', 'Baixado', 'Aguardando processamento', 'Processando', 'Processado', 'Erro', 'Ignorado']
-const documentTypes = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Outro']
+const documentTypes = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
 const importanceLabels = { Critical: 'Cr\u00edtico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem\u00e7\u00e3o' }
 const classificationLabels = { CorporateAction: 'A\u00e7\u00e3o corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribui\u00e7\u00e3o', CapitalRaise: 'Capta\u00e7\u00e3o', AssetTransaction: 'Transa\u00e7\u00e3o de ativos', Governance: 'Governan\u00e7a', Operational: 'Operacional', Liquidation: 'Liquida\u00e7\u00e3o', Other: 'Outro' }
 const actionLabels = { Maintain: 'Manter', IncreasePosition: 'Aumentar posi\u00e7\u00e3o', ReduceExposure: 'Reduzir exposi\u00e7\u00e3o', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem a\u00e7\u00e3o', OpenPosition: 'Abrir posi\u00e7\u00e3o' }
+const documentTypeOptions = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`)
   if (!response.ok) throw new Error('Não foi possível carregar os dados.')
@@ -41,6 +42,11 @@ function analysisTone(importance: string) {
   if (importance === 'Relevant') return 'border-amber-300 bg-amber-50 text-amber-900'
   if (importance === 'Informative') return 'border-sky-300 bg-sky-50 text-sky-900'
   return 'border-slate-300 bg-white text-slate-900'
+}
+
+function documentTypeLabel(document: any) {
+  if (document?.documentType === 5 && document.sourceType) return document.sourceType
+  return documentTypeOptions[document?.documentType] ?? document?.sourceType ?? 'Documento'
 }
 
 function DocumentJobDetails({ document }: any) {
@@ -123,7 +129,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
           {documents.data?.items.map((document) => {
             const isSelected = document.id === selectedDocument?.id
             return <button id={`document-${document.id}`} key={document.id} type="button" onClick={() => setSelectedDocumentId(document.id)} className={`scroll-mt-28 flex w-full items-center justify-between gap-4 py-3 text-left text-sm transition ${isSelected ? 'text-slate-950' : 'text-slate-700 hover:text-slate-950'}`}>
-              <div className="min-w-0"><strong>{document.ticker}</strong><span className="ml-3 text-slate-500">{document.sourceName}</span><p className="mt-1 truncate text-xs text-slate-500">{formatDate(document.publishedAt)} - {documentTypes[document.documentType] ?? 'Documento'}</p></div>
+              <div className="min-w-0"><strong>{document.ticker}</strong><span className="ml-3 text-slate-500">{document.sourceName}</span><p className="mt-1 truncate text-xs text-slate-500">{formatDate(document.publishedAt)} - {documentTypeLabel(document)}</p></div>
               <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${isSelected ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{processingStatuses[document.processingStatus] ?? 'Desconhecido'}</span>
             </button>
           })}

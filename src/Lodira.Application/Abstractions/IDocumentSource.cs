@@ -18,4 +18,7 @@ public sealed record DocumentCandidate(
     DateTimeOffset PublishedAt,
     string? SourceIdentifier,
     string SourceUrl,
-    string? DownloadUrl);
+    string? DownloadUrl,
+    string? SourceCategory = null,
+    string? SourceType = null,
+    string? SourceSpecies = null);
