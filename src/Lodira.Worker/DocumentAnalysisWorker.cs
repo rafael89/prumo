@@ -104,6 +104,15 @@ public sealed class DocumentAnalysisWorker : BackgroundService
             return;
         }
 
+        if (!IsTransient(exception))
+        {
+            job.MarkFailedPermanently(DateTimeOffset.UtcNow, error);
+            if (job.Document is not null) job.Document.MarkError();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogError(exception, "Falha permanente no job de analise {JobId}; tentativa={Attempt}; erro={Error}", job.Id, job.Attempts, error);
+            return;
+        }
+
         var retryDelay = exception is AiProviderRateLimitException { RetryAfter: not null } rateLimit
             ? rateLimit.RetryAfter!.Value
             : ComputeRetryDelay(job.Attempts);
@@ -114,6 +123,8 @@ public sealed class DocumentAnalysisWorker : BackgroundService
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogError(exception, "Falha no job de analise {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}; erro={Error}", job.Id, retry, job.Attempts, options.MaxAttempts, error);
     }
+
+    private static bool IsTransient(Exception exception) => exception is HttpRequestException or TaskCanceledException or TimeoutException;
 
     private TimeSpan ComputeRetryDelay(int attempt)
     {

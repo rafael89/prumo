@@ -44,6 +44,18 @@ public sealed class GeminiAnalysisServiceTests
     }
 
     [Fact]
+    public async Task AceitaDataDeCalendarioSemHorarioNosEventos()
+    {
+        const string payload = "{\"importance\":\"RELEVANT\",\"classification\":\"OTHER\",\"requiresAction\":false,\"suggestedAction\":\"NO_ACTION\",\"summary\":\"Resumo\",\"impact\":\"Impacto\",\"affectedAssets\":[],\"confidence\":0.9,\"events\":[{\"eventType\":\"FINANCIAL_RESULT\",\"occurredAt\":\"2026-08-27\",\"summary\":\"Resultado\",\"facts\":[],\"affectedAssets\":[]}] }";
+        var response = $"{{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":{JsonSerializer.Serialize(payload)}}}]}}}}]}}";
+        var handler = new StubHandler(_ => JsonResponse(response));
+
+        var result = await CreateService(handler).AnalyzeAsync("texto", Context);
+
+        Assert.Equal(DateTimeOffset.Parse("2026-08-27T00:00:00Z"), Assert.Single(result.Events!).OccurredAt);
+    }
+
+    [Fact]
     public async Task UsaChaveNoHeaderProprioDoGemini()
     {
         var handler = new StubHandler(_ => JsonResponse(ValidResponse()));

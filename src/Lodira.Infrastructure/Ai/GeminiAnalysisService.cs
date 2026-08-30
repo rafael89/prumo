@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Lodira.Application.Abstractions;
@@ -73,7 +75,7 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         if (!string.IsNullOrWhiteSpace(envelope.SafetyReason)) throw new InvalidOperationException($"Gemini bloqueou a análise por segurança: {envelope.SafetyReason}");
         if (string.IsNullOrWhiteSpace(envelope.Text)) throw new InvalidOperationException($"Resposta Gemini vazia ou sem conteúdo textual{(string.IsNullOrWhiteSpace(envelope.FinishReason) ? "." : $" (finishReason={envelope.FinishReason}).")}");
 
-        var payload = JsonSerializer.Deserialize<AiAnalysisPayload>(envelope.Text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var payload = JsonSerializer.Deserialize<AiAnalysisPayload>(envelope.Text, CreatePayloadJsonOptions());
         if (payload is null) throw new InvalidOperationException("Resposta estruturada do Gemini vazia.");
         return validator.Validate(NormalizePayload(payload), rawResponse);
     }
@@ -98,6 +100,34 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         "INCREASE_POSITION" => "IncreasePosition", "REDUCE_EXPOSURE" => "ReduceExposure", "EVALUATE_SALE" => "EvaluateSale",
         "MONITOR" => "Monitor", "OPEN_POSITION" => "OpenPosition", _ => value
     };
+
+    private static JsonSerializerOptions CreatePayloadJsonOptions()
+    {
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        options.Converters.Add(new LenientNullableDateTimeOffsetConverter());
+        return options;
+    }
+
+    private sealed class LenientNullableDateTimeOffsetConverter : JsonConverter<DateTimeOffset?>
+    {
+        public override bool HandleNull => true;
+
+        public override DateTimeOffset? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Null) return null;
+            if (reader.TokenType != JsonTokenType.String) return null;
+            var value = reader.GetString();
+            return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed)
+                ? parsed
+                : null;
+        }
+
+        public override void Write(Utf8JsonWriter writer, DateTimeOffset? value, JsonSerializerOptions options)
+        {
+            if (value.HasValue) writer.WriteStringValue(value.Value);
+            else writer.WriteNullValue();
+        }
+    }
 
     private static GeminiEnvelope ParseEnvelope(string rawResponse)
     {
