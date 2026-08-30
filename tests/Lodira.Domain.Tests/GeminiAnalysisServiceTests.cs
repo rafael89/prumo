@@ -78,6 +78,35 @@ public sealed class GeminiAnalysisServiceTests
         Assert.Equal(TimeSpan.FromSeconds(7), exception.RetryAfter);
     }
 
+    [Fact]
+    public async Task UsaModeloFallbackQuandoModeloPrincipalExcedeQuota()
+    {
+        var requests = new List<Uri>();
+        var handler = new StubHandler(request =>
+        {
+            requests.Add(request.RequestUri!);
+            return requests.Count == 1
+                ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                : JsonResponse(ValidResponse());
+        });
+        var service = new GeminiAnalysisService(
+            new HttpClient(handler),
+            Options.Create(new AiProviderOptions
+            {
+                ApiKey = "test-key",
+                Model = "gemini-3.5-flash-lite",
+                FallbackModel = "gemini-3.1-flash-lite",
+                TimeoutSeconds = 5
+            }),
+            new AiAnalysisValidator(),
+            NullLogger<GeminiAnalysisService>.Instance);
+
+        var result = await service.AnalyzeAsync("texto", Context);
+
+        Assert.Equal("gemini-3.1-flash-lite", result.Model);
+        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", requests[1].ToString());
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, typeof(InvalidOperationException))]
     [InlineData(HttpStatusCode.Forbidden, typeof(InvalidOperationException))]

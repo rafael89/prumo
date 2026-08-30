@@ -70,6 +70,7 @@ public sealed class RateLimitedAiAnalysisService : IAiAnalysisService
     { this.inner = inner; this.limiter = limiter; this.logger = logger; }
 
     public string Model => inner.Model;
+    public IReadOnlyList<string> AcceptedModels => inner.AcceptedModels;
     public string PromptVersion => inner.PromptVersion;
 
     public async Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default)

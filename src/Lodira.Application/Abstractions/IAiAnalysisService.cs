@@ -5,6 +5,7 @@ namespace Lodira.Application.Abstractions;
 public interface IAiAnalysisService
 {
     string Model { get; }
+    IReadOnlyList<string> AcceptedModels => new[] { Model };
     string PromptVersion { get; }
     Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default);
 }
@@ -72,4 +73,5 @@ public sealed record AiAnalysisResult(
     IReadOnlyList<string> AffectedAssets,
     decimal Confidence,
     string RawResponse,
-    IReadOnlyList<AiInvestmentEventResult>? Events = null);
+    IReadOnlyList<AiInvestmentEventResult>? Events = null,
+    string? Model = null);

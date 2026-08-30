@@ -26,14 +26,31 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
     }
 
     public string Model => options.Model;
+    public IReadOnlyList<string> AcceptedModels => HasFallbackModel() ? new[] { options.Model, options.FallbackModel } : new[] { options.Model };
     public string PromptVersion => DocumentAnalysisPrompt.GlobalVersion;
 
     public async Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(options.ApiKey)) throw new InvalidOperationException("AI:ApiKey não configurada para o provider Gemini.");
         if (string.IsNullOrWhiteSpace(options.Model)) throw new InvalidOperationException("AI:Model não configurado para o provider Gemini.");
+        try
+        {
+            return await AnalyzeWithModelAsync(options.Model, documentText, context, cancellationToken);
+        }
+        catch (AiProviderRateLimitException) when (HasFallbackModel())
+        {
+            logger.LogWarning("Quota do modelo Gemini excedida; tentando fallback model={FallbackModel}; primaryModel={PrimaryModel}", options.FallbackModel, options.Model);
+            return await AnalyzeWithModelAsync(options.FallbackModel, documentText, context, cancellationToken);
+        }
+    }
+
+    private bool HasFallbackModel() => !string.IsNullOrWhiteSpace(options.FallbackModel)
+        && !string.Equals(options.Model, options.FallbackModel, StringComparison.OrdinalIgnoreCase);
+
+    private async Task<AiAnalysisResult> AnalyzeWithModelAsync(string model, string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken)
+    {
         var prompt = DocumentAnalysisPrompt.BuildGlobal(documentText, context);
-        using var request = new HttpRequestMessage(HttpMethod.Post, string.Format(EndpointTemplate, Uri.EscapeDataString(options.Model)))
+        using var request = new HttpRequestMessage(HttpMethod.Post, string.Format(EndpointTemplate, Uri.EscapeDataString(model)))
         {
             Content = JsonContent.Create(new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseSchema = AnalysisSchema } })
         };
@@ -52,7 +69,7 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         if (!string.IsNullOrWhiteSpace(envelope.SafetyReason)) throw new InvalidOperationException($"Gemini bloqueou a análise por segurança: {envelope.SafetyReason}");
         if (string.IsNullOrWhiteSpace(envelope.Text)) throw new InvalidOperationException($"Resposta Gemini vazia ou sem conteúdo textual{(string.IsNullOrWhiteSpace(envelope.FinishReason) ? "." : $" (finishReason={envelope.FinishReason}).")}");
         var payload = JsonSerializer.Deserialize<AiAnalysisPayload>(envelope.Text, CreatePayloadJsonOptions()) ?? throw new InvalidOperationException("Resposta estruturada do Gemini vazia.");
-        return validator.Validate(NormalizePayload(payload), rawResponse);
+        return validator.Validate(NormalizePayload(payload), rawResponse) with { Model = model };
     }
 
     private static AiAnalysisPayload NormalizePayload(AiAnalysisPayload payload) => payload with

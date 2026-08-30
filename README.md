@@ -142,6 +142,7 @@ Para usar o Gemini:
 $env:AI__Provider="Gemini"
 $env:AI__ApiKey="sua-chave"
 $env:AI__Model="gemini-3.5-flash-lite"
+$env:AI__FallbackModel="gemini-3.1-flash-lite"
 $env:AI__TimeoutSeconds="60"
 dotnet run --project src/Lodira.Worker
 ```

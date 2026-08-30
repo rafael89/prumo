@@ -55,7 +55,7 @@ public sealed class DocumentAnalysisProcessor
             .SingleOrDefaultAsync(item => item.Id == job.DocumentId, cancellationToken)
             ?? throw new InvalidOperationException("Documento do job nao encontrado.");
 
-        if (await dbContext.DocumentAnalyses.AnyAsync(item => item.DocumentId == document.Id && item.Model == aiAnalysisService.Model && item.PromptVersion == aiAnalysisService.PromptVersion, cancellationToken))
+        if (await dbContext.DocumentAnalyses.AnyAsync(item => item.DocumentId == document.Id && aiAnalysisService.AcceptedModels.Contains(item.Model) && item.PromptVersion == aiAnalysisService.PromptVersion, cancellationToken))
         {
             document.MarkProcessed();
             job.Complete(DateTimeOffset.UtcNow);
@@ -95,7 +95,7 @@ public sealed class DocumentAnalysisProcessor
         var analysis = new DocumentAnalysis(
             job.Id,
             document.Id,
-            aiAnalysisService.Model,
+            result.Model ?? aiAnalysisService.Model,
             aiAnalysisService.PromptVersion,
             result.Importance,
             result.Classification,
