@@ -48,6 +48,9 @@ public static class ContributionIntelligenceApplier
         var reasons = string.IsNullOrWhiteSpace(result.OverallReasoning) ? Array.Empty<string>() : new[] { result.OverallReasoning };
         return fallback with { Allocations = allocations, UnallocatedAmount = decimal.Round(fallback.ContributionAmount - allocations.Sum(x => x.Amount), 2), Reasons = reasons, Evidence = allocations.SelectMany(x => x.Evidence).Distinct().ToArray(), AllocationStyle = allocations.Length switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed } };
     }
+
+    public static ContributionGuidance ApplyFallback(ContributionGuidance fallback, string reason)
+        => fallback with { Reasons = string.IsNullOrWhiteSpace(reason) ? fallback.Reasons : new[] { reason } };
 }
 
 public sealed class DeterministicContributionIntelligenceProvider : IContributionIntelligenceProvider

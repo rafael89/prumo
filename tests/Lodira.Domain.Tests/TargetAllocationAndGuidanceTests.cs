@@ -102,6 +102,21 @@ public sealed class TargetAllocationAndGuidanceTests
     }
 
     [Fact]
+    public void Intelligence_fallback_preserves_deterministic_allocation_and_explains_why()
+    {
+        var assetId = Guid.NewGuid();
+        var positions = new[] { new GuidancePosition(assetId, "AAA", AssetClass.BrazilianStock, 1000, 100) };
+        var baseline = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(
+            Guid.NewGuid(), 250, CreateHealth((AssetClass.BrazilianStock, 1000, 100)), positions, Array.Empty<GuidanceAssessment>()));
+
+        var fallback = ContributionIntelligenceApplier.ApplyFallback(baseline, "A cota da IA foi excedida; cálculo determinístico aplicado.");
+
+        Assert.Equal(250, fallback.AllocatedAmount);
+        Assert.Equal(assetId, fallback.Allocations.Single().AssetId);
+        Assert.Equal("A cota da IA foi excedida; cálculo determinístico aplicado.", fallback.Reasons.Single());
+    }
+
+    [Fact]
     public void Guidance_allocates_without_individual_asset_limit_and_preserves_sum()
     {
         var portfolioId = Guid.NewGuid();
