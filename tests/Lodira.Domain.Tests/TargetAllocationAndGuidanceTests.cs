@@ -3,6 +3,7 @@ using Lodira.Application.Portfolio;
 using Lodira.Domain.Entities;
 using Lodira.Domain.Enums;
 using Lodira.Application.Explainability;
+using System.Text.Json;
 
 namespace Lodira.Domain.Tests;
 
@@ -52,6 +53,41 @@ public sealed class TargetAllocationAndGuidanceTests
         var candidates = new[] { new ContributionCandidate(allowed, "AAA", AssetClass.Fii, 100, 10, 50, 50, 1000, false, Array.Empty<ContributionAssessmentContext>()), new ContributionCandidate(blocked, "BBB", AssetClass.Fii, 100, 10, 50, 50, 1000, true, Array.Empty<ContributionAssessmentContext>()) };
         var result = new ContributionIntelligenceResult(new[] { new ContributionCandidateEvaluation(blocked, 1, 100, "x", 1, Array.Empty<EvidenceReference>()) }, "x", ContributionIntelligenceAvailability.IntelligenceAvailable, new("e", "p", "pr", "x", "m", DateTimeOffset.UtcNow));
         Assert.False(ContributionIntelligenceValidator.IsValid(result, 1000, candidates));
+    }
+
+    [Fact]
+    public void Intelligence_validation_rejects_sum_above_class_budget()
+    {
+        var first = Guid.NewGuid(); var second = Guid.NewGuid();
+        var candidates = new[]
+        {
+            new ContributionCandidate(first, "AAA", AssetClass.Fii, 100, 50, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>()),
+            new ContributionCandidate(second, "BBB", AssetClass.Fii, 100, 50, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>())
+        };
+        var result = new ContributionIntelligenceResult(new[]
+        {
+            new ContributionCandidateEvaluation(first, 1, 60, "x", .8m, Array.Empty<EvidenceReference>()),
+            new ContributionCandidateEvaluation(second, 2, 60, "y", .8m, Array.Empty<EvidenceReference>())
+        }, "x", ContributionIntelligenceAvailability.IntelligenceAvailable, new("e", "p", "pr", "x", "m", DateTimeOffset.UtcNow));
+
+        Assert.False(ContributionIntelligenceValidator.IsValid(result, 200, candidates));
+    }
+
+    [Fact]
+    public void Contribution_work_item_round_trips_through_job_json()
+    {
+        var assetId = Guid.NewGuid();
+        var positions = new[] { new GuidancePosition(assetId, "AAA", AssetClass.BrazilianStock, 1000, 100) };
+        var baseline = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(
+            Guid.NewGuid(), 100, CreateHealth((AssetClass.BrazilianStock, 1000, 100)), positions, Array.Empty<GuidanceAssessment>()));
+        var candidates = new[] { new ContributionCandidate(assetId, "AAA", AssetClass.BrazilianStock, 1000, 100, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>()) };
+
+        var json = JsonSerializer.Serialize(new ContributionGuidanceWorkItem(baseline, positions, candidates));
+        var restored = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(json);
+
+        Assert.NotNull(restored);
+        Assert.Equal(assetId, restored.Candidates.Single().AssetId);
+        Assert.Equal(100, restored.Baseline.AllocatedAmount);
     }
 
     [Fact]

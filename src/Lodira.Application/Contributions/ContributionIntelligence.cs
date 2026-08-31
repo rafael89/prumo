@@ -10,6 +10,7 @@ public sealed record ContributionAssessmentContext(string AttentionPriority, str
 public sealed record ContributionCandidateEvaluation(Guid AssetId, int Rank, decimal SuggestedAmount, string Reason, decimal Confidence, IReadOnlyList<EvidenceReference> Evidence);
 public sealed record ContributionIntelligenceMetadata(string EngineVersion, string PolicyVersion, string PromptVersion, string Provider, string Model, DateTimeOffset GeneratedAt);
 public sealed record ContributionIntelligenceResult(IReadOnlyList<ContributionCandidateEvaluation> CandidateEvaluations, string OverallReasoning, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
+public sealed record ContributionGuidanceWorkItem(ContributionGuidance Baseline, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<ContributionCandidate> Candidates);
 
 public interface IContributionIntelligenceProvider
 {
@@ -20,11 +21,18 @@ public static class ContributionIntelligenceValidator
 {
     public static bool IsValid(ContributionIntelligenceResult result, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates)
     {
-        if (result is null || result.CandidateEvaluations.Any(x => x.SuggestedAmount < 0 || x.Confidence is < 0 or > 1) || result.CandidateEvaluations.GroupBy(x => x.AssetId).Any(x => x.Count() > 1)) return false;
+        if (result is null || result.CandidateEvaluations.Any(x => x.Rank <= 0 || x.SuggestedAmount < 0 || x.Confidence is < 0 or > 1)
+            || result.CandidateEvaluations.GroupBy(x => x.AssetId).Any(x => x.Count() > 1)
+            || result.CandidateEvaluations.GroupBy(x => x.Rank).Any(x => x.Count() > 1)) return false;
         var byId = candidates.ToDictionary(x => x.AssetId);
-        if (result.CandidateEvaluations.Any(x => !byId.TryGetValue(x.AssetId, out var candidate) || candidate.HasBlock || x.SuggestedAmount > candidate.ClassBudget)) return false;
-        return result.CandidateEvaluations.Sum(x => x.SuggestedAmount) <= decimal.Round(contributionAmount, 2);
+        if (result.CandidateEvaluations.Any(x => !byId.TryGetValue(x.AssetId, out var candidate) || candidate.HasBlock || Money(x.SuggestedAmount) > candidate.ClassBudget)) return false;
+        if (result.CandidateEvaluations
+            .GroupBy(x => byId[x.AssetId].AssetClass)
+            .Any(group => group.Sum(x => Money(x.SuggestedAmount)) > candidates.First(x => x.AssetClass == group.Key).ClassBudget)) return false;
+        return result.CandidateEvaluations.Sum(x => Money(x.SuggestedAmount)) <= Money(contributionAmount);
     }
+
+    private static decimal Money(decimal value) => decimal.Round(value, 2);
 }
 
 public static class ContributionIntelligenceApplier
@@ -37,7 +45,8 @@ public static class ContributionIntelligenceApplier
             var position = byId[x.AssetId];
             return new ContributionAllocation(x.AssetId, position.Ticker, position.AssetClass, decimal.Round(x.SuggestedAmount, 2), x.Reason, x.Evidence.Select(e => e.Label).Where(e => !string.IsNullOrWhiteSpace(e)).ToArray());
         }).ToArray();
-        return fallback with { Allocations = allocations, UnallocatedAmount = decimal.Round(fallback.ContributionAmount - allocations.Sum(x => x.Amount), 2), Reasons = fallback.Reasons.Concat(new[] { result.OverallReasoning }).ToArray(), Evidence = allocations.SelectMany(x => x.Evidence).Distinct().ToArray(), AllocationStyle = allocations.Length switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed } };
+        var reasons = string.IsNullOrWhiteSpace(result.OverallReasoning) ? Array.Empty<string>() : new[] { result.OverallReasoning };
+        return fallback with { Allocations = allocations, UnallocatedAmount = decimal.Round(fallback.ContributionAmount - allocations.Sum(x => x.Amount), 2), Reasons = reasons, Evidence = allocations.SelectMany(x => x.Evidence).Distinct().ToArray(), AllocationStyle = allocations.Length switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed } };
     }
 }
 

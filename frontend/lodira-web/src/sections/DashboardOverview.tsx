@@ -230,8 +230,10 @@ function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onG
     enabled: Boolean(guidance?.guidanceId && guidance.jobStatus && guidance.jobStatus !== 'Completed' && guidance.jobStatus !== 'Failed'),
     refetchInterval: query => query.state.data?.jobStatus === 'Completed' || query.state.data?.jobStatus === 'Failed' ? false : 1500
   })
-  const visibleGuidance = persistedGuidance.data?.jobStatus === 'Completed' || persistedGuidance.data?.jobStatus === 'Failed' ? persistedGuidance.data : guidance
-  const enriching = Boolean(guidance?.jobStatus && guidance.jobStatus !== 'Completed' && guidance.jobStatus !== 'Failed')
+  const currentGuidance = persistedGuidance.data ?? guidance
+  const visibleGuidance = currentGuidance?.jobStatus === 'Completed' ? currentGuidance : undefined
+  const enriching = Boolean(currentGuidance?.jobStatus && currentGuidance.jobStatus !== 'Completed' && currentGuidance.jobStatus !== 'Failed')
+  const analysisFailed = currentGuidance?.jobStatus === 'Failed'
   const hasNoNeeds = matchesEnum(rawPreview?.status, 2, 'NoNeeds')
   const preview = hasNoNeeds && rawPreview ? { ...rawPreview, summary: 'Sua carteira está alinhada; o próximo aporte buscará preservar suas alocações-alvo.' } : rawPreview
   const isNoNeeds = false
@@ -265,15 +267,16 @@ function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onG
         </form>}
         {isNotConfigured && <Link to="/portfolio" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Configurar estratégia <FontAwesomeIcon icon={faArrowRight} /></Link>}
         {isNoNeeds && <p className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-700"><FontAwesomeIcon icon={faCircleCheck} /> Nenhuma classe precisa ser priorizada agora.</p>}
-        {guidance && guidance.jobStatus !== 'Completed' && guidance.jobStatus !== 'Failed' && <p role="status" className="mt-4 flex items-center gap-2 text-sm font-medium text-amber-700"><FontAwesomeIcon icon={faSpinner} spin /> Refinando sua sugestão...</p>}
+        {enriching && <p role="status" className="mt-4 flex items-center gap-2 text-sm font-medium text-amber-700"><FontAwesomeIcon icon={faSpinner} spin /> A IA está analisando os ativos e definindo a distribuição...</p>}
+        {analysisFailed && <p className="mt-4 text-sm font-medium text-rose-700">Não foi possível concluir a análise da IA. Tente novamente.</p>}
       </div>
 
       <div className="min-w-0">
         {!visibleGuidance ? <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm leading-6 text-slate-500">
-          {isAvailable ? 'Informe um valor para ver a orientação calculada pelo Lodira.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
+          {enriching ? 'A distribuição será exibida somente após a conclusão da análise da IA.' : isAvailable ? 'Informe um valor para iniciar a análise da IA.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
         </div> : <GuidanceResult guidance={visibleGuidance} privacyHidden={privacyHidden} />}
       </div>
-      {visibleGuidance && <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8">{enriching ? <><p className="text-sm font-semibold text-slate-900">Preparando sua orientação</p><div className="mt-4 space-y-3"><div className="h-3 animate-pulse rounded bg-slate-200" /><div className="h-3 animate-pulse rounded bg-slate-200" /><div className="h-3 w-3/5 animate-pulse rounded bg-slate-200" /></div></> : <ContributionSummary guidance={visibleGuidance} />}</div>}
+      {visibleGuidance && <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8"><ContributionSummary guidance={visibleGuidance} /></div>}
     </div>
   </article>
 }

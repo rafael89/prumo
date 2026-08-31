@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Lodira.Application.Contributions;
 using Lodira.Domain.Entities;
 using Lodira.Infrastructure.Persistence;
-using Lodira.Infrastructure.Ai;
 using Lodira.Domain.Enums;
 
 namespace Lodira.Worker;
@@ -25,27 +24,29 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 try
                 {
                     var guidance = await db.ContributionGuidances.Include(x => x.Allocations).SingleAsync(x => x.Id == job.ContributionGuidanceId, stoppingToken);
-                var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).SingleAsync(x => x.Id == job.PortfolioId, stoppingToken);
-                var positions = JsonSerializer.Deserialize<List<GuidancePosition>>(job.CandidatesJson) ?? new(); var classBudgets = guidance.Allocations.Join(positions, a => a.AssetId, p => p.AssetId, (a, p) => new { p.AssetClass, a.Amount }).GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.Sum(a => a.Amount));
-                var candidates = positions.Select(x => new ContributionCandidate(x.AssetId, x.Ticker, x.AssetClass, x.CurrentValue, x.CurrentWeight, 0, 0, classBudgets.GetValueOrDefault(x.AssetClass), false, Array.Empty<ContributionAssessmentContext>())).ToList();
-                var provider = scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(); var result = await provider.EvaluateAsync(job.PortfolioId, guidance.RequestedAmount, candidates, stoppingToken);
-                guidance.UpdateIntelligence(result.Metadata.Provider, result.Metadata.Model, result.Availability.ToString(), result.OverallReasoning, JsonSerializer.Serialize(result.Metadata));
-                if (ContributionIntelligenceValidator.IsValid(result, guidance.RequestedAmount, candidates) && result.Availability != ContributionIntelligenceAvailability.InsufficientIntelligence)
-                {
-                    var applied = ContributionIntelligenceApplier.Apply(new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(job.PortfolioId, guidance.RequestedAmount, new Lodira.Application.Portfolio.PortfolioHealthResult(Lodira.Domain.Enums.PortfolioHealthStatus.Aligned, Array.Empty<Lodira.Application.Portfolio.AllocationDeviation>(), null, Array.Empty<Lodira.Application.Portfolio.CapitalNeed>(), "worker", DateTimeOffset.UtcNow), positions, Array.Empty<GuidanceAssessment>())), result, positions);
-                    guidance.ReplaceAllocations(applied.Allocations.Select(a => new PersistedContributionGuidanceAllocation(guidance.Id, a.AssetId, a.Amount, a.Reason, 0, JsonSerializer.Serialize(a.Evidence))));
-                }
-                job.Complete();
-                metrics.RecordCompleted("ContributionGuidance", stopwatch.Elapsed);
-                await db.SaveChangesAsync(stoppingToken);
-                logger.LogInformation("Job de guidance {JobId} concluído em {DurationMs} ms; backlog={Backlog}", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog);
+                    var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson)
+                        ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
+                    var provider = scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>();
+                    var result = await provider.EvaluateAsync(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, stoppingToken);
+                    if (!ContributionIntelligenceValidator.IsValid(result, guidance.RequestedAmount, workItem.Candidates))
+                        throw new InvalidOperationException("A IA retornou uma distribuição que viola os limites da carteira.");
+
+                    guidance.UpdateIntelligence(result.Metadata.Provider, result.Metadata.Model, result.Availability.ToString(), result.OverallReasoning, JsonSerializer.Serialize(result.Metadata));
+                    var applied = ContributionIntelligenceApplier.Apply(workItem.Baseline, result, workItem.Positions);
+                    var evaluations = result.CandidateEvaluations.ToDictionary(x => x.AssetId);
+                    guidance.ReplaceAllocations(applied.Allocations.Select(a => new PersistedContributionGuidanceAllocation(
+                        guidance.Id, a.AssetId, a.Amount, a.Reason, evaluations[a.AssetId].Confidence, JsonSerializer.Serialize(a.Evidence))));
+                    job.Complete();
+                    metrics.RecordCompleted("ContributionGuidance", stopwatch.Elapsed);
+                    await db.SaveChangesAsync(stoppingToken);
+                    logger.LogInformation("Job de guidance {JobId} concluído em {DurationMs} ms; backlog={Backlog}", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog);
                 }
                 catch (Exception ex)
                 {
                     job.Fail(ex.Message);
                     metrics.RecordFailed("ContributionGuidance", stopwatch.Elapsed);
                     await db.SaveChangesAsync(stoppingToken);
-                    logger.LogError(ex, "Falha no job de guidance {JobId} após {DurationMs} ms; backlog={Backlog}; fallback persistido", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog);
+                    logger.LogError(ex, "Falha no job de guidance {JobId} após {DurationMs} ms; backlog={Backlog}; nenhuma alocação foi publicada", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
