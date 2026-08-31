@@ -16,6 +16,8 @@ namespace Lodira.Api.Controllers;
 [Route("api/portfolios/{portfolioId:guid}/contribution-guidance")]
 public sealed class ContributionGuidanceController(LodiraDbContext db, PortfolioAssessmentCurrentService current) : ControllerBase
 {
+    private const string ContributionEngineVersion = "R4-3.0";
+
     [HttpPost]
     public async Task<ActionResult<object>> Generate(Guid portfolioId, ContributionRequest request, CancellationToken ct)
     {
@@ -32,20 +34,6 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
         var targetKey = TargetAllocationKeyCalculator.Calculate(targets)!;
         var amount = decimal.Round(request.Amount, 2);
-        var existing = await db.ContributionGuidances.AsNoTracking().Include(x => x.Allocations)
-            .Where(x => x.PortfolioId == portfolioId && x.RequestedAmount == amount && x.PortfolioSnapshotKey == snapshot && x.TargetAllocationKey == targetKey)
-            .OrderByDescending(x => x.GeneratedAt).FirstOrDefaultAsync(ct);
-
-        if (existing is not null)
-        {
-            var existingStatus = await db.ContributionGuidanceJobs.AsNoTracking()
-                .Where(x => x.ContributionGuidanceId == existing.Id).OrderByDescending(x => x.CreatedAt)
-                .Select(x => (ContributionGuidanceJobStatus?)x.Status).FirstOrDefaultAsync(ct);
-            if (existingStatus is ContributionGuidanceJobStatus.Completed)
-                return Ok(await CompletedResponseAsync(portfolioId, existing, ct));
-            if (existingStatus is ContributionGuidanceJobStatus.Queued or ContributionGuidanceJobStatus.Processing)
-                return Accepted(PendingResponse(existing.Id, existing.RequestedAmount, existingStatus.Value, true));
-        }
 
         var health = new PortfolioHealthCalculator().Calculate(portfolio, targets);
         var total = portfolio.Positions.Sum(x => x.CurrentValue ?? 0);
@@ -61,7 +49,28 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         var inputs = assessments.Where(x => x.InvestmentEvent is not null)
             .SelectMany(x => x.InvestmentEvent!.AffectedAssets.Where(a => ids.Contains(a.Id)).Select(a => new GuidanceAssessment(
                 a.Id, x.CapitalDecisionImpact, x.Status, x.InvestmentEvent.Evidence.FirstOrDefault()?.Reference, x.AssessmentVersion,
-                x.AttentionPriority, x.ActionRequirement, x.Summary, x.WhyItMatters, x.SuggestedBehavior, ConfidenceValue(x.Confidence)))).ToList();
+                x.AttentionPriority, x.ActionRequirement, x.Summary, x.WhyItMatters, x.SuggestedBehavior, ConfidenceValue(x.Confidence), x.Id))).ToList();
+        var intelligenceContextKey = ContributionIntelligenceContextKeyCalculator.Calculate(inputs);
+        var existing = await db.ContributionGuidances.AsNoTracking().Include(x => x.Allocations)
+            .Where(x => x.PortfolioId == portfolioId
+                && x.RequestedAmount == amount
+                && x.PortfolioSnapshotKey == snapshot
+                && x.TargetAllocationKey == targetKey
+                && x.IntelligenceContextKey == intelligenceContextKey
+                && x.EngineVersion == ContributionEngineVersion)
+            .OrderByDescending(x => x.GeneratedAt).FirstOrDefaultAsync(ct);
+
+        if (existing is not null)
+        {
+            var existingStatus = await db.ContributionGuidanceJobs.AsNoTracking()
+                .Where(x => x.ContributionGuidanceId == existing.Id).OrderByDescending(x => x.CreatedAt)
+                .Select(x => (ContributionGuidanceJobStatus?)x.Status).FirstOrDefaultAsync(ct);
+            if (existingStatus is ContributionGuidanceJobStatus.Completed)
+                return Ok(await CompletedResponseAsync(portfolioId, existing, ct));
+            if (existingStatus is ContributionGuidanceJobStatus.Queued or ContributionGuidanceJobStatus.Processing)
+                return Accepted(PendingResponse(existing.Id, existing.RequestedAmount, existingStatus.Value, true));
+        }
+
         var baseline = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(portfolioId, amount, health, positions, inputs));
         var classBudgets = baseline.Allocations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.Sum(a => a.Amount));
         var deviations = health.AllocationDeviations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.First());
@@ -70,14 +79,14 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
             var contexts = inputs.Where(x => x.AssetId == position.AssetId).Select(x => new ContributionAssessmentContext(
                 x.AttentionPriority.ToString(), x.ActionRequirement.ToString(), x.Impact.ToString(), x.Summary, x.WhyItMatters,
                 x.SuggestedBehavior, x.Confidence,
-                new[] { new EvidenceReference("assessment", $"{x.AssetId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) })).ToArray();
+                new[] { new EvidenceReference("assessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) })).ToArray();
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
             return new ContributionCandidate(position.AssetId, position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
                 deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, classBudgets.GetValueOrDefault(position.AssetClass),
                 inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts);
         }).ToArray();
 
-        var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, "R4-3.0", "pending-ai", "pending", "Pending", "A IA está analisando os candidatos e os limites da carteira.", "{}");
+        var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, intelligenceContextKey, ContributionEngineVersion, "pending-ai", "pending", "Pending", "A IA está analisando os candidatos e os limites da carteira.", "{}");
         db.ContributionGuidances.Add(persisted);
         var job = new ContributionGuidanceJob(portfolioId, persisted.Id, JsonSerializer.Serialize(new ContributionGuidanceWorkItem(baseline, positions, candidates)));
         db.ContributionGuidanceJobs.Add(job);

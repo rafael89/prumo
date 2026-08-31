@@ -375,6 +375,11 @@ namespace Lodira.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("IntelligenceContextKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("MetadataJson")
                         .IsRequired()
                         .HasMaxLength(100000)
@@ -414,7 +419,7 @@ namespace Lodira.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PortfolioId", "PortfolioSnapshotKey", "TargetAllocationKey", "RequestedAmount", "GeneratedAt");
+                    b.HasIndex("PortfolioId", "PortfolioSnapshotKey", "TargetAllocationKey", "IntelligenceContextKey", "RequestedAmount", "GeneratedAt");
 
                     b.ToTable("ContributionGuidances");
                 });
