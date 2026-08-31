@@ -11,7 +11,7 @@ type DocumentsResponse = { items: DocumentItem[]; page: number; totalItems: numb
 type ProcessingStatus = { failedCount: number }
 type PortfolioAssessment = { priority: string; currentWeight: number; currentValue: number | null; requiresAttention: boolean; portfolioImpactText: string }
 type DocumentAnalysis = { importance: string; classification: string; summary: string; impact: string; portfolioImpact: string; portfolioAssessment: PortfolioAssessment | null; suggestedAction: string; requiresAction: boolean; confidence: number; model: string; promptVersion: string; affectedAssets: string[]; createdAt: string }
-type DocumentsSectionProps = { portfolioId: string; selectedDocumentId: string | null; setSelectedDocumentId: (id: string | null) => void; privacyHidden: boolean; initialDocumentId: string | null }
+type DocumentsSectionProps = { portfolioId: string; selectedDocumentId: string | null; setSelectedDocumentId: (id: string | null) => void; privacyHidden: boolean }
 const priorityLabels: Record<string, string> = { Critical: 'Crítica', High: 'Alta', Medium: 'Média', Low: 'Baixa' }
 const processingStatuses = ['Descoberto', 'Baixado', 'Aguardando análise', 'Analisando', 'Processado', 'Erro', 'Ignorado']
 const documentTypes = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
@@ -60,7 +60,7 @@ function DocumentJobDetails({ document }: { document: DocumentItem | null }) {
   return <div className="document-job-details mt-8 mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p className="font-semibold">Último erro ({document.jobStatus ?? 'Falha'})</p><p className="mt-2 break-words">{document.lastError}</p>{document.retryAt && <p className="mt-2 text-xs">Próxima tentativa: {formatDate(document.retryAt)}</p>}</div>
 }
 
-export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden, initialDocumentId }: DocumentsSectionProps) {
+export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden }: DocumentsSectionProps) {
   const queryClient = useQueryClient()
   const [documentPage, setDocumentPage] = useState(1)
   const [documentFilter, setDocumentFilter] = useState('')
@@ -72,11 +72,6 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['documents'] }); await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }) },
   })
   const processingStatus = useQuery({ queryKey: ['document-processing-status', portfolioId], queryFn: () => getJson<ProcessingStatus>(`/api/portfolios/${portfolioId}/document-processing-status`), enabled: Boolean(portfolioId), refetchInterval: 2000 })
-
-  useEffect(() => {
-    setDocumentPage(1)
-    setSelectedDocumentId(initialDocumentId ?? null)
-  }, [portfolioId, initialDocumentId, setSelectedDocumentId])
 
   const documents = useQuery({
     queryKey: ['documents', portfolioId, documentPage, documentFilter, documentStatus, documentTypeFilter],

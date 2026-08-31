@@ -107,20 +107,18 @@ function App() {
   const location = useLocation()
   const route = location.pathname
   const queryClient = useQueryClient()
+  const documentIdFromUrl = new URLSearchParams(location.search).get('documentId') ?? (route.startsWith('/documents/') ? route.slice('/documents/'.length) : null)
+  const documentSelectionKey = `${route}|${location.search}`
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null)
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
+  const [documentSelection, setDocumentSelection] = useState<{ key: string; id: string | null }>({ key: '', id: null })
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [privacyHidden, setPrivacyHidden] = useState(false)
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [importProcessing, setImportProcessing] = useState(false)
-  const [failedNoticeDismissed, setFailedNoticeDismissed] = useState(false)
+  const [failedNoticeOverride, setFailedNoticeOverride] = useState<{ portfolioId: string; dismissed: boolean } | null>(null)
   const [positionPage, setPositionPage] = useState(1)
-  const documentIdFromUrl = new URLSearchParams(location.search).get('documentId') ?? (route.startsWith('/documents/') ? route.slice('/documents/'.length) : null)
-  useEffect(() => {
-    if (route === '/documents' || route.startsWith('/documents/')) setSelectedDocumentId(documentIdFromUrl)
-  }, [route, documentIdFromUrl])
   useEffect(() => {
     if (feedback?.tone !== 'success') return
     const timeout = window.setTimeout(() => setFeedback(null), 4000)
@@ -158,9 +156,14 @@ function App() {
     portfolios.data?.find((item) => item.id === selectedPortfolioId)
     ?? portfolios.data?.[0]
     ?? null
-  useEffect(() => {
-    if (activePortfolio?.id) setFailedNoticeDismissed(localStorage.getItem(`lodira.failed-notice.${activePortfolio.id}`) === '1')
-  }, [activePortfolio?.id])
+  const activeDocumentSelectionKey = `${documentSelectionKey}|${activePortfolio?.id ?? ''}`
+  const selectedDocumentId = documentSelection.key === activeDocumentSelectionKey ? documentSelection.id : documentIdFromUrl
+  const setSelectedDocumentId = (id: string | null) => setDocumentSelection({ key: activeDocumentSelectionKey, id })
+  const failedNoticeDismissed = activePortfolio
+    ? failedNoticeOverride?.portfolioId === activePortfolio.id
+      ? failedNoticeOverride.dismissed
+      : localStorage.getItem(`lodira.failed-notice.${activePortfolio.id}`) === '1'
+    : false
 
   const dashboard = useQuery({
     queryKey: ['dashboard', activePortfolio?.id, positionPage],
@@ -176,7 +179,7 @@ function App() {
   })
   const reprocessFailed = useMutation({
     mutationFn: () => sendJson<{ requeuedCount: number }, { errorContains: string | null }>(`/api/portfolios/${activePortfolio!.id}/documents/reprocess-failed`, 'POST', { errorContains: null }),
-    onSuccess: async () => { setFailedNoticeDismissed(false); if (activePortfolio?.id) localStorage.removeItem(`lodira.failed-notice.${activePortfolio.id}`); await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }); await queryClient.invalidateQueries({ queryKey: ['documents'] }) },
+    onSuccess: async () => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: false }); localStorage.removeItem(`lodira.failed-notice.${activePortfolio.id}`) } await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }); await queryClient.invalidateQueries({ queryKey: ['documents'] }) },
     onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
 
@@ -329,7 +332,7 @@ function App() {
           <div className="mx-auto flex max-w-[89.5rem] flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
             <div className="order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Visão geral</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aportes</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents', true)}>Documentos</Link></div>
-            <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.failedCount > 0 && !failedNoticeDismissed && <div role="status" className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"><span>{processingStatus.data.failedCount} documento(s) com erro</span><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="underline">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar'}</button><button type="button" aria-label="Marcar aviso como visto" onClick={() => { setFailedNoticeDismissed(true); if (activePortfolio?.id) localStorage.setItem(`lodira.failed-notice.${activePortfolio.id}`, '1') }} className="text-base leading-none">×</button></div>}{processingStatus.data && processingStatus.data.status !== 'Completed' && processingStatus.data.status !== 'Failed' && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{processingStatus.data.status === 'Processing' ? 'Analisando seus documentos...' : 'Seus documentos serão analisados em instantes.'}</span>}<button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
+            <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.failedCount > 0 && !failedNoticeDismissed && <div role="status" className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"><span>{processingStatus.data.failedCount} documento(s) com erro</span><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="underline">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar'}</button><button type="button" aria-label="Marcar aviso como visto" onClick={() => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: true }); localStorage.setItem(`lodira.failed-notice.${activePortfolio.id}`, '1') } }} className="text-base leading-none">×</button></div>}{processingStatus.data && processingStatus.data.status !== 'Completed' && processingStatus.data.status !== 'Failed' && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{processingStatus.data.status === 'Processing' ? 'Analisando seus documentos...' : 'Seus documentos serão analisados em instantes.'}</span>}<button type="button" aria-label={privacyHidden ? "Exibir valores" : "Ocultar valores"} onClick={() => setPrivacyHidden((current) => !current)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm" title={privacyHidden ? "Exibir valores" : "Ocultar valores"}>{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} privacyHidden={privacyHidden} onGenerateGuidance={(amount) => sendJson<DashboardGuidance, { amount: number }>(`/api/portfolios/${activePortfolio?.id ?? ''}/contribution-guidance`, 'POST', { amount })} />}
@@ -351,7 +354,7 @@ function App() {
           </div>}
         </section>
         {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-[89.5rem] gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio.id} /></div>}
-        {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-6xl px-6 pb-24"><DocumentsSection portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} initialDocumentId={documentIdFromUrl} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
+        {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-6xl px-6 pb-24"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
   )
