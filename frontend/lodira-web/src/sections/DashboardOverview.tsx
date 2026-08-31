@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowRight, faCircleCheck, faCircleInfo, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
 
-const contributionApiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
+import { apiBaseUrl } from '../api/client'
+const contributionApiUrl = apiBaseUrl
 
 type Position = {
   id: string

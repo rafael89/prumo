@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using Lodira.Application.Abstractions;
 using Lodira.Domain.Enums;
 using Lodira.Infrastructure.Ai;
@@ -12,12 +13,14 @@ public sealed class DocumentAnalysisWorker : BackgroundService
     private readonly IServiceScopeFactory scopeFactory;
     private readonly JobProcessingOptions options;
     private readonly ILogger<DocumentAnalysisWorker> logger;
+    private readonly WorkerMetrics metrics;
 
-    public DocumentAnalysisWorker(IServiceScopeFactory scopeFactory, IOptions<JobProcessingOptions> options, ILogger<DocumentAnalysisWorker> logger)
+    public DocumentAnalysisWorker(IServiceScopeFactory scopeFactory, IOptions<JobProcessingOptions> options, ILogger<DocumentAnalysisWorker> logger, WorkerMetrics metrics)
     {
         this.scopeFactory = scopeFactory;
         this.options = options.Value;
         this.logger = logger;
+        this.metrics = metrics;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -53,6 +56,10 @@ public sealed class DocumentAnalysisWorker : BackgroundService
             return;
         }
 
+        var stopwatch = Stopwatch.StartNew();
+        var backlog = await dbContext.ProcessingJobs.CountAsync(item => item.JobType == ProcessingJobType.AnalyzeDocument && item.Status == ProcessingJobStatus.Queued && item.AvailableAt <= DateTimeOffset.UtcNow, cancellationToken);
+        metrics.SetBacklog(ProcessingJobType.AnalyzeDocument, backlog);
+
         try
         {
             if (job.Document is not null && await HasNewerDocumentAsync(dbContext, job.Document, cancellationToken))
@@ -60,11 +67,13 @@ public sealed class DocumentAnalysisWorker : BackgroundService
                 job.Document.MarkIgnored();
                 job.Complete(DateTimeOffset.UtcNow);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                logger.LogInformation("Job de analise {JobId} ignorado: documento {DocumentId} nao e o mais recente do ativo {AssetId}.", job.Id, job.DocumentId, job.Document.AssetId);
+                logger.LogInformation("Job de analise {JobId} ignorado: documento {DocumentId} nao e o mais recente do ativo {AssetId}; duraçãoMs={DurationMs}; backlog={Backlog}.", job.Id, job.DocumentId, job.Document.AssetId, stopwatch.Elapsed.TotalMilliseconds, backlog);
+                metrics.RecordCompleted(ProcessingJobType.AnalyzeDocument, stopwatch.Elapsed);
                 return;
             }
 
             await processor.ProcessAsync(job, cancellationToken);
+            metrics.RecordCompleted(ProcessingJobType.AnalyzeDocument, stopwatch.Elapsed);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -73,10 +82,12 @@ public sealed class DocumentAnalysisWorker : BackgroundService
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
+            metrics.RecordFailed(ProcessingJobType.AnalyzeDocument, stopwatch.Elapsed);
             await FailJobAsync(dbContext, job.Id, "Timeout na chamada ao provider de IA.", exception, cancellationToken);
         }
         catch (Exception exception)
         {
+            metrics.RecordFailed(ProcessingJobType.AnalyzeDocument, stopwatch.Elapsed);
             await FailJobAsync(dbContext, job.Id, exception.Message, exception, cancellationToken);
         }
     }

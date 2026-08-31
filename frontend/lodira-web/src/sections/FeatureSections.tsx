@@ -5,7 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFileArrowUp } from '@fortawesome/free-solid-svg-icons'
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
+import { apiBaseUrl } from '../api/client'
+const apiUrl = apiBaseUrl
 type RadarItem = { assessmentId: string; investmentEventId: string; documentAnalysisId: string; affectedAssets: string[]; eventType: number; occurredAt: string | null; attentionPriority: number; actionRequirement: number; capitalDecisionImpact: number; status: number; userState: number; requiresAttention: boolean; eventSummary: string; summary: string; whyItMatters: string; suggestedBehavior: string; confidence: number; generatedAt: string; evidence: Array<{ documentId: string; documentAnalysisId: string }> }
 type RadarResponse = { attentionNow: RadarItem[]; recentUpdates: RadarItem[]; requiresAttention: number; unread: number; page: number; totalPages: number }
 type Position = { id: string; assetClass: number; ticker: string }

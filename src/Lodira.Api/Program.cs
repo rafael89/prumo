@@ -56,10 +56,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-else
-{
-    app.UseHttpsRedirection();
-}
+// TLS is terminated by the reverse proxy in container deployments. The proxy
+// is responsible for redirecting external HTTP requests to HTTPS.
 app.UseCors("frontend");
 app.UseAuthorization();
 

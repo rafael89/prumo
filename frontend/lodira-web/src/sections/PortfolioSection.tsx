@@ -1,9 +1,23 @@
-// @ts-nocheck
-import { useState, type FormEvent } from 'react'
+import { useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
- type PortfolioSectionProps = { portfolios: any; activePortfolio: any; portfolioName: string; setPortfolioName: (value: string) => void; handleCreatePortfolio: (event: FormEvent<HTMLFormElement>) => void; createPortfolio: any; deletePortfolio: any; renamePortfolio: any; editingPortfolioId: string | null; setEditingPortfolioId: (id: string | null) => void; editingPortfolioName: string; setEditingPortfolioName: (value: string) => void; setSelectedPortfolioId: (id: string | null) => void; setSelectedDocumentId: (id: string | null) => void; setPositionPage: (page: number) => void; setFeedback: (value: any) => void; privacyHidden: boolean; positionForm: any; setPositionForm: (value: any) => void; assetTypeOptions: any; handleCreatePosition: (event: FormEvent<HTMLFormElement>) => void; createPosition: any; dashboard: any; editingPositionId: string | null; startEditing: (position: any) => void; handleUpdatePosition: (event: FormEvent<HTMLFormElement>, positionId: string) => void; editForm: any; setEditForm: (value: any) => void; updatePosition: any; setEditingPositionId: (id: string | null) => void; deletePosition: any; selectedAsset: any; setSelectedAssetId: (id: string | null) => void }
+type AssetType = 0 | 1 | 2 | 3
+type PortfolioItem = { id: string; name: string; totalValue: number; positionCount: number }
+type Position = { id: string; assetId: string; assetClass: number; ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null; currentValue: number | null; portfolioWeight: number }
+type Feedback = { tone: 'success' | 'error'; message: string } | null
+type PositionForm = { ticker: string; name: string; assetType: AssetType; sector: string; quantity: string; averagePrice: string; currentPrice: string }
+type EditForm = { quantity: string; averagePrice: string; currentPrice: string }
+type Mutation<TVariables> = Pick<UseMutationResult<unknown, Error, TVariables>, 'isPending' | 'mutate'>
+type DashboardData = { positions: Position[]; page: number; totalPages: number }
+type PortfolioSectionProps = {
+  portfolios: UseQueryResult<PortfolioItem[], Error>; activePortfolio: PortfolioItem | null; portfolioName: string; setPortfolioName: (value: string) => void; handleCreatePortfolio: (event: FormEvent<HTMLFormElement>) => void
+  createPortfolio: Mutation<{ name: string }>; deletePortfolio: Mutation<string>; renamePortfolio: Mutation<{ portfolioId: string; name: string }>; editingPortfolioId: string | null; setEditingPortfolioId: (id: string | null) => void; editingPortfolioName: string; setEditingPortfolioName: (value: string) => void
+  setSelectedPortfolioId: (id: string | null) => void; setSelectedDocumentId: (id: string | null) => void; setPositionPage: (page: number) => void; setFeedback: (value: Feedback) => void; privacyHidden: boolean; positionForm: PositionForm; setPositionForm: Dispatch<SetStateAction<PositionForm>>; assetTypeOptions: Array<{ value: AssetType; label: string }>; handleCreatePosition: (event: FormEvent<HTMLFormElement>) => void
+  createPosition: Mutation<{ ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null }>; dashboard: UseQueryResult<DashboardData, Error>; editingPositionId: string | null; startEditing: (position: Position) => void; handleUpdatePosition: (event: FormEvent<HTMLFormElement>, positionId: string) => void; editForm: EditForm; setEditForm: Dispatch<SetStateAction<EditForm>>
+  updatePosition: Mutation<{ positionId: string; request: { quantity: number; averagePrice: number; currentPrice: number | null } }>; setEditingPositionId: (id: string | null) => void; deletePosition: Mutation<string>; selectedAsset: Position | null; setSelectedAssetId: (id: string | null) => void
+}
 function formatCurrency(value: number | null | undefined, hidden = false) { if (hidden) return 'R$ ••••••'; if (value == null) return 'Sem valor'; return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value) }
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
@@ -17,7 +31,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
           </div>
 
           <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2">
-            {portfolios.data?.map((portfolio) => {
+            {portfolios.data?.map((portfolio: PortfolioItem) => {
               const isActive = portfolio.id === activePortfolio?.id
               return (
                 <div key={portfolio.id} className={`relative flex min-h-24 rounded-xl border bg-white p-3 transition ${isActive ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-amber-300 hover:bg-amber-50/40'}`}>
@@ -53,21 +67,21 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
               <form onSubmit={handleCreatePosition} className="mt-4 grid gap-3 md:grid-cols-5 md:items-end">
                 <div>
                   <label htmlFor="ticker" className="text-sm font-medium text-slate-700">Ticker</label>
-                  <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />
+                  <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />
                 </div>
                 <div>
                   <label htmlFor="asset-type" className="text-sm font-medium text-slate-700">Tipo do ativo</label>
-                  <select id="asset-type" value={positionForm.assetType} onChange={(event) => setPositionForm((current) => ({ ...current, assetType: Number(event.target.value) as AssetType }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white">
-                    {assetTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  <select id="asset-type" value={positionForm.assetType} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, assetType: Number(event.target.value) as AssetType }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white">
+                    {assetTypeOptions.map((option: { value: AssetType; label: string }) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>
                 <div>
                   <label htmlFor="quantity" className="text-sm font-medium text-slate-700">Quantidade</label>
-                  <input id="quantity" inputMode="decimal" value={positionForm.quantity} onChange={(event) => setPositionForm((current) => ({ ...current, quantity: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="100" />
+                  <input id="quantity" inputMode="decimal" value={positionForm.quantity} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, quantity: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="100" />
                 </div>
                 <div>
                   <label htmlFor="current-price" className="text-sm font-medium text-slate-700">Pre&ccedil;o de refer&ecirc;ncia</label>
-                  <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
+                  <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
                 </div>
                 <div className="flex items-end">
                   <button type="submit" disabled={createPosition.isPending} className="h-[46px] w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
@@ -96,7 +110,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                     <span className="text-center">A&ccedil;&otilde;es</span>
                   </div>
                   <div className="divide-y divide-slate-200 bg-white">
-                    {dashboard.data.positions.map((position) => (
+                    {dashboard.data.positions.map((position: Position) => (
                       <div key={position.id} className="px-4 py-3">
                         {editingPositionId === position.id ? (
                           <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-end">
@@ -105,8 +119,8 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                               <p className="text-xs text-slate-500">{position.name}</p>
                             </div>
                             <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
-                            <input value={editForm.quantity} onChange={(event) => setEditForm((current) => ({ ...current, quantity: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
-                            <input value={editForm.currentPrice} onChange={(event) => setEditForm((current) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
+                            <input value={editForm.quantity} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, quantity: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
+                            <input value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
                             <div className="text-right text-sm text-slate-500">{formatCurrency(position.currentValue, privacyHidden)}</div>
                             <div className="text-right text-sm text-slate-500">{position.portfolioWeight.toFixed(2)}%</div>
                             <div className="flex flex-col items-stretch gap-1">

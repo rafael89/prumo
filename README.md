@@ -164,7 +164,7 @@ O provider `Fake` continua sendo carregado por `src/Lodira.Worker/appsettings.De
 ## Validação automatizada
 
 - `dotnet build Lodira.sln`: aprovado
-- `dotnet test Lodira.sln`: 161 aprovados, 0 falhos
+- Execute `dotnet test Lodira.sln` para verificar a suíte atual.
 - `npm run build`: aprovado
 - `npm run lint`: executado; 2 warnings conhecidos no frontend
 
@@ -199,7 +199,9 @@ As chaves OpenAI/Gemini devem ser fornecidas por variaveis de ambiente, como `AI
 
 Ownership futuro deve iniciar em `Portfolio.UserId`. Positions, imports, Objective, Strategy, StrategyAllocation, PortfolioAssessment e RadarItemState sao dependentes da carteira. Assets, Documents, DocumentAnalysis e InvestmentEvent permanecem globais nesta etapa.
 
-Debitos conhecidos mantidos fora deste marco: teste real de concorrencia PostgreSQL para `PortfolioAssessment`, configuracao Beta dedicada, HSTS/Auth e warnings conhecidos de frontend/EF.
+O deployment Compose atual assume uso self-hosted em rede privada: o frontend faz proxy same-origin para a API, as portas são vinculadas ao localhost e o TLS deve ser terminado por um reverse proxy externo. Autenticação multiusuário não faz parte do modelo atual; não exponha a API diretamente à Internet.
+
+Débitos conhecidos mantidos fora deste marco: teste real de concorrência PostgreSQL para `PortfolioAssessment`, configuração Beta dedicada, autenticação multiusuário e warnings conhecidos de frontend/EF.
 
 ## Reset local do banco
 

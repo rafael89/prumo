@@ -40,16 +40,15 @@ public sealed class DocumentsController : ControllerBase
             query = query.Where(document => EF.Functions.ILike(document.Asset!.Ticker, $"%{assetTerm}%") || EF.Functions.ILike(document.Asset.Name, $"%{assetTerm}%"));
         }
         if (status.HasValue) query = query.Where(document => document.ProcessingStatus == status.Value);
-        var allDocuments = await query.OrderByDescending(document => document.PublishedAt).ThenByDescending(document => document.Id).ToListAsync(cancellationToken);
-        if (type.HasValue)
-        {
-            allDocuments = allDocuments.Where(document =>
-                (document.DocumentType != DocumentType.Other
-                    ? document.DocumentType
-                    : DocumentClassificationPolicy.Map(document.SourceCategory, document.SourceType, document.SourceSpecies)) == type.Value).ToList();
-        }
-        var totalItems = allDocuments.Count;
-        var documents = allDocuments.Skip((page - 1) * pageSize).Take(pageSize).Select(CreateResponse).ToList();
+        if (type.HasValue) query = ApplyTypeFilter(query, type.Value);
+        var totalItems = await query.CountAsync(cancellationToken);
+        var pagedDocuments = await query
+            .OrderByDescending(document => document.PublishedAt)
+            .ThenByDescending(document => document.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+        var documents = pagedDocuments.Select(CreateResponse).ToList();
         documents = await AttachJobDetailsAsync(documents, cancellationToken);
 
         return Ok(new PaginatedResponse<DocumentResponse>(documents, page, pageSize, totalItems, (int)Math.Ceiling(totalItems / (double)pageSize)));
@@ -66,6 +65,55 @@ public sealed class DocumentsController : ControllerBase
         if (document is null) return NotFound();
         var response = (await AttachJobDetailsAsync(new[] { CreateResponse(document) }, cancellationToken)).Single();
         return Ok(response);
+    }
+
+    private static IQueryable<Domain.Entities.Document> ApplyTypeFilter(IQueryable<Domain.Entities.Document> query, DocumentType type)
+    {
+        if (type == DocumentType.Other)
+        {
+            return query.Where(document => document.DocumentType == DocumentType.Other
+                && !EF.Functions.ILike(document.SourceCategory ?? "", "%FATO RELEVANTE%")
+                && !EF.Functions.ILike(document.SourceType ?? "", "%FATO RELEV%")
+                && !EF.Functions.ILike(document.SourceType ?? "", "%COMUNICADO%")
+                && !EF.Functions.ILike(document.SourceType ?? "", "%RELAT%GERENCIAL%")
+                && !EF.Functions.ILike(document.SourceType ?? "", "%RELATORIO DE GESTAO%")
+                && !EF.Functions.ILike(document.SourceType ?? "", "%INFORME MENSAL%")
+                && !EF.Functions.ILike(document.SourceType ?? "", "%INFORME TRIMESTRAL%"));
+        }
+
+        if (type == DocumentType.RelevantFact)
+        {
+            return query.Where(document => document.DocumentType == type
+                || (document.DocumentType == DocumentType.Other
+                    && (EF.Functions.ILike(document.SourceCategory ?? "", "%FATO RELEVANTE%")
+                        || EF.Functions.ILike(document.SourceType ?? "", "%FATO RELEV%"))));
+        }
+
+        if (type == DocumentType.Communication)
+        {
+            return query.Where(document => document.DocumentType == type
+                || (document.DocumentType == DocumentType.Other && EF.Functions.ILike(document.SourceType ?? "", "%COMUNICADO%")));
+        }
+
+        if (type == DocumentType.ManagementReport)
+        {
+            return query.Where(document => document.DocumentType == type
+                || (document.DocumentType == DocumentType.Other && EF.Functions.ILike(document.SourceType ?? "", "%RELAT%GERENCIAL%")));
+        }
+
+        if (type == DocumentType.MonthlyReport)
+        {
+            return query.Where(document => document.DocumentType == type
+                || (document.DocumentType == DocumentType.Other && EF.Functions.ILike(document.SourceType ?? "", "%INFORME MENSAL%")));
+        }
+
+        if (type == DocumentType.QuarterlyReport)
+        {
+            return query.Where(document => document.DocumentType == type
+                || (document.DocumentType == DocumentType.Other && EF.Functions.ILike(document.SourceType ?? "", "%INFORME TRIMESTRAL%")));
+        }
+
+        return query.Where(document => document.DocumentType == type);
     }
 
     [HttpPost("portfolios/{portfolioId:guid}/documents/reprocess-failed")]

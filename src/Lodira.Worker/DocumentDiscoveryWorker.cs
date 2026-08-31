@@ -22,8 +22,20 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            await DiscoverAsync(stoppingToken);
-            await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
+            try
+            {
+                await DiscoverAsync(stoppingToken);
+                await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Erro inesperado no ciclo de descoberta; nova tentativa em {RetryDelay}.", TimeSpan.FromMinutes(1));
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
         }
     }
 

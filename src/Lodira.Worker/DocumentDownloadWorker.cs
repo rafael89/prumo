@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 using Lodira.Application.Abstractions;
 using Lodira.Domain.Entities;
 using Lodira.Domain.Enums;
@@ -13,13 +14,15 @@ public sealed class DocumentDownloadWorker : BackgroundService
     private readonly IHttpClientFactory httpClientFactory;
     private readonly JobProcessingOptions options;
     private readonly ILogger<DocumentDownloadWorker> logger;
+    private readonly WorkerMetrics metrics;
 
-    public DocumentDownloadWorker(IServiceScopeFactory scopeFactory, IHttpClientFactory httpClientFactory, IOptions<JobProcessingOptions> options, ILogger<DocumentDownloadWorker> logger)
+    public DocumentDownloadWorker(IServiceScopeFactory scopeFactory, IHttpClientFactory httpClientFactory, IOptions<JobProcessingOptions> options, ILogger<DocumentDownloadWorker> logger, WorkerMetrics metrics)
     {
         this.scopeFactory = scopeFactory;
         this.httpClientFactory = httpClientFactory;
         this.options = options.Value;
         this.logger = logger;
+        this.metrics = metrics;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -54,6 +57,10 @@ public sealed class DocumentDownloadWorker : BackgroundService
             return;
         }
 
+        var stopwatch = Stopwatch.StartNew();
+        var backlog = await dbContext.ProcessingJobs.CountAsync(item => item.JobType == ProcessingJobType.DownloadDocument && item.Status == ProcessingJobStatus.Queued && item.AvailableAt <= DateTimeOffset.UtcNow, cancellationToken);
+        metrics.SetBacklog(ProcessingJobType.DownloadDocument, backlog);
+
         try
         {
             await DownloadAsync(job, dbContext, scope.ServiceProvider.GetRequiredService<IFileStorage>(), cancellationToken);
@@ -68,7 +75,8 @@ public sealed class DocumentDownloadWorker : BackgroundService
             }
             job.Complete(DateTimeOffset.UtcNow);
             await dbContext.SaveChangesAsync(cancellationToken);
-            logger.LogInformation("Job {JobId} concluído para documento {DocumentId}", job.Id, job.DocumentId);
+            logger.LogInformation("Job {JobId} concluído para documento {DocumentId}; duraçãoMs={DurationMs}; backlog={Backlog}", job.Id, job.DocumentId, stopwatch.Elapsed.TotalMilliseconds, backlog);
+            metrics.RecordCompleted(ProcessingJobType.DownloadDocument, stopwatch.Elapsed);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -77,6 +85,7 @@ public sealed class DocumentDownloadWorker : BackgroundService
         }
         catch (Exception exception)
         {
+            metrics.RecordFailed(ProcessingJobType.DownloadDocument, stopwatch.Elapsed);
             dbContext.ChangeTracker.Clear();
             var persistedJob = await dbContext.ProcessingJobs.Include(item => item.Document).SingleOrDefaultAsync(item => item.Id == job.Id, cancellationToken);
             if (persistedJob is null || persistedJob.Status != ProcessingJobStatus.Processing)

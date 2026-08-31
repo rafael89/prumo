@@ -8,8 +8,9 @@ import { DocumentsSection } from './sections/DocumentsSection'
 import { DashboardOverview, type Dashboard, type DashboardGuidance } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faEye, faEyeSlash, faArrowUp } from '@fortawesome/free-solid-svg-icons'
+import { apiBaseUrl } from './api/client'
 
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
+const apiUrl = apiBaseUrl
 
 type AssetType = 0 | 1 | 2 | 3
 type Feedback = { tone: 'success' | 'error'; message: string } | null

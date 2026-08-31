@@ -69,7 +69,6 @@ public sealed class PortfolioImportsController : ControllerBase
         PortfolioCalculator.RecalculateWeights(portfolio.Positions);
         session.MarkConfirmed(); session.SetPortfolioSnapshotKey(PortfolioSnapshotKeyCalculator.Calculate(portfolio)); session.MarkCompleted(); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
         logger.LogInformation("Import confirmed: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, CreatedAssetCount={CreatedAssetCount}, AddedToPortfolioAssetCount={AddedToPortfolioAssetCount}, UpdatedPositionCount={UpdatedPositionCount}", session.Id, portfolioId, createdAssets, addedToPortfolio, updated);
-        addedAssetIds.Clear();
         try { await bootstrap.DiscoverLatestOnlyAsync(addedAssetIds, ct); } catch (Exception exception) { logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId); }
         var importedFiiAssetIds = portfolio.Positions
             .Where(position => position.Asset?.AssetClass == AssetClass.Fii)

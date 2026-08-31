@@ -68,6 +68,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IAiRequestRateLimiter, AiRequestRateLimiter>();
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));
         services.AddScoped<DocumentAnalysisProcessor>();
+        services.AddSingleton<WorkerMetrics>();
         services.AddSingleton<AiAnalysisValidator>();
         services.AddSingleton<IPortfolioImpactAssessmentService, PortfolioImpactAssessmentService>();
         services.AddSingleton<IPdfTextExtractor, PdfPigTextExtractor>();

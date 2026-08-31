@@ -1,17 +1,23 @@
-// @ts-nocheck
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass, faRotate } from '@fortawesome/free-solid-svg-icons'
 
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5041'
+import { apiBaseUrl } from '../api/client'
+const apiUrl = apiBaseUrl
+type DocumentItem = { id: string; ticker: string; assetName: string; documentType: number; sourceType: string | null; sourceName: string; publishedAt: string; processingStatus: number; processedAt: string | null; sourceUrl: string; lastError: string | null; jobStatus: string | null; retryAt: string | null }
+type DocumentsResponse = { items: DocumentItem[]; page: number; totalItems: number; totalPages: number }
+type ProcessingStatus = { failedCount: number }
+type PortfolioAssessment = { priority: string; currentWeight: number; currentValue: number | null; requiresAttention: boolean; portfolioImpactText: string }
+type DocumentAnalysis = { importance: string; classification: string; summary: string; impact: string; portfolioImpact: string; portfolioAssessment: PortfolioAssessment | null; suggestedAction: string; requiresAction: boolean; confidence: number; model: string; promptVersion: string; affectedAssets: string[]; createdAt: string }
+type DocumentsSectionProps = { portfolioId: string; selectedDocumentId: string | null; setSelectedDocumentId: (id: string | null) => void; privacyHidden: boolean; initialDocumentId: string | null }
 const priorityLabels: Record<string, string> = { Critical: 'Crítica', High: 'Alta', Medium: 'Média', Low: 'Baixa' }
 const processingStatuses = ['Descoberto', 'Baixado', 'Aguardando processamento', 'Processando', 'Processado', 'Erro', 'Ignorado']
 const documentTypes = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
-const importanceLabels = { Critical: 'Cr\u00edtico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem\u00e7\u00e3o' }
-const classificationLabels = { CorporateAction: 'A\u00e7\u00e3o corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribui\u00e7\u00e3o', CapitalRaise: 'Capta\u00e7\u00e3o', AssetTransaction: 'Transa\u00e7\u00e3o de ativos', Governance: 'Governan\u00e7a', Operational: 'Operacional', Liquidation: 'Liquida\u00e7\u00e3o', Other: 'Outro' }
-const actionLabels = { Maintain: 'Manter', IncreasePosition: 'Aumentar posi\u00e7\u00e3o', ReduceExposure: 'Reduzir exposi\u00e7\u00e3o', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem a\u00e7\u00e3o', OpenPosition: 'Abrir posi\u00e7\u00e3o' }
+const importanceLabels: Record<string, string> = { Critical: 'Cr\u00edtico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem\u00e7\u00e3o' }
+const classificationLabels: Record<string, string> = { CorporateAction: 'A\u00e7\u00e3o corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribui\u00e7\u00e3o', CapitalRaise: 'Capta\u00e7\u00e3o', AssetTransaction: 'Transa\u00e7\u00e3o de ativos', Governance: 'Governan\u00e7a', Operational: 'Operacional', Liquidation: 'Liquida\u00e7\u00e3o', Other: 'Outro' }
+const actionLabels: Record<string, string> = { Maintain: 'Manter', IncreasePosition: 'Aumentar posi\u00e7\u00e3o', ReduceExposure: 'Reduzir exposi\u00e7\u00e3o', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem a\u00e7\u00e3o', OpenPosition: 'Abrir posi\u00e7\u00e3o' }
 const documentTypeOptions = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`)
@@ -44,17 +50,17 @@ function analysisTone(importance: string) {
   return 'border-slate-300 bg-white text-slate-900'
 }
 
-function documentTypeLabel(document: any) {
+function documentTypeLabel(document: DocumentItem) {
   if (document?.documentType === 5 && document.sourceType) return document.sourceType
   return documentTypeOptions[document?.documentType] ?? document?.sourceType ?? 'Documento'
 }
 
-function DocumentJobDetails({ document }: any) {
+function DocumentJobDetails({ document }: { document: DocumentItem | null }) {
   if (!document?.lastError) return null
   return <div className="document-job-details mt-8 mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p className="font-semibold">Último erro ({document.jobStatus ?? 'Falha'})</p><p className="mt-2 break-words">{document.lastError}</p>{document.retryAt && <p className="mt-2 text-xs">Próxima tentativa: {formatDate(document.retryAt)}</p>}</div>
 }
 
-export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden, initialDocumentId }: any) {
+export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId, privacyHidden, initialDocumentId }: DocumentsSectionProps) {
   const queryClient = useQueryClient()
   const [documentPage, setDocumentPage] = useState(1)
   const [documentFilter, setDocumentFilter] = useState('')
@@ -65,7 +71,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     mutationFn: () => sendJson<{ requeuedCount: number }>(`/api/portfolios/${portfolioId}/documents/reprocess-failed`, { errorContains: errorFilter.trim() || null }),
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['documents'] }); await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }) },
   })
-  const processingStatus = useQuery({ queryKey: ['document-processing-status', portfolioId], queryFn: () => getJson(`/api/portfolios/${portfolioId}/document-processing-status`), enabled: Boolean(portfolioId), refetchInterval: 2000 })
+  const processingStatus = useQuery({ queryKey: ['document-processing-status', portfolioId], queryFn: () => getJson<ProcessingStatus>(`/api/portfolios/${portfolioId}/document-processing-status`), enabled: Boolean(portfolioId), refetchInterval: 2000 })
 
   useEffect(() => {
     setDocumentPage(1)
@@ -74,15 +80,15 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
 
   const documents = useQuery({
     queryKey: ['documents', portfolioId, documentPage, documentFilter, documentStatus, documentTypeFilter],
-    queryFn: () => getJson(`/api/portfolios/${portfolioId}/documents?page=${documentPage}&pageSize=10&asset=${encodeURIComponent(documentFilter)}${documentStatus ? `&status=${documentStatus}` : ''}${documentTypeFilter ? `&type=${documentTypeFilter}` : ''}`),
+    queryFn: () => getJson<DocumentsResponse>(`/api/portfolios/${portfolioId}/documents?page=${documentPage}&pageSize=10&asset=${encodeURIComponent(documentFilter)}${documentStatus ? `&status=${documentStatus}` : ''}${documentTypeFilter ? `&type=${documentTypeFilter}` : ''}`),
     enabled: Boolean(portfolioId),
-    refetchInterval: query => query.state.data?.items?.some((item: any) => [0, 1, 2, 3].includes(item.processingStatus)) ? 2000 : false,
+    refetchInterval: query => query.state.data?.items?.some((item: DocumentItem) => [0, 1, 2, 3].includes(item.processingStatus)) ? 2000 : false,
   })
 
   const selectedDocumentFromPage = documents.data?.items.find((item) => item.id === selectedDocumentId) ?? null
   const selectedDocumentQuery = useQuery({
     queryKey: ['document', selectedDocumentId],
-    queryFn: () => getJson(`/api/documents/${selectedDocumentId}`),
+    queryFn: () => getJson<DocumentItem>(`/api/documents/${selectedDocumentId}`),
     enabled: Boolean(selectedDocumentId && !selectedDocumentFromPage),
   })
   const selectedDocument = selectedDocumentFromPage ?? selectedDocumentQuery.data ?? null
@@ -99,7 +105,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
 
   const analysis = useQuery({
     queryKey: ['document-analysis', selectedDocument?.id ?? null, portfolioId],
-    queryFn: () => selectedDocument ? getOptionalJson(`/api/documents/${selectedDocument.id}/analysis?portfolioId=${portfolioId}`) : Promise.resolve(null),
+    queryFn: () => selectedDocument ? getOptionalJson<DocumentAnalysis>(`/api/documents/${selectedDocument.id}/analysis?portfolioId=${portfolioId}`) : Promise.resolve(null),
     enabled: Boolean(selectedDocument?.id),
     refetchInterval: selectedDocument && [0, 1, 2, 3].includes(selectedDocument.processingStatus) ? 2000 : false,
   })
@@ -122,7 +128,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
           <select aria-label="Filtrar documentos por status" value={documentStatus} onChange={(event) => { setDocumentStatus(event.target.value); setDocumentPage(1) }} className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Todos os status</option>{processingStatuses.map((label, index) => <option key={label} value={index}>{label}</option>)}</select>
           <select aria-label="Filtrar documentos por tipo" value={documentTypeFilter} onChange={(event) => { setDocumentTypeFilter(event.target.value); setDocumentPage(1) }} className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Todos os tipos</option>{documentTypes.map((label, index) => <option key={label} value={index}>{label}</option>)}</select>
         </div>
-        {processingStatus.data?.failedCount > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-900"><span className="font-semibold">{processingStatus.data.failedCount} documento(s) com falha</span><input value={errorFilter} onChange={(event) => setErrorFilter(event.target.value)} placeholder="Filtrar erro (opcional)..." className="min-w-48 flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 outline-none focus:border-rose-400" /><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="rounded-lg bg-rose-700 px-3 py-2 font-semibold text-white disabled:opacity-50"><FontAwesomeIcon icon={faRotate} className="mr-2" />{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar falhos'}</button>{reprocessFailed.data && <span>{reprocessFailed.data.requeuedCount} job(s) reaberto(s).</span>}</div>}
+        {(processingStatus.data?.failedCount ?? 0) > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-900"><span className="font-semibold">{processingStatus.data?.failedCount ?? 0} documento(s) com falha</span><input value={errorFilter} onChange={(event) => setErrorFilter(event.target.value)} placeholder="Filtrar erro (opcional)..." className="min-w-48 flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 outline-none focus:border-rose-400" /><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="rounded-lg bg-rose-700 px-3 py-2 font-semibold text-white disabled:opacity-50"><FontAwesomeIcon icon={faRotate} className="mr-2" />{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar falhos'}</button>{reprocessFailed.data && <span>{reprocessFailed.data.requeuedCount} job(s) reaberto(s).</span>}</div>}
         {documents.isLoading && <p className="py-5 text-sm text-slate-500">Carregando documentos...</p>}
         {!documents.isLoading && documents.data?.items.length === 0 && <p className="py-5 text-sm text-slate-500">Nenhum documento encontrado.</p>}
         <div className="mt-3 divide-y divide-slate-200">
