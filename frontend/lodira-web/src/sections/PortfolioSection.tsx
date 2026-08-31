@@ -86,7 +86,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                   <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
                 </div>
                 <div className="flex items-end">
-                  <button type="submit" disabled={createPosition.isPending} className="h-[46px] w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
+                  <button type="submit" disabled={createPosition.isPending} className="h-11.5 w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                     <FontAwesomeIcon icon={faPlus} className="mr-2" />{createPosition.isPending ? 'Salvando...' : 'Adicionar'}
                   </button>
                 </div>

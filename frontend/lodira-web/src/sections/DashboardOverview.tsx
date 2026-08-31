@@ -160,7 +160,7 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
   const notConfigured = health?.status === 'NotConfigured'
   const aligned = health?.status === 'Aligned'
 
-  return <article className="order-2 min-w-0 self-start rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+  return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <CardHeader eyebrow="Saúde da carteira" linkLabel="Ver detalhes" to="/portfolio" />
     <h2 className="mt-4 flex items-center justify-between gap-4 text-xl font-semibold tracking-tight text-slate-950">
       <span>{health?.summary ?? overview?.healthSummary ?? 'Estado da carteira indisponível.'}</span>
@@ -196,7 +196,7 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
   const [visibleCount, setVisibleCount] = useState(3)
   const queryClient = useQueryClient()
   const statusMutation = useMutation({ mutationFn: ({ id, resolved }: { id: string; resolved: boolean }) => fetch(`${contributionApiUrl}/api/radar/${id}/${resolved ? 'status' : 'seen'}?portfolioId=${portfolioId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(resolved ? { status: 'Closed' } : { status: 'Seen' }) }).then(response => { if (!response.ok) throw new Error('Não foi possível atualizar o Radar.'); return response }), onSuccess: (_, variables) => { void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }); if (variables.resolved) setSelectedItem(null) } })
-  return <article className="order-1 min-w-0 self-start rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-1">
+  return <article className="order-1 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-1">
     <CardHeader eyebrow="Radar" linkLabel="Ver Radar" to="/radar" />
     {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
@@ -250,7 +250,7 @@ function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onG
     mutation.mutate(parsedAmount)
   }
 
-  return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <CardHeader eyebrow="Próximo aporte" linkLabel="Ver aportes" to="/contributions" />
     <div className={`mt-5 grid min-w-0 gap-6 lg:gap-8 ${visibleGuidance ? 'lg:grid-cols-[minmax(0,.75fr)_minmax(0,1.35fr)_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(17rem,.7fr)_minmax(0,1.3fr)]'}`}>
       <div className="min-w-0 lg:border-r lg:border-slate-100 lg:pr-8">
@@ -286,7 +286,7 @@ function ContributionSummary({ guidance }: { guidance: DashboardGuidance }) {
   return <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8">
     <p className="text-sm font-semibold text-slate-900">Resumo</p>
     <div className="mt-4 space-y-3 text-sm text-slate-600">
-      {reasons.length > 0 ? reasons.map((reason, index) => <div key={`${reason}-${index}`} className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={index === 2 ? faTriangleExclamation : faCircleCheck} className={`mt-1 shrink-0 ${index === 2 ? 'text-amber-500' : 'text-emerald-500'}`} /><span className="min-w-0 break-words">{reason}</span></div>) : <div className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 shrink-0 text-emerald-500" /><span className="min-w-0 break-words">Aporte calculado com base na estratégia da carteira.</span></div>}
+      {reasons.length > 0 ? reasons.map((reason, index) => <div key={`${reason}-${index}`} className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={index === 2 ? faTriangleExclamation : faCircleCheck} className={`mt-1 shrink-0 ${index === 2 ? 'text-amber-500' : 'text-emerald-500'}`} /><span className="min-w-0 wrap-break-word">{reason}</span></div>) : <div className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 shrink-0 text-emerald-500" /><span className="min-w-0 wrap-break-word">Aporte calculado com base na estratégia da carteira.</span></div>}
     </div>
   </div>
 }
@@ -375,7 +375,7 @@ function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve
   }, [analysis.data, onMarkSeen, onResolve, actionPending])
 
   return <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="recent-analysis-title" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[1.5rem] bg-white p-5 shadow-2xl sm:p-7">
+    <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><h2 id="recent-analysis-title" className="mt-2 text-xl font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h2></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
       {analysis.isLoading && <p className="py-8 text-sm text-slate-500">Carregando análise...</p>}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
@@ -388,7 +388,7 @@ function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve
 function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
   const [visibleCount, setVisibleCount] = useState(5)
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
-  return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
       {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 cursor-pointer gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -410,7 +410,7 @@ export function DashboardOverview({ dashboard, activePortfolio, privacyHidden, o
   const data = dashboard.data
   if (data.positionCount === 0) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Importe seu relatório consolidado da B3 para o Lodira entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Importar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
 
-  return <section className="mx-auto max-w-[89.5rem] px-4 pb-16 pt-8 sm:px-6 sm:pt-10">
+  return <section className="mx-auto max-w-358 px-4 pb-16 pt-8 sm:px-6 sm:pt-10">
     <header className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1><p className="mt-2 text-sm text-slate-600">Aqui está o que importa sobre sua carteira agora.</p></div>
       {data.portfolioOverview?.lastPortfolioUpdate && <p className="text-xs text-slate-500">Carteira atualizada em {formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}</p>}

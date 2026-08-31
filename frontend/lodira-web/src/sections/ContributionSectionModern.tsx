@@ -43,7 +43,7 @@ export function ContributionSectionModern({ portfolioId, positions, privacyHidde
     onSuccess: () => { setSelected(null); setGuidance(null) }
   })
 
-  return <section className="mx-auto max-w-[89.5rem] px-6 pb-24 pt-3">
+  return <section className="mx-auto max-w-358 px-6 pb-24 pt-3">
     <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Próximo aporte</p>
       <div className="mt-5 grid gap-6 lg:grid-cols-[.75fr_1.35fr_1fr] lg:gap-8">
