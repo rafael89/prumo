@@ -14,8 +14,8 @@ public sealed class GeminiContributionIntelligenceProvider(HttpClient http, IOpt
     {
         if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
         using var permit = await limiter.AcquireAsync(ct);
-        var prompt = JsonSerializer.Serialize(new { portfolioId, contributionAmount = amount, candidates });
-        var request = new { contents = new[] { new { parts = new[] { new { text = "Escolha a distribuição mais coerente entre os candidatos elegíveis. Não invente evidências. Responda somente no schema.\n" + prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = Schema } };
+        var prompt = ContributionIntelligencePrompt.Build(portfolioId, amount, candidates);
+        var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = Schema } };
         var raw = await SendAsync(settings.Model, request, ct);
         return Parse(raw, settings.Model);
     }
@@ -36,7 +36,7 @@ public sealed class GeminiContributionIntelligenceProvider(HttpClient http, IOpt
         if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Resposta Gemini vazia.");
         var payload = JsonSerializer.Deserialize<Payload>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidOperationException("Resposta Gemini inválida.");
         var evaluations = payload.CandidateEvaluations?.Select(x => new ContributionCandidateEvaluation(x.AssetId, x.Rank, x.SuggestedAmount, x.Reason ?? string.Empty, x.Confidence, x.EvidenceReferences?.Select(e => new EvidenceReference(e.Type ?? "unknown", e.ReferenceId ?? string.Empty, e.Label ?? string.Empty, e.Summary)).ToArray() ?? Array.Empty<EvidenceReference>())).ToArray() ?? Array.Empty<ContributionCandidateEvaluation>();
-        return new(evaluations, payload.OverallReasoning ?? string.Empty, Enum.TryParse<ContributionIntelligenceAvailability>(payload.IntelligenceAvailability, true, out var availability) ? availability : ContributionIntelligenceAvailability.PartialIntelligence, new("R4-2.0", "contribution", "r4-contribution-v1", "Gemini", model, DateTimeOffset.UtcNow));
+        return new(evaluations, payload.OverallReasoning ?? string.Empty, Enum.TryParse<ContributionIntelligenceAvailability>(payload.IntelligenceAvailability, true, out var availability) ? availability : ContributionIntelligenceAvailability.PartialIntelligence, new("R4-3.0", "contribution", ContributionIntelligencePrompt.Version, "Gemini", model, DateTimeOffset.UtcNow));
     }
 
     private sealed record Payload(List<Evaluation>? CandidateEvaluations, string? OverallReasoning, string? IntelligenceAvailability);
