@@ -72,7 +72,7 @@ export function ContributionSectionModern({ portfolioId, positions, privacyHidde
             <button type="button" onClick={() => setSelected(item)} className="mt-2 cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:border-amber-500">Registrar aporte</button>
           </div>)}</div>
         </> : <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm text-slate-500">
-          {pending ? 'A distribuição será exibida somente após a conclusão da análise da IA.' : 'Informe um valor para iniciar a análise da IA.'}
+          {pending ? 'A distribuição será exibida somente após a conclusão da análise da IA.' : 'Informe um valor para iniciar a análise.'}
         </div>}</div>
 
         <div className="lg:border-l lg:border-slate-100 lg:pl-8">

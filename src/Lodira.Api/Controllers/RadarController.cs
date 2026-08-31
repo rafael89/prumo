@@ -28,15 +28,19 @@ public sealed class RadarController : ControllerBase
         if (portfolioId == Guid.Empty) return BadRequest("PortfolioId é obrigatório.");
         var query = db.PortfolioAssessments.AsNoTracking().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
             .Where(x => x.PortfolioId == portfolioId);
-        if (priority.HasValue) query = query.Where(x => x.AttentionPriority == priority.Value);
-        if (status.HasValue) query = query.Where(x => x.Status == status.Value);
-        if (userState.HasValue) query = query.Where(x => x.UserState == userState.Value);
         if (!string.IsNullOrWhiteSpace(asset)) query = query.Where(x => x.InvestmentEvent!.AffectedAssets.Any(a => EF.Functions.ILike(a.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Name, $"%{asset.Trim()}%")));
         var portfolio = await db.Portfolios.AsNoTracking().Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
         var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var loadedAssessments = await query.ToListAsync(ct);
-        var assessments = (await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct))
+        var currentAssessments = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct);
+        var assessments = currentAssessments
+            .Concat(loadedAssessments.Where(x => x.Status == AssessmentStatus.Closed))
+            .GroupBy(x => x.Id)
+            .Select(x => x.First())
+            .Where(x => !priority.HasValue || x.AttentionPriority == priority.Value)
+            .Where(x => !status.HasValue || x.Status == status.Value)
+            .Where(x => !userState.HasValue || x.UserState == userState.Value)
             .OrderByDescending(x => x.AttentionPriority)
             .ThenByDescending(x => x.InvestmentEvent!.OccurredAt)
             .ThenByDescending(x => x.GeneratedAt)

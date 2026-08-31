@@ -224,12 +224,19 @@ public sealed class DocumentsController : ControllerBase
         var responses = documents.ToList();
         var documentIds = responses.Select(document => document.Id).ToArray();
         var jobs = await dbContext.ProcessingJobs.AsNoTracking()
-            .Where(job => documentIds.Contains(job.DocumentId) && job.JobType == ProcessingJobType.AnalyzeDocument)
+            .Where(job => documentIds.Contains(job.DocumentId))
             .OrderByDescending(job => job.StartedAt ?? job.CompletedAt ?? job.AvailableAt)
             .ToListAsync(cancellationToken);
         return responses.Select(document =>
         {
-            var job = jobs.FirstOrDefault(item => item.DocumentId == document.Id);
+            if (document.ProcessingStatus == DocumentProcessingStatus.Processed)
+            {
+                return document with { JobStatus = ProcessingJobStatus.Completed.ToString(), RetryAt = null, LastError = null };
+            }
+
+            var documentJobs = jobs.Where(item => item.DocumentId == document.Id).ToList();
+            var job = documentJobs.FirstOrDefault(item => item.Status is ProcessingJobStatus.Queued or ProcessingJobStatus.Processing)
+                ?? documentJobs.FirstOrDefault(item => item.JobType == ProcessingJobType.AnalyzeDocument);
             return job is null ? document : document with { JobStatus = job.Status.ToString(), Attempts = job.Attempts, RetryAt = job.Status == ProcessingJobStatus.Queued ? job.AvailableAt : null, LastError = job.LastError };
         }).ToList();
     }

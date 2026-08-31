@@ -27,6 +27,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
+      Storage__RootPath: /storage/documents
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -44,6 +45,7 @@ services:
     environment:
       DOTNET_ENVIRONMENT: Production
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
+      Storage__RootPath: /storage/documents
     volumes:
       - document-storage:/storage/documents
     depends_on:

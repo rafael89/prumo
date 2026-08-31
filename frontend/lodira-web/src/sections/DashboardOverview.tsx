@@ -96,6 +96,7 @@ export type DashboardGuidance = {
 type DashboardOverviewProps = {
   dashboard: { data?: Dashboard; isLoading: boolean; isError: boolean }
   activePortfolio: { id: string; positionCount: number } | null
+  portfoliosLoading?: boolean
   privacyHidden: boolean
   onGenerateGuidance: (amount: number) => Promise<DashboardGuidance>
 }
@@ -273,7 +274,7 @@ function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onG
 
       <div className="min-w-0">
         {!visibleGuidance ? <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm leading-6 text-slate-500">
-          {enriching ? 'A distribuição será exibida somente após a conclusão da análise da IA.' : isAvailable ? 'Informe um valor para iniciar a análise da IA.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
+          {enriching ? 'A distribuição será exibida somente após a conclusão da análise da IA.' : isAvailable ? 'Informe um valor para iniciar a análise.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
         </div> : <GuidanceResult guidance={visibleGuidance} privacyHidden={privacyHidden} />}
       </div>
       {visibleGuidance && <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8"><ContributionSummary guidance={visibleGuidance} /></div>}
@@ -402,7 +403,8 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
   </article>
 }
 
-export function DashboardOverview({ dashboard, activePortfolio, privacyHidden, onGenerateGuidance }: DashboardOverviewProps) {
+export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, privacyHidden, onGenerateGuidance }: DashboardOverviewProps) {
+  if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Lodira entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
   if (dashboard.isLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
   if (dashboard.isError || !dashboard.data) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-rose-50 p-6 text-rose-800">Não foi possível carregar a visão geral.</p></section>

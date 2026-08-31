@@ -92,5 +92,7 @@ public sealed class ProcessingJob
         AvailableAt = availableAt.ToUniversalTime();
         CompletedAt = null;
         StartedAt = null;
+        Attempts = 0;
+        LastError = null;
     }
 }
