@@ -13,6 +13,12 @@ public sealed class LocalFileStorage : IFileStorage
         Directory.CreateDirectory(rootPath);
     }
 
+    public Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(!string.IsNullOrWhiteSpace(path) && File.Exists(path));
+    }
+
     public async Task<StoredFile> SaveAsync(
         Guid documentId,
         Stream content,

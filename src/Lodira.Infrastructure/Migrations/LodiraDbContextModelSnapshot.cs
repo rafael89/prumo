@@ -276,6 +276,9 @@ namespace Lodira.Infrastructure.Migrations
 
                     b.HasIndex("DocumentId", "CreatedAt");
 
+                    b.HasIndex("DocumentId", "Model", "PromptVersion")
+                        .IsUnique();
+
                     b.ToTable("DocumentAnalyses");
                 });
 
@@ -755,7 +758,9 @@ namespace Lodira.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DocumentId", "JobType");
+                    b.HasIndex("DocumentId", "JobType")
+                        .IsUnique()
+                        .HasFilter("\"Status\" IN (0, 1)");
 
                     b.HasIndex("Status", "AvailableAt");
 

@@ -11,5 +11,28 @@ public sealed class ContributionGuidanceJob
     public DateTimeOffset? StartedAt { get; private set; } public DateTimeOffset? CompletedAt { get; private set; }
     public void Start() { Status = ContributionGuidanceJobStatus.Processing; Attempts++; StartedAt = DateTimeOffset.UtcNow; LastError = null; }
     public void Complete() { Status = ContributionGuidanceJobStatus.Completed; CompletedAt = DateTimeOffset.UtcNow; }
-    public void Fail(string error) { Status = ContributionGuidanceJobStatus.Failed; LastError = error; CompletedAt = DateTimeOffset.UtcNow; }
+    public bool RetryOrFail(string error, int maxAttempts)
+    {
+        LastError = error;
+        StartedAt = null;
+        if (Attempts >= maxAttempts)
+        {
+            Status = ContributionGuidanceJobStatus.Failed;
+            CompletedAt = DateTimeOffset.UtcNow;
+            return false;
+        }
+        Status = ContributionGuidanceJobStatus.Queued;
+        return true;
+    }
+
+    public void RequeueExpired()
+    {
+        if (Status == ContributionGuidanceJobStatus.Processing)
+        {
+            Status = ContributionGuidanceJobStatus.Queued;
+            StartedAt = null;
+        }
+    }
+
+    public void Fail(string error) => RetryOrFail(error, 1);
 }

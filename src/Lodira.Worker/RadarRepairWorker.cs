@@ -25,7 +25,7 @@ public sealed class RadarRepairWorker : BackgroundService
             var db = scope.ServiceProvider.GetRequiredService<LodiraDbContext>();
             var candidates = await db.DocumentAnalyses
                 .Where(analysis => analysis.Importance == AnalysisImportance.Critical || analysis.Importance == AnalysisImportance.Relevant)
-                .Where(analysis => db.InvestmentEvents.Any(eventItem => eventItem.DocumentAnalysisId == analysis.Id))
+                .Where(analysis => !db.InvestmentEvents.Any(eventItem => eventItem.DocumentAnalysisId == analysis.Id))
                 .Select(analysis => analysis.DocumentId)
                 .ToListAsync(stoppingToken);
             var existing = await db.ProcessingJobs

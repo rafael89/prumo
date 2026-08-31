@@ -2,6 +2,11 @@ namespace Lodira.Application.Abstractions;
 
 public interface IFileStorage
 {
+    Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(!string.IsNullOrWhiteSpace(path) && File.Exists(path));
+    }
     Task<StoredFile> SaveAsync(Guid documentId, Stream content, string extension, CancellationToken cancellationToken = default);
     Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken = default);
     Task DeleteAsync(string path, CancellationToken cancellationToken = default) => Task.CompletedTask;

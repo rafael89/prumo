@@ -32,6 +32,7 @@ public sealed class DocumentAnalysisConfiguration : IEntityTypeConfiguration<Doc
         builder.Property(analysis => analysis.AffectedAssets)
             .HasColumnType("jsonb");
         builder.HasIndex(analysis => analysis.ProcessingJobId).IsUnique();
+        builder.HasIndex(analysis => new { analysis.DocumentId, analysis.Model, analysis.PromptVersion }).IsUnique();
         builder.HasIndex(analysis => new { analysis.DocumentId, analysis.CreatedAt });
         builder.HasOne(analysis => analysis.Document)
             .WithMany()

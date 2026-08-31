@@ -75,6 +75,25 @@ public sealed class Document
     }
 
     public void MarkWaitingProcessing() => ProcessingStatus = DocumentProcessingStatus.WaitingProcessing;
+
+    public void MarkPendingDownload()
+    {
+        FilePath = null;
+        FileHash = null;
+        ProcessedAt = null;
+        ProcessingStatus = DocumentProcessingStatus.Discovered;
+    }
+
+    public void ReleaseStoredFile()
+    {
+        FilePath = null;
+        FileHash = null;
+        if (ProcessingStatus != DocumentProcessingStatus.Error)
+        {
+            ProcessingStatus = DocumentProcessingStatus.Processed;
+        }
+    }
+
     public void MarkProcessing() => ProcessingStatus = DocumentProcessingStatus.Processing;
 
     public void MarkProcessed()

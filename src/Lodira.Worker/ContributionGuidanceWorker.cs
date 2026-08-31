@@ -10,6 +10,8 @@ namespace Lodira.Worker;
 
 public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILogger<ContributionGuidanceWorker> logger, WorkerMetrics metrics) : BackgroundService
 {
+    private const int MaxAttempts = 3;
+    private static readonly TimeSpan Lease = TimeSpan.FromMinutes(30);
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -69,7 +71,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 }
                 catch (Exception ex)
                 {
-                    job.Fail(ex.Message);
+                    var retry = job.RetryOrFail(ex.Message, MaxAttempts);
                     metrics.RecordFailed("ContributionGuidance", stopwatch.Elapsed);
                     await db.SaveChangesAsync(stoppingToken);
                     logger.LogError(ex, "Falha no job de guidance {JobId} após {DurationMs} ms; backlog={Backlog}; nenhuma alocação foi publicada", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog);
@@ -110,6 +112,12 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
     private static async Task<ContributionGuidanceJob?> ClaimNextAsync(LodiraDbContext db, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var staleAt = DateTimeOffset.UtcNow.Subtract(Lease);
+        var staleJobs = await db.ContributionGuidanceJobs
+            .Where(job => job.Status == ContributionGuidanceJobStatus.Processing && job.StartedAt <= staleAt)
+            .ToListAsync(ct);
+        foreach (var staleJob in staleJobs) staleJob.RequeueExpired();
+        if (staleJobs.Count > 0) await db.SaveChangesAsync(ct);
         var queued = (int)ContributionGuidanceJobStatus.Queued;
         var job = await db.ContributionGuidanceJobs
             .FromSqlInterpolated($"""

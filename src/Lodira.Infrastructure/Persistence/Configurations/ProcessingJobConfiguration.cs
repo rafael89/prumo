@@ -11,7 +11,9 @@ public sealed class ProcessingJobConfiguration : IEntityTypeConfiguration<Proces
         builder.HasKey(job => job.Id);
         builder.Property(job => job.LastError).HasMaxLength(4000);
         builder.HasIndex(job => new { job.Status, job.AvailableAt });
-        builder.HasIndex(job => new { job.DocumentId, job.JobType });
+        builder.HasIndex(job => new { job.DocumentId, job.JobType })
+            .IsUnique()
+            .HasFilter("\"Status\" IN (0, 1)");
         builder.HasOne(job => job.Document)
             .WithMany()
             .HasForeignKey(job => job.DocumentId)

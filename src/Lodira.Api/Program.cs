@@ -22,9 +22,11 @@ builder.Services.AddDbContext<LodiraDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 builder.Services.Configure<CvmFnetOptions>(builder.Configuration.GetSection("Documents"));
 builder.Services.Configure<DocumentBootstrapOptions>(builder.Configuration.GetSection("DocumentBootstrap"));
+builder.Services.Configure<DocumentRetentionOptions>(builder.Configuration.GetSection("DocumentRetention"));
 builder.Services.AddHttpClient<CvmFnetDocumentSource>();
 builder.Services.AddSingleton<IPortfolioImporter, B3XlsxPortfolioImporter>();
 builder.Services.AddScoped<NewAssetBootstrapService>();
+builder.Services.AddScoped<IPortfolioAccessService, PortfolioAccessService>();
 builder.Services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
 builder.Services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(builder.Configuration["Storage:RootPath"] ?? "/storage"));
 builder.Services.AddHealthChecks();

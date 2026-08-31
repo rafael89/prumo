@@ -65,13 +65,22 @@ public sealed class DocumentDownloadWorker : BackgroundService
         {
             await DownloadAsync(job, dbContext, scope.ServiceProvider.GetRequiredService<IFileStorage>(), cancellationToken);
             job.Document!.MarkWaitingProcessing();
-            var analysisExists = await dbContext.ProcessingJobs.AnyAsync(
-                item => item.DocumentId == job.DocumentId
-                    && item.JobType == ProcessingJobType.AnalyzeDocument,
+            var analysisExists = await dbContext.DocumentAnalyses.AnyAsync(
+                item => item.DocumentId == job.DocumentId,
                 cancellationToken);
-            if (!analysisExists)
+            var analysisJobActive = await dbContext.ProcessingJobs.AnyAsync(
+                item => item.DocumentId == job.DocumentId
+                    && item.JobType == ProcessingJobType.AnalyzeDocument
+                    && (item.Status == ProcessingJobStatus.Queued || item.Status == ProcessingJobStatus.Processing),
+                cancellationToken);
+            if (!analysisExists && !analysisJobActive)
             {
                 dbContext.ProcessingJobs.Add(new ProcessingJob(job.DocumentId, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow));
+            }
+            else if (analysisExists)
+            {
+                // O documento já foi analisado anteriormente; a recuperação do PDF encerra o fluxo.
+                job.Document.MarkProcessed();
             }
             job.Complete(DateTimeOffset.UtcNow);
             await dbContext.SaveChangesAsync(cancellationToken);

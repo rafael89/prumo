@@ -45,6 +45,15 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
 
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<LodiraDbContext>();
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        if (!await TryAcquireDiscoveryLockAsync(dbContext, cancellationToken))
+        {
+            await dbContext.Database.CloseConnectionAsync();
+            logger.LogInformation("Ciclo de descoberta ignorado: outra instância já está executando a descoberta.");
+            return;
+        }
+        try
+        {
         var source = scope.ServiceProvider.GetRequiredService<IDocumentSource>();
         var assets = await dbContext.PortfolioPositions
             .Include(position => position.Asset)
@@ -127,5 +136,25 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         }
 
         logger.LogInformation("Ciclo de descoberta encerrado: {NewDocumentCount} documento(s) novo(s), {DuplicatedDocumentCount} ignorado(s) por deduplicação", newDocuments, duplicatedDocuments);
+        }
+        finally
+        {
+            try { await ReleaseDiscoveryLockAsync(dbContext, CancellationToken.None); }
+            finally { await dbContext.Database.CloseConnectionAsync(); }
+        }
+    }
+
+    private static async Task<bool> TryAcquireDiscoveryLockAsync(LodiraDbContext dbContext, CancellationToken cancellationToken)
+    {
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT pg_try_advisory_lock(hashtext('lodira:document-discovery'))";
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task ReleaseDiscoveryLockAsync(LodiraDbContext dbContext, CancellationToken cancellationToken)
+    {
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT pg_advisory_unlock(hashtext('lodira:document-discovery'))";
+        await command.ExecuteScalarAsync(cancellationToken);
     }
 }
