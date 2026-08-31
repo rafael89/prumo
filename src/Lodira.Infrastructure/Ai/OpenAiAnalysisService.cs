@@ -65,7 +65,7 @@ public sealed class OpenAiAnalysisService : IAiAnalysisService
                         type = "json_schema",
                         name = SchemaName,
                         strict = true,
-                        schema = AnalysisSchema
+                        schema = DocumentAnalysisJsonSchemas.CreateForOpenAi()
                     }
                 }
             })
@@ -209,22 +209,4 @@ public sealed class OpenAiAnalysisService : IAiAnalysisService
     private sealed record IncompleteDetails(string? Reason);
     private sealed record OpenAiUsage(int? InputTokens, int? OutputTokens, int? TotalTokens);
 
-    private static readonly object AnalysisSchema = new
-    {
-        type = "object",
-        properties = new
-        {
-            importance = new { type = "string", @enum = new[] { "CRITICAL", "RELEVANT", "INFORMATIVE", "NO_ACTION" } },
-            classification = new { type = "string", @enum = new[] { "CORPORATE_ACTION", "FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER" } },
-            requiresAction = new { type = "boolean" },
-            suggestedAction = new { type = "string", @enum = new[] { "MAINTAIN", "INCREASE_POSITION", "REDUCE_EXPOSURE", "EVALUATE_SALE", "MONITOR", "NO_ACTION", "OPEN_POSITION" } },
-            summary = new { type = "string" },
-            impact = new { type = "string" },
-            affectedAssets = new { type = "array", items = new { type = "string" } },
-            confidence = new { type = "number", minimum = 0, maximum = 1 },
-            events = new { type = "array", items = new { type = "object", properties = new { eventType = new { type = "string", @enum = new[] { "FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "CORPORATE_ACTION", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER" } }, occurredAt = new { type = new[] { "string", "null" } }, summary = new { type = "string" }, facts = new { type = "array", items = new { type = "string" } }, affectedAssets = new { type = "array", items = new { type = "string" } } }, required = new[] { "eventType", "occurredAt", "summary", "facts", "affectedAssets" }, additionalProperties = false } }
-        },
-        required = new[] { "importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence", "events" },
-        additionalProperties = false
-    };
 }

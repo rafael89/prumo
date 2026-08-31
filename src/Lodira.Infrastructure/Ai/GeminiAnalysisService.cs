@@ -52,7 +52,7 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         var prompt = DocumentAnalysisPrompt.BuildGlobal(documentText, context);
         using var request = new HttpRequestMessage(HttpMethod.Post, string.Format(EndpointTemplate, Uri.EscapeDataString(model)))
         {
-            Content = JsonContent.Create(new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = AnalysisSchema } })
+            Content = JsonContent.Create(new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = DocumentAnalysisJsonSchemas.CreateForGemini() } })
         };
         request.Headers.Add("x-goog-api-key", options.ApiKey);
         logger.LogInformation("Enviando análise ao provider {Provider}; model={Model}; textLength={TextLength}", "Gemini", options.Model, documentText.Length);
@@ -154,21 +154,4 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
     private sealed record GeminiEnvelope(string? Text, string? FinishReason, string? BlockReason, string? SafetyReason, string? ErrorMessage, GeminiUsage? Usage);
     private sealed record GeminiUsage(int? PromptTokens, int? CandidateTokens, int? TotalTokens);
 
-    private static readonly object AnalysisSchema = new
-    {
-        type = "object",
-        properties = new
-        {
-            importance = new { type = "string", @enum = new[] { "CRITICAL", "RELEVANT", "INFORMATIVE", "NO_ACTION" } },
-            classification = new { type = "string", @enum = new[] { "CORPORATE_ACTION", "FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER" } },
-            requiresAction = new { type = "boolean" },
-            suggestedAction = new { type = "string", @enum = new[] { "MAINTAIN", "INCREASE_POSITION", "REDUCE_EXPOSURE", "EVALUATE_SALE", "MONITOR", "NO_ACTION", "OPEN_POSITION" } },
-            summary = new { type = "string" },
-            impact = new { type = "string" },
-            affectedAssets = new { type = "array", items = new { type = "string" } },
-            confidence = new { type = "number", minimum = 0, maximum = 1 },
-            events = new { type = "array", items = new { type = "object", properties = new { eventType = new { type = "string", @enum = new[] { "FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "CORPORATE_ACTION", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER" } }, occurredAt = new { type = new[] { "string", "null" }, format = "date-time" }, summary = new { type = "string" }, facts = new { type = "array", items = new { type = "string" } }, affectedAssets = new { type = "array", items = new { type = "string" } } }, required = new[] { "eventType", "occurredAt", "summary", "facts", "affectedAssets" } } }
-        },
-        required = new[] { "importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence", "events" }
-    };
 }
