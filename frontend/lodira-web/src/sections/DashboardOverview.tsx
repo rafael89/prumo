@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowRight, faCircleCheck, faCircleInfo, faSpinner, faTriangleExclamation, faWandMagicSparkles, faXmark } from '@fortawesome/free-solid-svg-icons'
@@ -104,6 +104,8 @@ const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: '
 const priorityLabels = ['Baixa', 'Média', 'Alta', 'Crítica']
 const actionLabels = ['Sem ação', 'Acompanhar', 'Revisar', 'Agir']
 const capitalImpactLabels = ['Favorável a aumentar exposição', 'Sem impacto relevante', 'Cautela ao aumentar exposição', 'Evitar aumentar exposição agora']
+const importanceLabels: Record<string, string> = { Critical: 'Crítico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem ação' }
+const classificationLabels: Record<string, string> = { CorporateAction: 'Ação corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribuição', CapitalRaise: 'Captação', AssetTransaction: 'Transação de ativos', Governance: 'Governança', Operational: 'Operacional', Liquidation: 'Liquidação', Other: 'Outro' }
 
 void actionLabels
 void capitalImpactLabels
@@ -123,7 +125,7 @@ function formatDateTime(value: string) {
 }
 
 function formatRelativeDate(value: string | null) {
-  if (!value) return null
+  if (!value) return 'Sem data informada'
   const date = new Date(value)
   const elapsedDays = Math.floor((Date.now() - date.getTime()) / 86_400_000)
   if (elapsedDays <= 0) return 'Hoje'
@@ -189,21 +191,27 @@ function priorityClasses(priority: number) {
   return 'bg-sky-50 text-sky-700'
 }
 
-function RadarCard({ items }: { items: DashboardAssessment[] }) {
+function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
+  const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
+  const [visibleCount, setVisibleCount] = useState(3)
+  const queryClient = useQueryClient()
+  const statusMutation = useMutation({ mutationFn: ({ id, resolved }: { id: string; resolved: boolean }) => fetch(`${contributionApiUrl}/api/radar/${id}/${resolved ? 'status' : 'seen'}?portfolioId=${portfolioId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(resolved ? { status: 'Closed' } : { status: 'Seen' }) }).then(response => { if (!response.ok) throw new Error('Não foi possível atualizar o Radar.'); return response }), onSuccess: (_, variables) => { void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }); if (variables.resolved) setSelectedItem(null) } })
   return <article className="order-1 min-w-0 self-start rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-1">
     <CardHeader eyebrow="Radar" linkLabel="Ver Radar" to="/radar" />
     {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
     </div> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, 3).map(item => <div key={item.assessmentId} className="grid min-w-0 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
+      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 cursor-pointer gap-3 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
         <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
           {item.whyItMatters && <p className="mt-1 text-xs leading-5 text-slate-600">{item.whyItMatters}</p>}
         </div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
+      </button> : <div key={item.assessmentId} className="grid min-w-0 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
+        <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span><div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>{item.whyItMatters && <p className="mt-1 text-xs leading-5 text-slate-600">{item.whyItMatters}</p>}</div>{formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}
+    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900">Ver mais <FontAwesomeIcon icon={faArrowRight} /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} onMarkSeen={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: false })} onResolve={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: true })} actionPending={statusMutation.isPending} />}
   </article>
 }
 
@@ -223,6 +231,7 @@ function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onG
     refetchInterval: query => query.state.data?.jobStatus === 'Completed' || query.state.data?.jobStatus === 'Failed' ? false : 1500
   })
   const visibleGuidance = persistedGuidance.data?.jobStatus === 'Completed' || persistedGuidance.data?.jobStatus === 'Failed' ? persistedGuidance.data : guidance
+  const enriching = Boolean(guidance?.jobStatus && guidance.jobStatus !== 'Completed' && guidance.jobStatus !== 'Failed')
   const hasNoNeeds = matchesEnum(rawPreview?.status, 2, 'NoNeeds')
   const preview = hasNoNeeds && rawPreview ? { ...rawPreview, summary: 'Sua carteira está alinhada; o próximo aporte buscará preservar suas alocações-alvo.' } : rawPreview
   const isNoNeeds = false
@@ -248,7 +257,7 @@ function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onG
         {isAvailable && <form className="mt-5" onSubmit={event => { event.preventDefault(); submit() }}>
           <label htmlFor="dashboard-contribution" className="text-sm font-medium text-slate-700">Quanto pretende aportar?</label>
           <div className="mt-2 flex min-w-0 flex-wrap gap-2">
-            <input id="dashboard-contribution" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="w-28 min-w-0 flex-1 basis-24 rounded-xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" />
+            <input id="dashboard-contribution" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="w-36 min-w-0 flex-[1.15] basis-24 rounded-xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" />
             <button type="submit" disabled={mutation.isPending} className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faWandMagicSparkles} className="mr-2" />{mutation.isPending ? 'Calculando...' : 'Gerar orientação'}</button>
           </div>
           {validationError && <p className="mt-2 text-xs text-rose-700">{validationError}</p>}
@@ -264,7 +273,7 @@ function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onG
           {isAvailable ? 'Informe um valor para ver a orientação calculada pelo Lodira.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
         </div> : <GuidanceResult guidance={visibleGuidance} privacyHidden={privacyHidden} />}
       </div>
-      {visibleGuidance && <ContributionSummary guidance={visibleGuidance} />}
+      {visibleGuidance && <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8">{enriching ? <><p className="text-sm font-semibold text-slate-900">Preparando sua orientação</p><div className="mt-4 space-y-3"><div className="h-3 animate-pulse rounded bg-slate-200" /><div className="h-3 animate-pulse rounded bg-slate-200" /><div className="h-3 w-3/5 animate-pulse rounded bg-slate-200" /></div></> : <ContributionSummary guidance={visibleGuidance} />}</div>}
     </div>
   </article>
 }
@@ -308,17 +317,59 @@ function GuidanceResult({ guidance, privacyHidden }: { guidance: DashboardGuidan
   </div>
 }
 
-function RecentAnalysisModal({ item, portfolioId, onClose }: { item: DashboardAssessment; portfolioId: string; onClose: () => void }) {
+function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve, actionPending = false }: { item: DashboardAssessment; portfolioId: string; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; actionPending?: boolean }) {
   const analysis = useQuery({
     queryKey: ['dashboard-document-analysis', item.documentId, portfolioId],
     queryFn: async () => {
       const response = await fetch(`${contributionApiUrl}/api/documents/${item.documentId}/analysis?portfolioId=${portfolioId}`)
       if (response.status === 404) return null
       if (!response.ok) throw new Error('Não foi possível carregar a análise deste documento.')
-      return response.json() as Promise<RecentDocumentAnalysis>
+      const data = await response.json() as RecentDocumentAnalysis
+      return { ...data, importance: importanceLabels[data.importance] ?? data.importance, classification: classificationLabels[data.classification] ?? data.classification }
     },
     enabled: Boolean(item.documentId),
   })
+  useEffect(() => {
+    if (!analysis.data) return
+    const dialog = document.querySelector('[aria-labelledby="recent-analysis-title"]')
+    const confidenceLabel = Array.from(dialog?.querySelectorAll('p') ?? []).find(element => element.textContent === 'Confiança')
+    const confidenceBlock = confidenceLabel?.parentElement?.parentElement
+    if (confidenceLabel && !confidenceLabel.querySelector('[data-confidence-tooltip]')) {
+      const wrapper = document.createElement('span')
+      wrapper.dataset.confidenceTooltip = 'true'
+      wrapper.className = 'group relative ml-1 inline-flex align-middle'
+      wrapper.tabIndex = 0
+      wrapper.setAttribute('aria-label', 'Sobre a confiança da análise')
+      wrapper.innerHTML = '<span class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-500 text-[10px] font-bold leading-none text-white">?</span><span role="tooltip" class="pointer-events-none invisible absolute bottom-full left-1/2 z-10 mb-2 w-64 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100">A confiança é uma estimativa da IA sobre a interpretação do documento. Não representa uma verificação factual independente.</span>'
+      confidenceLabel.appendChild(wrapper)
+    }
+    const confidenceValue = Array.from(confidenceBlock?.querySelectorAll('p') ?? []).find(element => (element.textContent ?? '').trim().endsWith('%'))
+    if (!confidenceValue || confidenceValue.querySelector('[data-analysis-metadata]')) return
+    const metadata = document.createElement('span')
+    metadata.dataset.analysisMetadata = 'true'
+    metadata.className = 'ml-2 text-xs font-normal text-slate-500'
+    metadata.append(document.createTextNode(`Modelo: ${analysis.data.model || 'Não informado'} · Prompt: ${analysis.data.promptVersion || 'Não informado'}`))
+    confidenceValue.appendChild(metadata)
+  }, [analysis.data])
+  useEffect(() => {
+    if ((!onMarkSeen && !onResolve) || !analysis.data) return
+    const dialog = document.querySelector('[aria-labelledby="recent-analysis-title"]')
+    const content = dialog?.firstElementChild
+    if (!content || content.querySelector('[data-radar-actions]')) return
+    const actions = document.createElement('div')
+    actions.dataset.radarActions = 'true'
+    actions.className = 'mt-6 flex flex-wrap gap-2 border-t border-slate-200 pt-5'
+    if (onMarkSeen) {
+      const seen = document.createElement('button')
+      seen.type = 'button'; seen.className = 'cursor-pointer rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50'; seen.textContent = 'Marcar como visto'; seen.disabled = actionPending; seen.onclick = onMarkSeen; actions.appendChild(seen)
+    }
+    if (onResolve) {
+      const resolve = document.createElement('button')
+      resolve.type = 'button'; resolve.className = 'cursor-pointer rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-amber-500 hover:text-amber-700 disabled:opacity-50'; resolve.textContent = 'Fechar situação'; resolve.disabled = actionPending; resolve.onclick = onResolve; actions.appendChild(resolve)
+    }
+    content.appendChild(actions)
+    return () => actions.remove()
+  }, [analysis.data, onMarkSeen, onResolve, actionPending])
 
   return <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="recent-analysis-title" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[1.5rem] bg-white p-5 shadow-2xl sm:p-7">
@@ -335,16 +386,16 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
   const [visibleCount, setVisibleCount] = useState(5)
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
   return <article className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-    <CardHeader eyebrow="Últimas notícias" linkLabel="Ver todas" to="/radar" />
+    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[minmax(0,1fr)_auto]">
+      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 cursor-pointer gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </button> : <div key={item.assessmentId} className="grid min-w-0 gap-2 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900">Mostrar mais <FontAwesomeIcon icon={faArrowRight} /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
+    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900">Ver mais <FontAwesomeIcon icon={faArrowRight} /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
   </article>
 }
 
@@ -363,9 +414,9 @@ export function DashboardOverview({ dashboard, activePortfolio, privacyHidden, o
     </header>
     <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[7fr_3fr]">
       <PortfolioHealthCard data={data} />
-      <RadarCard items={data.attentionNow ?? []} />
-      <div className="order-2 min-w-0 self-start lg:col-span-2"><ContributionCard preview={data.contributionPreview} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
-      <div className="order-3 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
+      <RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} />
+      <div className="order-2 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
+      <div className="order-3 min-w-0 self-start lg:col-span-2"><ContributionCard preview={data.contributionPreview} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
     </div>
   </section>
 }

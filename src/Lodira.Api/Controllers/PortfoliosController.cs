@@ -114,7 +114,7 @@ public sealed class PortfoliosController : ControllerBase
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
         var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed).ToListAsync(cancellationToken);
         var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
-        var attention = assessments.Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Take(3).Select(CreateDashboardAssessment).ToList();
+        var attention = assessments.Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(CreateDashboardAssessment).ToList();
         var attentionIds = attention.Select(x => x.AssessmentId).ToHashSet();
         var recent = assessments.Where(a => !attentionIds.Contains(a.Id)).OrderByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(CreateDashboardAssessment).ToList();
         var primaryNeed = health.CapitalNeeds.OrderBy(x => x.PriorityOrder).FirstOrDefault();

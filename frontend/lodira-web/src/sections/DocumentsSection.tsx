@@ -109,6 +109,20 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     enabled: Boolean(selectedDocument?.id),
     refetchInterval: selectedDocument && [0, 1, 2, 3].includes(selectedDocument.processingStatus) ? 2000 : false,
   })
+  useEffect(() => {
+    const confidenceIcon = document.querySelector('[aria-label="Sobre a confiança da análise"]')
+    if (!confidenceIcon || confidenceIcon.querySelector('[data-confidence-tooltip]')) return
+    confidenceIcon.removeAttribute('title')
+    confidenceIcon.classList.add('group', 'relative', 'inline-flex', 'cursor-help', 'rounded-full', 'focus:outline-none', 'focus:ring-2', 'focus:ring-amber-500')
+    confidenceIcon.setAttribute('tabindex', '0')
+    const tooltip = document.createElement('span')
+    tooltip.dataset.confidenceTooltip = 'true'
+    tooltip.setAttribute('role', 'tooltip')
+    tooltip.className = 'pointer-events-none invisible absolute bottom-full left-1/2 z-10 mb-2 w-64 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100'
+    tooltip.textContent = 'A confiança é uma estimativa da IA sobre a interpretação do documento. Não representa uma verificação factual independente.'
+    confidenceIcon.appendChild(tooltip)
+    return () => { tooltip.remove(); confidenceIcon.removeAttribute('tabindex'); confidenceIcon.removeAttribute('title') }
+  }, [analysis.data, selectedDocument?.id])
 
   if (!portfolioId) return null
 
