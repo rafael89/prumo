@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass, faRotate } from '@fortawesome/free-solid-svg-icons'
+import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass, faRotate, faSpinner } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl } from '../api/client'
 const apiUrl = apiBaseUrl
@@ -13,7 +13,7 @@ type PortfolioAssessment = { priority: string; currentWeight: number; currentVal
 type DocumentAnalysis = { importance: string; classification: string; summary: string; impact: string; portfolioImpact: string; portfolioAssessment: PortfolioAssessment | null; suggestedAction: string; requiresAction: boolean; confidence: number; model: string; promptVersion: string; affectedAssets: string[]; createdAt: string }
 type DocumentsSectionProps = { portfolioId: string; selectedDocumentId: string | null; setSelectedDocumentId: (id: string | null) => void; privacyHidden: boolean; initialDocumentId: string | null }
 const priorityLabels: Record<string, string> = { Critical: 'Crítica', High: 'Alta', Medium: 'Média', Low: 'Baixa' }
-const processingStatuses = ['Descoberto', 'Baixado', 'Aguardando processamento', 'Processando', 'Processado', 'Erro', 'Ignorado']
+const processingStatuses = ['Descoberto', 'Baixado', 'Aguardando análise', 'Analisando', 'Processado', 'Erro', 'Ignorado']
 const documentTypes = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
 const importanceLabels: Record<string, string> = { Critical: 'Cr\u00edtico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem\u00e7\u00e3o' }
 const classificationLabels: Record<string, string> = { CorporateAction: 'A\u00e7\u00e3o corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribui\u00e7\u00e3o', CapitalRaise: 'Capta\u00e7\u00e3o', AssetTransaction: 'Transa\u00e7\u00e3o de ativos', Governance: 'Governan\u00e7a', Operational: 'Operacional', Liquidation: 'Liquida\u00e7\u00e3o', Other: 'Outro' }
@@ -136,7 +136,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
             const isSelected = document.id === selectedDocument?.id
             return <button id={`document-${document.id}`} key={document.id} type="button" onClick={() => setSelectedDocumentId(document.id)} className={`scroll-mt-28 flex w-full items-center justify-between gap-4 py-3 text-left text-sm transition ${isSelected ? 'text-slate-950' : 'text-slate-700 hover:text-slate-950'}`}>
               <div className="min-w-0"><strong>{document.ticker}</strong><span className="ml-3 text-slate-500">{document.sourceName}</span><p className="mt-1 truncate text-xs text-slate-500">{formatDate(document.publishedAt)} - {documentTypeLabel(document)}</p></div>
-              <span className={`shrink-0 rounded-full px-3 py-1 text-xs ${isSelected ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{processingStatuses[document.processingStatus] ?? 'Desconhecido'}</span>
+              <span className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-xs ${isSelected ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{[2, 3].includes(document.processingStatus) && <FontAwesomeIcon icon={faSpinner} spin />}{processingStatuses[document.processingStatus] ?? 'Desconhecido'}</span>
             </button>
           })}
         </div>

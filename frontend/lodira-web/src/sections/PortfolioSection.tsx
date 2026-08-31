@@ -3,6 +3,7 @@ import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
+import { AppDialog } from '../components/AppDialog'
 type AssetType = 0 | 1 | 2 | 3
 type PortfolioItem = { id: string; name: string; totalValue: number; positionCount: number }
 type Position = { id: string; assetId: string; assetClass: number; ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null; currentValue: number | null; portfolioWeight: number }
@@ -23,6 +24,7 @@ function formatNumber(value: number | null | undefined) { if (value == null) ret
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
 export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId }: PortfolioSectionProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [portfolioToDelete, setPortfolioToDelete] = useState<PortfolioItem | null>(null)
   return <>
       <div className="contents">
         <section id="carteira" className="order-1 self-stretch rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-1">
@@ -40,7 +42,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                       <div className="flex flex-wrap items-center gap-2"><strong className="truncate text-sm">{portfolio.name}</strong>{isActive && <span className="rounded-full bg-slate-900 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">Ativa</span>}</div>
                       <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-sm text-slate-500">{formatCurrency(portfolio.totalValue, privacyHidden)}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{portfolio.positionCount} posi&ccedil;&otilde;es</span></div>
                     </button>
-                    <button type="button" aria-label={`Excluir carteira ${portfolio.name}`} title="Excluir carteira" onClick={() => { if (window.confirm(`Excluir a carteira "${portfolio.name}"? Esta ação não poderá ser desfeita.`)) deletePortfolio.mutate(portfolio.id) }} disabled={deletePortfolio.isPending} className="absolute right-3 top-1/2 h-10 w-10 -translate-y-1/2 rounded-xl border border-rose-200 text-sm text-rose-700 transition hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50"><FontAwesomeIcon icon={faTrash} /></button>
+                    <button type="button" aria-label={`Excluir carteira ${portfolio.name}`} title="Excluir carteira" onClick={() => setPortfolioToDelete(portfolio)} disabled={deletePortfolio.isPending} className="absolute right-3 top-1/2 h-10 w-10 -translate-y-1/2 rounded-xl border border-rose-200 text-sm text-rose-700 transition hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50"><FontAwesomeIcon icon={faTrash} /></button>
                   </>}
                 </div>
               )
@@ -155,6 +157,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
           )}
         </section>
       </div>
+      {portfolioToDelete && <AppDialog title={`Excluir a carteira "${portfolioToDelete.name}"?`} description="Todas as posições e dados associados serão removidos. Esta ação não poderá ser desfeita." confirmLabel="Excluir carteira" tone="danger" onClose={() => setPortfolioToDelete(null)} onConfirm={() => { deletePortfolio.mutate(portfolioToDelete.id); setPortfolioToDelete(null) }} />}
     {selectedAsset && <section className="mt-8 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm" aria-labelledby="asset-detail-title"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Detalhe do ativo</p><h2 id="asset-detail-title" className="mt-2 text-3xl font-semibold">{selectedAsset.ticker}</h2><p className="mt-1 text-sm text-slate-500">{selectedAsset.name} · {selectedAsset.assetType === 1 ? 'FII' : selectedAsset.assetType === 2 ? 'ETF' : selectedAsset.assetType === 0 ? 'Ação' : 'Outro'}</p></div><button type="button" onClick={() => setSelectedAssetId(null)} className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold">Fechar</button></div><div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><div><p className="text-xs text-slate-500">Quantidade</p><p className="mt-1 font-semibold">{formatNumber(selectedAsset.quantity)}</p></div><div><p className="text-xs text-slate-500">Preço de referência</p><p className="mt-1 font-semibold">{formatCurrency(selectedAsset.currentPrice, privacyHidden)}</p></div><div><p className="text-xs text-slate-500">Valor da posição</p><p className="mt-1 font-semibold">{formatCurrency(selectedAsset.currentValue, privacyHidden)}</p></div><div><p className="text-xs text-slate-500">Peso na carteira</p><p className="mt-1 font-semibold">{selectedAsset.portfolioWeight.toFixed(2)}%</p></div></div><div className="mt-6 border-t border-slate-200 pt-5"><p className="text-sm font-semibold">Eventos e documentos</p><p className="mt-2 text-sm text-slate-600">Consulte a lista paginada de documentos para abrir os eventos deste ativo.</p></div></section>}
   </>
 }
