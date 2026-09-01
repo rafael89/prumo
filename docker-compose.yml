@@ -32,6 +32,7 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - document-storage:/storage/documents
+      - api-logs:/storage/logs/api
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,4 +67,5 @@ services:
 volumes:
   postgres-data:
   document-storage:
+  api-logs:
   worker-logs:
