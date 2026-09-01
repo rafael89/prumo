@@ -92,6 +92,34 @@ public sealed class PortfolioAssessmentCurrentService
 
         if (pending.Count == 0) return current;
 
+        var eventIds = pending.Select(x => x.InvestmentEventId).Distinct().ToArray();
+        var persisted = await db.PortfolioAssessments
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
+            .Where(x => x.PortfolioId == portfolio.Id
+                && eventIds.Contains(x.InvestmentEventId)
+                && x.PortfolioSnapshotKey == snapshot
+                && x.TargetAllocationKey == targetKey
+                && x.AssessmentVersion == impactService.Version)
+            .ToListAsync(ct);
+
+        if (persisted.Count > 0)
+        {
+            var persistedByEvent = persisted.ToDictionary(x => x.InvestmentEventId);
+            foreach (var replacement in pending.Where(x => persistedByEvent.ContainsKey(x.InvestmentEventId)).ToList())
+            {
+                db.Entry(replacement).State = EntityState.Detached;
+                current.Remove(replacement);
+            }
+
+            current.AddRange(persisted.Where(item => current.All(existing => existing.Id != item.Id)));
+            pending.RemoveAll(item => persistedByEvent.ContainsKey(item.InvestmentEventId));
+        }
+
+        if (pending.Count == 0) return current;
+
         try
         {
             await db.SaveChangesAsync(ct);
@@ -104,8 +132,7 @@ public sealed class PortfolioAssessmentCurrentService
             foreach (var replacement in pending) db.Entry(replacement).State = EntityState.Detached;
             current.RemoveAll(pending.Contains);
 
-            var eventIds = pending.Select(x => x.InvestmentEventId).ToArray();
-            var persisted = await db.PortfolioAssessments
+            var recovered = await db.PortfolioAssessments
                 .AsNoTracking()
                 .AsSplitQuery()
                 .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
@@ -116,8 +143,8 @@ public sealed class PortfolioAssessmentCurrentService
                     && x.TargetAllocationKey == targetKey
                     && x.AssessmentVersion == impactService.Version)
                 .ToListAsync(ct);
-            current.AddRange(persisted);
-            logger.LogInformation("PortfolioAssessment reavaliação concorrente resolvida PortfolioId={PortfolioId} RecoveredCount={RecoveredCount}", portfolio.Id, persisted.Count);
+            current.AddRange(recovered.Where(item => current.All(existing => existing.Id != item.Id)));
+            logger.LogInformation("PortfolioAssessment reavaliação concorrente resolvida PortfolioId={PortfolioId} RecoveredCount={RecoveredCount}", portfolio.Id, recovered.Count);
         }
 
         return current;
