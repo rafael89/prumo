@@ -170,7 +170,7 @@ public sealed class DocumentAnalysisProcessor
                     && item.AssessmentVersion == assessment.AssessmentVersion, cancellationToken);
                 if (!alreadyPersisted) dbContext.PortfolioAssessments.Add(assessment);
             }
-            logger.LogInformation("AvaliaÃ§Ã£o de carteira concorrente ignorada; o registro jÃ¡ existente foi preservado.");
+            logger.LogInformation("Avaliação de carteira concorrente ignorada; o registro já existente foi preservado.");
             await dbContext.SaveChangesAsync(cancellationToken);
         }
     }

@@ -18,6 +18,13 @@ async function api<T>(path: string, body?: unknown) {
   return response.json() as Promise<T>
 }
 
+async function apiOptional<T>(path: string) {
+  const response = await fetch(apiBaseUrl + path)
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(await response.text() || 'Não foi possível carregar a orientação persistida.')
+  return response.json() as Promise<T>
+}
+
 export function ContributionSectionModern({ portfolioId, positions, privacyHidden }: { portfolioId: string; positions: Position[]; privacyHidden: boolean }) {
   const [amount, setAmount] = useState('')
   const [guidance, setGuidance] = useState<Guidance | null>(null)
@@ -27,13 +34,18 @@ export function ContributionSectionModern({ portfolioId, positions, privacyHidde
     onMutate: () => setGuidance(null),
     onSuccess: setGuidance
   })
+  const latest = useQuery({
+    queryKey: ['latest-contribution', portfolioId],
+    queryFn: () => apiOptional<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/latest`),
+  })
+  const activeGuidance = guidance ?? latest.data
   const polling = useQuery({
-    queryKey: ['standalone-contribution', portfolioId, guidance?.guidanceId],
-    queryFn: () => api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/${guidance?.guidanceId}`),
-    enabled: Boolean(guidance?.guidanceId && guidance.jobStatus && !['Completed', 'Failed'].includes(guidance.jobStatus)),
+    queryKey: ['standalone-contribution', portfolioId, activeGuidance?.guidanceId],
+    queryFn: () => api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/${activeGuidance?.guidanceId}`),
+    enabled: Boolean(activeGuidance?.guidanceId && activeGuidance.jobStatus && !['Completed', 'Failed'].includes(activeGuidance.jobStatus)),
     refetchInterval: query => ['Completed', 'Failed'].includes(query.state.data?.jobStatus ?? '') ? false : 1500
   })
-  const current = polling.data ?? guidance
+  const current = polling.data ?? activeGuidance
   const pending = generate.isPending || Boolean(current?.jobStatus && !['Completed', 'Failed'].includes(current.jobStatus))
   const completed = current?.jobStatus === 'Completed' ? current : null
   const failed = current?.jobStatus === 'Failed'
@@ -54,7 +66,7 @@ export function ContributionSectionModern({ portfolioId, positions, privacyHidde
             <label className="text-sm font-medium">Quanto pretende aportar?</label>
             <div className="mt-2 flex gap-2">
               <input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="min-w-0 flex-[1.15] rounded-xl border border-slate-300 bg-stone-50 px-4 py-3" />
-              <button disabled={generate.isPending || !amount || !positions.length} className="inline-flex cursor-pointer items-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+              <button disabled={pending || !amount || !positions.length} className="inline-flex cursor-pointer items-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
                 <FontAwesomeIcon icon={faWandMagicSparkles} className="mr-2" />{generate.isPending ? 'Enviando...' : 'Gerar orientação'}
               </button>
             </div>

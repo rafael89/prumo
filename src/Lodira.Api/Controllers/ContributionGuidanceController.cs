@@ -170,6 +170,26 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         return Ok(await CompletedResponseAsync(portfolioId, item, ct));
     }
 
+    [HttpGet("latest")]
+    public async Task<ActionResult<object>> GetLatest(Guid portfolioId, CancellationToken ct)
+    {
+        var item = await db.ContributionGuidances.AsNoTracking().Include(x => x.Allocations)
+            .Where(x => x.PortfolioId == portfolioId)
+            .OrderByDescending(x => x.GeneratedAt)
+            .FirstOrDefaultAsync(ct);
+        if (item is null) return NotFound();
+
+        var status = await db.ContributionGuidanceJobs.AsNoTracking()
+            .Where(x => x.ContributionGuidanceId == item.Id)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => (ContributionGuidanceJobStatus?)x.Status)
+            .FirstOrDefaultAsync(ct);
+        if (status is ContributionGuidanceJobStatus.Completed)
+            return Ok(await CompletedResponseAsync(portfolioId, item, ct));
+
+        return Ok(PendingResponse(item.Id, item.RequestedAmount, status ?? ContributionGuidanceJobStatus.Failed, true));
+    }
+
     private async Task<object> CompletedResponseAsync(Guid portfolioId, PersistedContributionGuidance item, CancellationToken ct)
     {
         var positions = await db.PortfolioPositions.AsNoTracking().Include(x => x.Asset)
