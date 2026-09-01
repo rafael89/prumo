@@ -7,7 +7,7 @@ namespace Lodira.Application.Documents;
 public static class DocumentAnalysisPrompt
 {
     public const string Version = "document-analysis-v2";
-    public const string GlobalVersion = "document-analysis-global-v3";
+    public const string GlobalVersion = "document-analysis-global-v4";
 
     private const string GlobalInstructions = """
         Você é o componente de análise documental do Lodira. Analise exclusivamente o conteúdo fornecido e identifique seu significado para o ativo indicado.
@@ -29,6 +29,7 @@ public static class DocumentAnalysisPrompt
         - RELEVANT: informação material capaz de alterar a avaliação ou exigir acompanhamento, sem urgência crítica.
         - INFORMATIVE: atualização válida, predominantemente rotineira, sem impacto material identificado.
         - NO_ACTION: conteúdo sem consequência prática identificável, duplicado, insuficiente ou sem relação clara com o ativo.
+        - Pagamento ou distribuição rotineira de rendimentos é INFORMATIVE, mesmo quando o valor for expressivo. Use RELEVANT apenas se houver suspensão, redução relevante, atraso, mudança de política, condição extraordinária, prazo ou decisão para o cotista. Nunca use CRITICAL apenas pelo valor distribuído.
 
         Classifique classification pelo assunto predominante:
         CORPORATE_ACTION, FINANCIAL_RESULT, DISTRIBUTION, CAPITAL_RAISE, ASSET_TRANSACTION, GOVERNANCE, OPERATIONAL, LIQUIDATION ou OTHER.

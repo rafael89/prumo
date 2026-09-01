@@ -679,6 +679,10 @@ namespace Lodira.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ImportFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -695,6 +699,10 @@ namespace Lodira.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ContributionGuidanceId");
+
+                    b.HasIndex("PortfolioId", "ImportFingerprint")
+                        .IsUnique()
+                        .HasFilter("\"ImportFingerprint\" IS NOT NULL");
 
                     b.HasIndex("PortfolioId", "OccurredAt");
 

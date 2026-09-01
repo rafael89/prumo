@@ -2,7 +2,7 @@ import { useState, type Dispatch, type FormEvent, type SetStateAction } from 're
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
+import { faEye, faEyeSlash, faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
 type AssetType = 0 | 1 | 2 | 3
 type PortfolioItem = { id: string; name: string; totalValue: number; positionCount: number }
@@ -15,21 +15,22 @@ type DashboardData = { positions: Position[]; page: number; totalPages: number }
 type PortfolioSectionProps = {
   portfolios: UseQueryResult<PortfolioItem[], Error>; activePortfolio: PortfolioItem | null; portfolioName: string; setPortfolioName: (value: string) => void; handleCreatePortfolio: (event: FormEvent<HTMLFormElement>) => void
   createPortfolio: Mutation<{ name: string }>; deletePortfolio: Mutation<string>; renamePortfolio: Mutation<{ portfolioId: string; name: string }>; editingPortfolioId: string | null; setEditingPortfolioId: (id: string | null) => void; editingPortfolioName: string; setEditingPortfolioName: (value: string) => void
-  setSelectedPortfolioId: (id: string | null) => void; setSelectedDocumentId: (id: string | null) => void; setPositionPage: (page: number) => void; setFeedback: (value: Feedback) => void; privacyHidden: boolean; positionForm: PositionForm; setPositionForm: Dispatch<SetStateAction<PositionForm>>; assetTypeOptions: Array<{ value: AssetType; label: string }>; handleCreatePosition: (event: FormEvent<HTMLFormElement>) => void
+  setSelectedPortfolioId: (id: string | null) => void; setSelectedDocumentId: (id: string | null) => void; setPositionPage: (page: number) => void; setFeedback: (value: Feedback) => void; privacyHidden: boolean; togglePrivacy: () => void; positionForm: PositionForm; setPositionForm: Dispatch<SetStateAction<PositionForm>>; assetTypeOptions: Array<{ value: AssetType; label: string }>; handleCreatePosition: (event: FormEvent<HTMLFormElement>) => void
   createPosition: Mutation<{ ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null }>; dashboard: UseQueryResult<DashboardData, Error>; editingPositionId: string | null; startEditing: (position: Position) => void; handleUpdatePosition: (event: FormEvent<HTMLFormElement>, positionId: string) => void; editForm: EditForm; setEditForm: Dispatch<SetStateAction<EditForm>>
   updatePosition: Mutation<{ positionId: string; request: { quantity: number; averagePrice: number; currentPrice: number | null } }>; setEditingPositionId: (id: string | null) => void; deletePosition: Mutation<string>; selectedAsset: Position | null; setSelectedAssetId: (id: string | null) => void
 }
 function formatCurrency(value: number | null | undefined, hidden = false) { if (hidden) return 'R$ ••••••'; if (value == null) return 'Sem valor'; return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value) }
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
-export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId }: PortfolioSectionProps) {
+export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, togglePrivacy, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId }: PortfolioSectionProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [portfolioToDelete, setPortfolioToDelete] = useState<PortfolioItem | null>(null)
   return <>
       <div className="contents">
         <section id="carteira" className="order-1 self-stretch rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-1">
-          <div>
+          <div className="flex items-center justify-between gap-4">
             <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Carteiras</h2>
+            <button type="button" aria-label={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} title={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} onClick={togglePrivacy} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-sm text-slate-700 transition hover:border-amber-400 hover:text-amber-700">{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button>
           </div>
 
           <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2">

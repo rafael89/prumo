@@ -1,5 +1,6 @@
 using Lodira.Application.Abstractions;
 using Lodira.Application.Documents;
+using Lodira.Domain.Enums;
 
 namespace Lodira.Domain.Tests;
 
@@ -93,6 +94,41 @@ public sealed class AiAnalysisValidatorTests
         Assert.NotNull(result.Events);
         Assert.Equal(TimeSpan.Zero, result.Events[0].OccurredAt!.Value.Offset);
         Assert.Equal(DateTimeOffset.Parse("2026-08-29T13:00:00Z"), result.Events[0].OccurredAt);
+    }
+
+    [Fact]
+    public void Rebaixa_pagamento_rotineiro_para_informativo_e_sem_acao()
+    {
+        var payload = CreatePayload() with
+        {
+            Importance = "Critical",
+            Classification = "Distribution",
+            RequiresAction = true,
+            SuggestedAction = "Monitor",
+            Summary = "Pagamento de rendimentos referente ao mês de julho.",
+            Impact = "Distribuição de R$ 0,85 por cota aos investidores."
+        };
+
+        var result = validator.Validate(payload, "{}");
+
+        Assert.Equal(AnalysisImportance.Informative, result.Importance);
+        Assert.False(result.RequiresAction);
+        Assert.Equal(SuggestedAction.NoAction, result.SuggestedAction);
+    }
+
+    [Fact]
+    public void Preserva_relevancia_de_distribuicao_com_excecao_material()
+    {
+        var payload = CreatePayload() with
+        {
+            Importance = "Relevant",
+            Classification = "Distribution",
+            Summary = "Suspensão temporária da distribuição de rendimentos por inadimplência."
+        };
+
+        var result = validator.Validate(payload, "{}");
+
+        Assert.Equal(AnalysisImportance.Relevant, result.Importance);
     }
 
     private static AiAnalysisPayload CreatePayload()

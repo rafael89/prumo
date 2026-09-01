@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowRight, faCircleCheck, faCircleInfo, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowRight, faCircleCheck, faCircleInfo, faEye, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl } from '../api/client'
 const contributionApiUrl = apiBaseUrl
@@ -134,7 +134,7 @@ function CardHeader({ eyebrow, linkLabel, to }: { eyebrow: string; linkLabel: st
   </div>
 }
 
-function PortfolioHealthCard({ data }: { data: Dashboard }) {
+function PortfolioHealthCardLegacy({ data }: { data: Dashboard }) {
   const health = data.portfolioHealthSummary
   const overview = data.portfolioOverview
   const deviations = health?.allocationDeviations.slice(0, 2) ?? []
@@ -162,6 +162,61 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
       Configure as alocações-alvo para que o Lodira possa avaliar a distribuição da carteira e orientar seus aportes.
       <Link to="/portfolio" className="mt-3 flex w-fit items-center gap-2 font-semibold text-slate-900">Configurar alocação-alvo <FontAwesomeIcon icon={faArrowRight} /></Link>
     </div>}
+  </article>
+}
+
+void PortfolioHealthCardLegacy
+
+function healthScore(status: string | undefined) {
+  if (status === 'Aligned') return 100
+  if (status === 'SlightlyUnbalanced') return 80
+  if (status === 'Unbalanced') return 60
+  if (status === 'StronglyUnbalanced') return 35
+  return 0
+}
+
+function healthLabel(status: string | undefined) {
+  if (status === 'Aligned' || status === 'SlightlyUnbalanced') return 'Boa'
+  if (status === 'Unbalanced') return 'Atencao'
+  if (status === 'StronglyUnbalanced') return 'Desbalanceada'
+  if (status === 'EmptyPortfolio') return 'Sem posicoes'
+  return 'Nao configurada'
+}
+
+function PortfolioHealthCard({ data }: { data: Dashboard }) {
+  const health = data.portfolioHealthSummary
+  const overview = data.portfolioOverview
+  const deviations = [...(health?.allocationDeviations ?? [])]
+    .sort((left, right) => Math.abs(right.deviationPercentagePoints) - Math.abs(left.deviationPercentagePoints))
+    .slice(0, 3)
+  const score = healthScore(health?.status)
+  const scoreColor = score >= 80 ? '#f59e0b' : score >= 60 ? '#f97316' : '#ef4444'
+
+  return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <CardHeader eyebrow="Saude da carteira" linkLabel="Ver detalhes" to="/portfolio" />
+    <div className="mt-5 grid gap-5 md:grid-cols-[minmax(150px,0.72fr)_minmax(0,1.28fr)] md:gap-7">
+      <div className="flex flex-col items-center justify-center border-b border-slate-100 pb-5 md:border-b-0 md:border-r md:pb-0 md:pr-7">
+        <div className="relative grid h-32 w-32 place-items-center rounded-full" style={{ background: `conic-gradient(${scoreColor} ${score * 3.6}deg, #f1f5f9 0deg)` }}>
+          <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center">
+            <div><strong className="block text-3xl leading-none text-slate-950">{score}</strong><span className="text-xs font-semibold text-slate-500">/100</span></div>
+          </div>
+        </div>
+        <span className={`mt-4 rounded-xl px-6 py-2 text-sm font-semibold ${score >= 80 ? 'bg-amber-50 text-amber-700' : score >= 60 ? 'bg-orange-50 text-orange-700' : score > 0 ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{healthLabel(health?.status)}</span>
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold text-slate-950">Resumo</h2>
+        {deviations.length > 0 ? <div className="mt-3 space-y-3">
+          {deviations.map(item => {
+            const aligned = Math.abs(item.deviationPercentagePoints) <= 2
+            const above = item.deviationPercentagePoints > 0
+            return <div key={item.assetClass} className="flex items-start gap-3">
+              <span aria-hidden="true" className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl ${aligned ? 'bg-emerald-50 text-emerald-600' : above ? 'bg-amber-50 text-amber-600' : 'bg-sky-50 text-sky-600'}`}><FontAwesomeIcon icon={aligned ? faCircleCheck : above ? faTriangleExclamation : faCircleInfo} /></span>
+              <div className="min-w-0"><p className="text-sm font-semibold leading-5 text-slate-800">{aligned ? `${assetClassLabels[item.assetClass] ?? 'Classe'} alinhada ao ideal` : `${assetClassLabels[item.assetClass] ?? 'Classe'} ${above ? 'acima' : 'abaixo'} do ideal`}</p><p className="text-xs leading-5 text-slate-500">Atual {formatPercentage(item.currentPercentage)}% · meta {formatPercentage(item.targetPercentage)}%</p></div>
+            </div>
+          })}
+        </div> : <div className="mt-3 flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600"><FontAwesomeIcon icon={faCircleInfo} /></span><div><p className="text-sm font-semibold text-slate-800">Defina uma alocacao-alvo</p><p className="text-xs leading-5 text-slate-500">{overview?.healthSummary ?? 'Configure sua carteira para acompanhar este indicador.'}</p></div></div>}
+      </div>
+    </div>
   </article>
 }
 
@@ -230,33 +285,42 @@ function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve
     metadata.append(document.createTextNode(`Modelo: ${analysis.data.model || 'Não informado'} · Prompt: ${analysis.data.promptVersion || 'Não informado'}`))
     confidenceValue.appendChild(metadata)
   }, [analysis.data])
+  /*
   useEffect(() => {
     if ((!onMarkSeen && !onResolve) || !analysis.data) return
     const dialog = document.querySelector('[aria-labelledby="recent-analysis-title"]')
-    const content = dialog?.firstElementChild
+    const content = dialog?.firstElementChild!
     if (!content || content.querySelector('[data-radar-actions]')) return
     const actions = document.createElement('div')
     actions.dataset.radarActions = 'true'
     actions.className = 'mt-6 flex flex-wrap gap-2 border-t border-slate-200 pt-5'
     if (onMarkSeen) {
       const seen = document.createElement('button')
-      seen.type = 'button'; seen.className = 'cursor-pointer rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50'; seen.textContent = 'Marcar como visto'; seen.disabled = actionPending; seen.onclick = onMarkSeen; actions.appendChild(seen)
+      seen.type = 'button'; seen.className = 'cursor-pointer rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50'; seen.textContent = 'Marcar como visto'; seen.disabled = actionPending; seen.onclick = onMarkSeen!; actions.appendChild(seen)
     }
     if (onResolve) {
       const resolve = document.createElement('button')
+      // @ts-expect-error legacy DOM action builder is disabled; actions render in JSX below.
       resolve.type = 'button'; resolve.className = 'cursor-pointer rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-amber-500 hover:text-amber-700 disabled:opacity-50'; resolve.textContent = 'Fechar situação'; resolve.disabled = actionPending; resolve.onclick = onResolve; actions.appendChild(resolve)
     }
-    content.appendChild(actions)
+    content!.appendChild(actions)
     return () => actions.remove()
   }, [analysis.data, onMarkSeen, onResolve, actionPending])
+  */
 
   return <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="recent-analysis-title" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
+    <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><h2 id="recent-analysis-title" className="mt-2 text-xl font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h2></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
       {analysis.isLoading && <p className="py-8 text-sm text-slate-500">Carregando análise...</p>}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
       {!analysis.isLoading && !analysis.isError && !analysis.data && <p className="mt-5 rounded-xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">Nenhuma análise validada foi encontrada para este documento ainda.</p>}
       {analysis.data && <div className="mt-5 space-y-5 text-sm text-slate-700"><div className="grid gap-4 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Importância</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Classificação</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.classification}</p></div></div><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Resumo</p><p className="mt-2 leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto</p><p className="mt-2 leading-7">{analysis.data.impact}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto na minha carteira</p><p className="mt-2 leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p></article><div className="grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ação sugerida</p><p className="mt-1 font-semibold text-slate-950">{analysis.data.suggestedAction}{analysis.data.requiresAction ? ' · Requer atenção' : ''}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Confiança</p><p className="mt-1 font-semibold text-slate-950">{Math.round(analysis.data.confidence * 100)}%</p></div></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ativos afetados</p><div className="mt-2 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map(asset => <span key={asset} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span>Nenhum ativo listado.</span>}</div></div></div>}
+      </div>
+      <div data-radar-actions="true" className="mt-6 flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-white pt-4">
+        {onMarkSeen && <button type="button" onClick={onMarkSeen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"><FontAwesomeIcon icon={faEye} />Marcar como visto</button>}
+        {onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-amber-500 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
+      </div>
     </div>
   </div>
 }

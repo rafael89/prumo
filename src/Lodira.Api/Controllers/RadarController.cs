@@ -36,8 +36,12 @@ public sealed class RadarController : ControllerBase
         var currentAssessments = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct);
         var assessments = currentAssessments
             .Concat(loadedAssessments.Where(x => x.Status == AssessmentStatus.Closed))
-            .GroupBy(x => x.Id)
-            .Select(x => x.First())
+            .GroupBy(x => x.InvestmentEventId)
+            .Select(group => group
+                .OrderByDescending(x => x.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
+                .ThenByDescending(x => x.GeneratedAt)
+                .ThenByDescending(x => x.Id)
+                .First())
             .Where(x => !priority.HasValue || x.AttentionPriority == priority.Value)
             .Where(x => !status.HasValue || x.Status == status.Value)
             .Where(x => !userState.HasValue || x.UserState == userState.Value)

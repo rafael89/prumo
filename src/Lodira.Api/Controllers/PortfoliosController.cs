@@ -114,6 +114,14 @@ public sealed class PortfoliosController : ControllerBase
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
         var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed).ToListAsync(cancellationToken);
         var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
+        assessments = assessments
+            .GroupBy(a => a.InvestmentEventId)
+            .Select(group => group
+                .OrderByDescending(a => a.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
+                .ThenByDescending(a => a.GeneratedAt)
+                .ThenByDescending(a => a.Id)
+                .First())
+            .ToList();
         var attention = assessments.Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(CreateDashboardAssessment).ToList();
         var attentionIds = attention.Select(x => x.AssessmentId).ToHashSet();
         var recent = assessments.Where(a => !attentionIds.Contains(a.Id)).OrderByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(CreateDashboardAssessment).ToList();

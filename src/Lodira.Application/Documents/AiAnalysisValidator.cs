@@ -30,6 +30,13 @@ public sealed class AiAnalysisValidator
             return new AiInvestmentEventResult(eventType, eventPayload.OccurredAt?.ToUniversalTime(), eventPayload.Summary.Trim(), (eventPayload.Facts ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToArray(), (eventPayload.AffectedAssets ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray());
         }).ToArray();
 
+        if (classification == AnalysisClassification.Distribution && IsRoutineDistribution(summary, impact, events))
+        {
+            importance = AnalysisImportance.Informative;
+            suggestedAction = SuggestedAction.NoAction;
+            payload = payload with { RequiresAction = false };
+        }
+
         return new AiAnalysisResult(
             importance,
             classification,
@@ -46,4 +53,18 @@ public sealed class AiAnalysisValidator
     private static string LimitRawResponse(string rawResponse) => string.IsNullOrWhiteSpace(rawResponse)
         ? throw new InvalidOperationException("Resposta original ausente.")
         : rawResponse.Length <= 100_000 ? rawResponse : rawResponse[..100_000];
+
+    private static bool IsRoutineDistribution(string summary, string impact, IReadOnlyList<AiInvestmentEventResult> events)
+    {
+        var text = string.Join(' ', new[] { summary, impact }
+            .Concat(events.SelectMany(item => new[] { item.Summary }.Concat(item.Facts))))
+            .ToLowerInvariant();
+        var exceptionalSignals = new[]
+        {
+            "suspens", "redução", "reducao", "atras", "inadimpl", "corte", "extraordin",
+            "mudança de política", "mudanca de politica", "prazo", "decisão", "decisao",
+            "alteração relevante", "alteracao relevante", "não pagamento", "nao pagamento"
+        };
+        return !exceptionalSignals.Any(text.Contains);
+    }
 }

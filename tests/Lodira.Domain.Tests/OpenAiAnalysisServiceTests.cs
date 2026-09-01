@@ -22,9 +22,9 @@ public sealed class OpenAiAnalysisServiceTests
 
         var result = await service.AnalyzeAsync("texto do documento", Context);
 
-        Assert.Equal(AnalysisImportance.Relevant, result.Importance);
+        Assert.Equal(AnalysisImportance.Informative, result.Importance);
         Assert.Equal(AnalysisClassification.Distribution, result.Classification);
-        Assert.Equal(SuggestedAction.Monitor, result.SuggestedAction);
+        Assert.Equal(SuggestedAction.NoAction, result.SuggestedAction);
         Assert.Equal(new[] { "XPLG11" }, result.AffectedAssets);
         Assert.Contains("\"additionalProperties\":false", handler.RequestBody);
         Assert.Equal("Bearer test-key", handler.Authorization);

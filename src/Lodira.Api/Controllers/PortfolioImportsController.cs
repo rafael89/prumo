@@ -68,12 +68,19 @@ public sealed class PortfolioImportsController : ControllerBase
         }
         var assetsByTicker = await db.Assets.Where(a => normalized.Transactions.Select(t => t.Ticker).Contains(a.Ticker)).ToDictionaryAsync(a => a.Ticker, ct);
         var importedTransactions = 0;
+        var importedFingerprints = new HashSet<string>(StringComparer.Ordinal);
+        var existingFingerprints = await db.PortfolioTransactions.AsNoTracking()
+            .Where(x => x.PortfolioId == portfolioId && x.ImportFingerprint != null)
+            .Select(x => x.ImportFingerprint!)
+            .ToHashSetAsync(ct);
         foreach (var imported in normalized.Transactions)
         {
             if (!assetsByTicker.TryGetValue(imported.Ticker, out var asset)) continue;
             var transactionAmount = decimal.Round(imported.TotalAmount, 2);
             if (transactionAmount <= 0) continue;
-            var transactionRecord = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, imported.OccurredAt, null, transactionAmount);
+            var fingerprint = PortfolioTransaction.CreateImportFingerprint(portfolioId, asset.Id, imported.OccurredAt, imported.Quantity, imported.UnitPrice, imported.Institution);
+            if (!importedFingerprints.Add(fingerprint) || existingFingerprints.Contains(fingerprint)) continue;
+            var transactionRecord = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, imported.OccurredAt, null, transactionAmount, fingerprint);
             transactionRecord.Items.Add(new PortfolioTransactionItem(transactionRecord.Id, asset.Id, imported.Quantity, imported.UnitPrice));
             db.PortfolioTransactions.Add(transactionRecord);
             importedTransactions++;
