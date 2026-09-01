@@ -188,13 +188,34 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             return false;
         }
 
-        var guidance = await db.ContributionGuidances.Include(x => x.Allocations)
+        var guidance = await db.ContributionGuidances
             .SingleAsync(x => x.Id == job.ContributionGuidanceId, ct);
         guidance.UpdateIntelligence(publication.Provider, publication.Model, publication.Availability, publication.Reasoning, publication.MetadataJson);
-        guidance.ReplaceAllocations(publication.Allocations.Select(x => new PersistedContributionGuidanceAllocation(
-            guidance.Id, x.AssetId, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)));
+
+        // The allocations carry application-generated GUIDs. When they are only attached
+        // through an already tracked navigation, EF can infer that they already exist and
+        // emit UPDATEs instead of INSERTs. Persist the replacement explicitly so publication
+        // remains atomic and retries do not depend on the change tracker's graph inference.
+        await db.ContributionGuidanceAllocations
+            .Where(x => x.ContributionGuidanceId == guidance.Id)
+            .ExecuteDeleteAsync(ct);
+        db.ContributionGuidanceAllocations.AddRange(publication.Allocations.Select(x =>
+            new PersistedContributionGuidanceAllocation(
+                guidance.Id, x.AssetId, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)));
         job.Complete();
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            var entries = string.Join(", ", exception.Entries.Select(x => $"{x.Metadata.ClrType.Name}:{x.State}"));
+            logger.LogError(exception,
+                "Conflito ao publicar o job de guidance {JobId}; entidades={ConcurrencyEntries}",
+                jobId,
+                entries);
+            throw;
+        }
         await transaction.CommitAsync(ct);
         return true;
     }
