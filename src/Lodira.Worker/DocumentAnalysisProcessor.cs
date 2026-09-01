@@ -70,7 +70,7 @@ public sealed class DocumentAnalysisProcessor
             await EnsureExistingAnalysisFeedsRadarAsync(existingAnalysis, cancellationToken);
             document.MarkProcessed();
             job.Complete(DateTimeOffset.UtcNow);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await SaveChangesHandlingConcurrentAssessmentsAsync(cancellationToken);
             logger.LogInformation("Analise ja persistida para o job {JobId}; finalizando de forma idempotente.", job.Id);
             return;
         }
