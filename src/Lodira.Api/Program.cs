@@ -10,8 +10,13 @@ using Lodira.Application.Portfolio;
 using Lodira.Infrastructure.PortfolioImports;
 using Lodira.Application.Intelligence;
 using Lodira.Api.Services;
+using Lodira.Api;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var storageRoot = builder.Configuration["Storage:RootPath"] ?? "/storage/documents";
+var logDirectory = ApiFileLoggerProvider.ResolveDirectory(storageRoot, builder.Configuration["Logging:ApiFile:Path"]);
+builder.Logging.AddProvider(new ApiFileLoggerProvider(logDirectory));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
