@@ -146,7 +146,7 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
                 position.RecentContributionPenalty);
         }).ToArray();
 
-        var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, intelligenceContextKey, ContributionEngineVersion, "pending-ai", "pending", "Pending", "A IA está analisando os candidatos e os limites da carteira.", "{}");
+        var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, intelligenceContextKey, ContributionEngineVersion, "pending-ai", "pending", "Pending", "Análise em andamento: o Lodira está avaliando os candidatos e os limites da carteira.", "{}");
         db.ContributionGuidances.Add(persisted);
         var job = new ContributionGuidanceJob(portfolioId, persisted.Id, JsonSerializer.Serialize(new ContributionGuidanceWorkItem(baseline, positions, candidates)));
         db.ContributionGuidanceJobs.Add(job);
@@ -204,6 +204,30 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
             reason = ContributionText.NormalizeAssetClassNames(x.Reason),
             evidence = DeserializeEvidence(x.EvidenceJson)
         }).ToArray();
+        var selectedAssetIds = allocations.Select(x => x.AssetId).ToHashSet();
+        var jobCandidates = await db.ContributionGuidanceJobs.AsNoTracking()
+            .Where(x => x.ContributionGuidanceId == item.Id)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => x.CandidatesJson)
+            .FirstOrDefaultAsync(ct);
+        var avoidedCandidates = Array.Empty<object>();
+        if (!string.IsNullOrWhiteSpace(jobCandidates))
+        {
+            var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(jobCandidates);
+            avoidedCandidates = workItem?.Baseline?.AvoidedCandidates
+                .Where(x => !selectedAssetIds.Contains(x.AssetId))
+                .GroupBy(x => x.AssetId)
+                .Select(x => x.First())
+                .Take(5)
+                .Select(x => (object)new
+                {
+                    x.AssetId,
+                    x.Ticker,
+                    assetClass = (int)x.AssetClass,
+                    reason = ContributionText.NormalizeAssetClassNames(x.Reason)
+                })
+                .ToArray() ?? Array.Empty<object>();
+        }
         var allocated = allocations.Sum(x => x.Amount);
         return new
         {
@@ -215,7 +239,7 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
             unallocatedAmount = item.RequestedAmount - allocated,
             allocationStyle = allocations.Length == 1 ? "Concentrated" : allocations.Length > 1 ? "Distributed" : "NoAllocation",
             allocations,
-            avoidedCandidates = Array.Empty<object>(),
+            avoidedCandidates,
             reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { ContributionText.NormalizeAssetClassNames(item.Reasoning) },
             evidence = allocations.SelectMany(x => x.evidence).Distinct().ToArray(),
             item.IntelligenceAvailability,

@@ -341,7 +341,7 @@ function App() {
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}
-        {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} privacyHidden={privacyHidden} />}
+        {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') ? 'pb-0' : 'pb-12'}`}>
           {feedback && (
@@ -360,7 +360,7 @@ function App() {
           </div>}
         </section>
         {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-358 gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio.id} /></div>}
-        {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
+        {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
   )
