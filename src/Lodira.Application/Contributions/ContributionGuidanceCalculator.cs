@@ -96,7 +96,7 @@ public sealed class ContributionGuidanceCalculator
                 avoided.Add(new(candidate.AssetId, candidate.Ticker, candidate.AssetClass, ContributionAvoidanceReasonType.LowerPriority,
                     candidate.RecentContributionCount > 0
                         ? $"Foi adiado porque recebeu {candidate.RecentContributionCount} aporte(s) recentemente; outros candidatos elegíveis podem melhorar mais a carteira neste momento."
-                        : "Foi preterido por outro candidato elegível da mesma classe com maior benefício marginal calculado para reduzir o desvio da carteira.", EvidenceFor(candidate.AssetId, input.Assessments)));
+                        : "Não foi priorizado porque outro ativo elegível da mesma classe apresentou maior benefício calculado para reduzir o desvio da carteira.", EvidenceFor(candidate.AssetId, input.Assessments)));
         }
 
         var allocated = allocationsByAsset.Where(x => x.Value > 0).OrderBy(x => x.Key).Select(x =>

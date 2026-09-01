@@ -92,7 +92,7 @@ public static class ContributionIntelligenceApplier
         => positions.Where(x => !selectedIds.Contains(x.AssetId) && x.RecentContributionCount > 0)
             .OrderByDescending(x => x.RecentContributionAmount)
             .Take(3)
-            .Select(x => $"{x.Ticker} recebeu {x.RecentContributionCount} aporte(s) recentemente e perdeu prioridade.")
+            .Select(x => $"{x.Ticker} recebeu {x.RecentContributionCount} aporte(s) recentemente e, por isso, ficou com menor prioridade neste cenário.")
             .ToList();
 }
 
