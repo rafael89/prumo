@@ -4,7 +4,29 @@ using Lodira.Domain.Enums;
 
 namespace Lodira.Application.Contributions;
 
-public sealed record GuidancePosition(Guid AssetId, string Ticker, AssetClass AssetClass, decimal CurrentValue, decimal CurrentWeight);
+public sealed record GuidancePosition(
+    Guid AssetId,
+    string Ticker,
+    AssetClass AssetClass,
+    decimal CurrentValue,
+    decimal CurrentWeight,
+    AssetType AssetType = AssetType.Other,
+    string? Sector = null,
+    decimal RecentContributionAmount = 0,
+    int RecentContributionCount = 0,
+    DateTimeOffset? LastContributionAt = null,
+    decimal SectorWeightWithinClass = 100,
+    bool HasPosition = true,
+    decimal AllocationNeedScore = 0,
+    decimal DiversificationScore = 0,
+    decimal UnderweightScore = 0,
+    decimal RecentContributionPenalty = 0)
+{
+    public decimal DecisionScore => AllocationNeedScore * 0.25m
+        + (DiversificationScore > 0 ? DiversificationScore : Math.Clamp(100m - SectorWeightWithinClass, 0, 100)) * 0.20m
+        + UnderweightScore * 0.15m
+        + (100m - (RecentContributionPenalty > 0 ? RecentContributionPenalty : RecentContributionCount > 0 ? 25m : 0m)) * 0.15m;
+}
 public sealed record GuidanceAssessment(Guid AssetId, CapitalDecisionImpact Impact, AssessmentStatus Status, string? Evidence, string AssessmentVersion, AttentionPriority AttentionPriority = AttentionPriority.Low, ActionRequirement ActionRequirement = ActionRequirement.None, string Summary = "", string WhyItMatters = "", string SuggestedBehavior = "", decimal Confidence = 0, Guid AssessmentId = default);
 public sealed record ContributionGuidanceInput(Guid PortfolioId, decimal ContributionAmount, PortfolioHealthResult Health, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<GuidanceAssessment> Assessments);
 public sealed record ContributionAllocation(Guid AssetId, string Ticker, AssetClass AssetClass, decimal Amount, string Reason, IReadOnlyList<string> Evidence);
@@ -72,7 +94,9 @@ public sealed class ContributionGuidanceCalculator
                 avoided.Add(Blocked(candidate, input.Assessments));
             foreach (var candidate in ranked.Skip(1).Where(x => !allocationsByAsset.ContainsKey(x.AssetId)))
                 avoided.Add(new(candidate.AssetId, candidate.Ticker, candidate.AssetClass, ContributionAvoidanceReasonType.LowerPriority,
-                    "Foi preterido por outro candidato elegível da mesma classe.", EvidenceFor(candidate.AssetId, input.Assessments)));
+                    candidate.RecentContributionCount > 0
+                        ? $"Foi adiado porque recebeu {candidate.RecentContributionCount} aporte(s) recentemente; outros candidatos elegíveis podem melhorar mais a carteira neste momento."
+                        : "Foi preterido por outro candidato elegível da mesma classe.", EvidenceFor(candidate.AssetId, input.Assessments)));
         }
 
         var allocated = allocationsByAsset.Where(x => x.Value > 0).OrderBy(x => x.Key).Select(x =>
@@ -102,6 +126,7 @@ public sealed class ContributionGuidanceCalculator
     private static List<GuidancePosition> RankedCandidates(IEnumerable<GuidancePosition> positions, IReadOnlyDictionary<Guid, CapitalDecisionImpact> impacts) => positions
         .Where(p => impacts.GetValueOrDefault(p.AssetId) != CapitalDecisionImpact.Block)
         .OrderBy(p => impacts.GetValueOrDefault(p.AssetId) == CapitalDecisionImpact.Favor ? 0 : impacts.GetValueOrDefault(p.AssetId) == CapitalDecisionImpact.None ? 1 : 2)
+        .ThenByDescending(p => p.DecisionScore)
         .ThenBy(p => p.CurrentWeight).ThenBy(p => p.Ticker, StringComparer.Ordinal).ThenBy(p => p.AssetId).ToList();
 
     private static AvoidedCandidate Blocked(GuidancePosition position, IEnumerable<GuidanceAssessment> assessments) => new(

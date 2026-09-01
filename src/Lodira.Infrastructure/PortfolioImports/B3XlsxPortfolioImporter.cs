@@ -25,6 +25,7 @@ public sealed class B3XlsxPortfolioImporter : IPortfolioImporter
             if (zip.Entries.Sum(entry => entry.Length) > MaxExpandedBytes) return Task.FromResult(Failure("O conteúdo descompactado excede o limite permitido."));
             var shared = ReadSharedStrings(zip);
             var items = new List<NormalizedPortfolioImportItem>();
+            var transactions = new List<NormalizedPortfolioImportTransaction>();
             var warnings = new List<string>();
             for (var sheet = 1; sheet <= 2; sheet++)
             {
@@ -47,8 +48,34 @@ public sealed class B3XlsxPortfolioImporter : IPortfolioImporter
             }
             if (zip.GetEntry("xl/worksheets/sheet3.xml") is null) return Task.FromResult(Failure("O arquivo não contém a aba de Tesouro Direto esperada."));
             warnings.Add("Posições de Tesouro Direto não foram importadas porque não possuem ticker de negociação no modelo atual.");
+            var negotiationsEntry = zip.GetEntry("xl/worksheets/sheet5.xml");
+            if (negotiationsEntry is not null)
+            {
+                var negotiations = XDocument.Load(negotiationsEntry.Open());
+                if (negotiations.Descendants(Main + "f").Any()) return Task.FromResult(Failure("Arquivos com fórmulas não são aceitos."));
+                var rows = negotiations.Descendants(Main + "row").ToList();
+                if (rows.Count > 0 && HasNegotiationHeaders(rows[0], shared))
+                {
+                    foreach (var row in rows.Skip(1))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var cells = Cells(row, shared);
+                        var ticker = cells.GetValueOrDefault("A", "").Trim().ToUpperInvariant();
+                        if (!System.Text.RegularExpressions.Regex.IsMatch(ticker, "^[A-Z]{4}[0-9]{1,2}$")) continue;
+                        if (!TryDecimal(cells.GetValueOrDefault("E"), out var quantity) || quantity <= 0) continue;
+                        if (!TryDecimal(cells.GetValueOrDefault("H"), out var unitPrice) || unitPrice <= 0) continue;
+                        if (!DateTimeOffset.TryParseExact(cells.GetValueOrDefault("B"), "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var occurredAt))
+                        {
+                            warnings.Add($"Negociação de {ticker} ignorada: período inicial inválido.");
+                            continue;
+                        }
+                        transactions.Add(new(ticker, occurredAt, quantity, unitPrice, decimal.Round(quantity * unitPrice, 2), cells.GetValueOrDefault("D")));
+                    }
+                }
+            }
             var consolidated = items.GroupBy(i => i.Ticker).Select(g => { var first = g.First(); var quantity = g.Sum(i => i.Quantity); return first with { Quantity = quantity, CurrentValue = g.Sum(i => i.CurrentValue ?? 0), CurrentPrice = quantity == 0 ? first.CurrentPrice : g.Sum(i => (i.CurrentPrice ?? 0) * i.Quantity) / quantity }; }).ToList();
-            return Task.FromResult(new NormalizedPortfolioImport(PortfolioImportSource.B3File, null, SnapshotCompleteness.Partial, consolidated, warnings, consolidated.Count == 0 ? ["Nenhuma posição de ação ou fundo foi encontrada."] : []));
+            var normalized = new NormalizedPortfolioImport(PortfolioImportSource.B3File, null, SnapshotCompleteness.Partial, consolidated, warnings, consolidated.Count == 0 ? ["Nenhuma posição de ação ou fundo foi encontrada."] : []);
+            return Task.FromResult(normalized with { Transactions = transactions });
         }
         catch (InvalidDataException) { return Task.FromResult(Failure("O arquivo XLSX está corrompido ou não é válido.")); }
         catch (XmlException) { return Task.FromResult(Failure("O arquivo XLSX está corrompido ou não é válido.")); }
@@ -60,6 +87,16 @@ public sealed class B3XlsxPortfolioImporter : IPortfolioImporter
         var cells = row.Elements(Main + "c").ToDictionary(c => Column(c.Attribute("r")?.Value ?? ""), c => Value(c, shared));
         return cells.GetValueOrDefault("A", "").Contains("Produto", StringComparison.OrdinalIgnoreCase) && cells.GetValueOrDefault("B", "").Contains("Institui", StringComparison.OrdinalIgnoreCase) && cells.GetValueOrDefault("D", "").Contains("Negocia", StringComparison.OrdinalIgnoreCase) && cells.GetValueOrDefault("G", "").Contains("Tipo", StringComparison.OrdinalIgnoreCase) && cells.GetValueOrDefault("I", "").Contains("Quantidade", StringComparison.OrdinalIgnoreCase) && cells.GetValueOrDefault("M", "").Contains("Fechamento", StringComparison.OrdinalIgnoreCase) && cells.GetValueOrDefault("N", "").Contains("Atualizado", StringComparison.OrdinalIgnoreCase);
     }
+    private static bool HasNegotiationHeaders(XElement row, Dictionary<int, string> shared)
+    {
+        var cells = Cells(row, shared);
+        return cells.GetValueOrDefault("A", "").Contains("Código de Negociação", StringComparison.OrdinalIgnoreCase)
+            && cells.GetValueOrDefault("B", "").Contains("Período", StringComparison.OrdinalIgnoreCase)
+            && cells.GetValueOrDefault("E", "").Contains("Compra", StringComparison.OrdinalIgnoreCase)
+            && cells.GetValueOrDefault("H", "").Contains("Preço Médio", StringComparison.OrdinalIgnoreCase);
+    }
+    private static Dictionary<string, string> Cells(XElement row, Dictionary<int, string> shared)
+        => row.Elements(Main + "c").ToDictionary(c => Column(c.Attribute("r")?.Value ?? ""), c => Value(c, shared));
     private static Dictionary<int, string> ReadSharedStrings(ZipArchive zip)
     {
         var entry = zip.GetEntry("xl/sharedStrings.xml"); if (entry is null) return [];

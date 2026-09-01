@@ -66,6 +66,18 @@ public sealed class PortfolioImportsController : ControllerBase
             if (position is null) { position = new PortfolioPosition(portfolio.Id, asset.Id, item.Quantity, item.AveragePrice ?? 0, item.CurrentPrice); db.PortfolioPositions.Add(position); portfolio.Positions.Add(position); addedToPortfolio++; addedAssetIds.Add(asset.Id); }
             else { position.Update(item.Quantity, item.AveragePrice ?? position.AveragePrice, item.CurrentPrice ?? position.CurrentPrice); updated++; }
         }
+        var assetsByTicker = await db.Assets.Where(a => normalized.Transactions.Select(t => t.Ticker).Contains(a.Ticker)).ToDictionaryAsync(a => a.Ticker, ct);
+        var importedTransactions = 0;
+        foreach (var imported in normalized.Transactions)
+        {
+            if (!assetsByTicker.TryGetValue(imported.Ticker, out var asset)) continue;
+            var transactionAmount = decimal.Round(imported.TotalAmount, 2);
+            if (transactionAmount <= 0) continue;
+            var transactionRecord = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, imported.OccurredAt, null, transactionAmount);
+            transactionRecord.Items.Add(new PortfolioTransactionItem(transactionRecord.Id, asset.Id, imported.Quantity, imported.UnitPrice));
+            db.PortfolioTransactions.Add(transactionRecord);
+            importedTransactions++;
+        }
         PortfolioCalculator.RecalculateWeights(portfolio.Positions);
         session.MarkConfirmed(); session.SetPortfolioSnapshotKey(PortfolioSnapshotKeyCalculator.Calculate(portfolio)); session.MarkCompleted(); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
         logger.LogInformation("Import confirmed: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, CreatedAssetCount={CreatedAssetCount}, AddedToPortfolioAssetCount={AddedToPortfolioAssetCount}, UpdatedPositionCount={UpdatedPositionCount}", session.Id, portfolioId, createdAssets, addedToPortfolio, updated);
@@ -84,7 +96,7 @@ public sealed class PortfolioImportsController : ControllerBase
         {
             logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId);
         }
-        return Ok(new ImportConfirmationDto("Completed", createdAssets, addedToPortfolio, updated));
+        return Ok(new ImportConfirmationDto("Completed", createdAssets, addedToPortfolio, updated, importedTransactions));
     }
 
     [HttpGet]
@@ -111,5 +123,5 @@ public sealed class PortfolioImportsController : ControllerBase
 }
 
 public sealed record ImportPreviewDto(Guid ImportSessionId, PortfolioImportSource Source, DateTimeOffset? ReferenceDate, IReadOnlyList<string> NewAssets, IReadOnlyList<string> UpdatedPositions, IReadOnlyList<string> UnchangedPositions, IReadOnlyList<string> Warnings, IReadOnlyList<string> Errors, bool CanConfirm);
-public sealed record ImportConfirmationDto(string Status, int CreatedAssets, int AddedToPortfolioAssets, int UpdatedPositions);
+public sealed record ImportConfirmationDto(string Status, int CreatedAssets, int AddedToPortfolioAssets, int UpdatedPositions, int ImportedTransactions = 0);
 public sealed record ImportSessionDto(Guid Id, PortfolioImportSource Source, string OriginalFileName, PortfolioImportStatus Status, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);

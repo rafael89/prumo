@@ -20,10 +20,24 @@ public sealed class PortfolioTransactionsController(LodiraDbContext db) : Contro
         if (portfolio is null) return NotFound();
         var guidance = request.GuidanceId.HasValue ? await db.ContributionGuidances.SingleOrDefaultAsync(x => x.Id == request.GuidanceId && x.PortfolioId == portfolioId, ct) : null;
         if (request.GuidanceId.HasValue && guidance is null) return NotFound("GuidanceNotFound");
-        if (request.Items.Select(x => x.AssetId).Distinct().Count() != request.Items.Count || request.Items.Any(x => portfolio.Positions.All(p => p.AssetId != x.AssetId))) return BadRequest("Só é permitido registrar compras de ativos já existentes na carteira.");
+        var requestedAssetIds = request.Items.Select(x => x.AssetId).ToHashSet();
+        var assets = await db.Assets.Where(x => requestedAssetIds.Contains(x.Id) && x.IsActive).ToDictionaryAsync(x => x.Id, ct);
+        if (assets.Count != requestedAssetIds.Count) return BadRequest("Só é permitido registrar compras de ativos conhecidos e ativos.");
+        if (request.Items.Select(x => x.AssetId).Distinct().Count() != request.Items.Count) return BadRequest("Não repita o mesmo ativo no registro do aporte.");
         var total = request.Items.Sum(x => x.Quantity * x.UnitPrice); if (guidance is not null && total > guidance.RequestedAmount) return BadRequest("O total confirmado não pode exceder o valor da guidance.");
         var transaction = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, request.OccurredAt ?? DateTimeOffset.UtcNow, request.GuidanceId, total);
-        foreach (var item in request.Items) { transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, item.AssetId, item.Quantity, item.UnitPrice)); portfolio.Positions.Single(x => x.AssetId == item.AssetId).ApplyBuy(item.Quantity, item.UnitPrice); }
+        foreach (var item in request.Items)
+        {
+            transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, item.AssetId, item.Quantity, item.UnitPrice));
+            var position = portfolio.Positions.SingleOrDefault(x => x.AssetId == item.AssetId);
+            if (position is null)
+            {
+                position = new PortfolioPosition(portfolio.Id, item.AssetId, item.Quantity, item.UnitPrice, item.UnitPrice);
+                portfolio.Positions.Add(position);
+                db.PortfolioPositions.Add(position);
+            }
+            else position.ApplyBuy(item.Quantity, item.UnitPrice);
+        }
         PortfolioCalculator.RecalculateWeights(portfolio.Positions); db.PortfolioTransactions.Add(transaction); await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         return Ok(new { transactionId = transaction.Id, totalAmount = transaction.TotalAmount, portfolioSnapshotChanged = true });
     }

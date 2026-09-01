@@ -52,11 +52,21 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         }
                         else
                         {
-                            guidance.UpdateIntelligence(result.Metadata.Provider, result.Metadata.Model, result.Availability.ToString(), result.OverallReasoning, JsonSerializer.Serialize(result.Metadata));
                             var applied = ContributionIntelligenceApplier.Apply(workItem.Baseline, result, workItem.Positions);
-                            var evaluations = result.CandidateEvaluations.ToDictionary(x => x.AssetId);
-                            guidance.ReplaceAllocations(applied.Allocations.Select(a => new PersistedContributionGuidanceAllocation(
-                                guidance.Id, a.AssetId, a.Amount, a.Reason, evaluations[a.AssetId].Confidence, JsonSerializer.Serialize(a.Evidence))));
+                            var aiDeviation = ContributionProjectionEvaluator.AggregateClassDeviation(workItem.Candidates, applied.Allocations.Select(x => (x.AssetId, x.Amount)));
+                            var fallbackDeviation = ContributionProjectionEvaluator.AggregateClassDeviation(workItem.Candidates, workItem.Baseline.Allocations.Select(x => (x.AssetId, x.Amount)));
+                            if (aiDeviation > fallbackDeviation)
+                            {
+                                ApplyFallback(guidance, workItem.Baseline, "A combinação da IA piorou o alinhamento projetado; a combinação determinística mais segura foi aplicada.", "ai-projection-worse");
+                                usedFallback = true;
+                            }
+                            else
+                            {
+                                guidance.UpdateIntelligence(result.Metadata.Provider, result.Metadata.Model, result.Availability.ToString(), string.Join("\n", applied.Reasons), JsonSerializer.Serialize(result.Metadata));
+                                var evaluations = result.CandidateEvaluations.ToDictionary(x => x.AssetId);
+                                guidance.ReplaceAllocations(applied.Allocations.Select(a => new PersistedContributionGuidanceAllocation(
+                                    guidance.Id, a.AssetId, a.Amount, a.Reason, evaluations[a.AssetId].Confidence, JsonSerializer.Serialize(a.Evidence))));
+                            }
                         }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -71,6 +81,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         logger.LogWarning(ex, "IA indisponível para o job de guidance {JobId}; fallback determinístico aplicado; reason={FallbackReason}", job.Id, code);
                     }
 
+                    AppendProjectedPortfolioReason(guidance, workItem);
                     var publication = ContributionGuidancePublication.From(guidance);
                     var published = await PublishAsync(job.Id, publication, stoppingToken);
                     if (!published)
@@ -112,7 +123,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R4-3.0", policyVersion = fallback.PortfolioHealthPolicyVersion, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow }));
+            JsonSerializer.Serialize(new { engineVersion = "R4-8.0", policyVersion = fallback.PortfolioHealthPolicyVersion, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }
@@ -123,6 +134,32 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         TimeoutException or TaskCanceledException => ("A IA não respondeu dentro do prazo; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-timeout"),
         _ => ("A IA não respondeu corretamente; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-unavailable")
     };
+
+    private static void AppendProjectedPortfolioReason(PersistedContributionGuidance guidance, ContributionGuidanceWorkItem workItem)
+    {
+        var candidatesById = workItem.Candidates.ToDictionary(x => x.AssetId);
+        var classCandidates = workItem.Candidates.GroupBy(x => x.AssetClass).ToArray();
+        var currentTotal = workItem.Candidates.Sum(x => x.CurrentValue);
+        var allocatedTotal = guidance.Allocations.Sum(x => x.Amount);
+        if (classCandidates.Length == 0 || currentTotal + allocatedTotal <= 0) return;
+
+        var allocatedByClass = guidance.Allocations
+            .Where(x => candidatesById.ContainsKey(x.AssetId))
+            .GroupBy(x => candidatesById[x.AssetId].AssetClass)
+            .ToDictionary(x => x.Key, x => x.Sum(item => item.Amount));
+        var before = classCandidates.Sum(group => Math.Abs(group.First().CurrentClassWeight - group.First().TargetClassWeight));
+        var after = classCandidates.Sum(group =>
+        {
+            var first = group.First();
+            var projectedWeight = (group.Sum(x => x.CurrentValue) + allocatedByClass.GetValueOrDefault(group.Key))
+                / (currentTotal + allocatedTotal) * 100m;
+            return Math.Abs(projectedWeight - first.TargetClassWeight);
+        });
+        var direction = after < before ? "reduziu" : after > before ? "aumentou" : "manteve";
+        var projection = $"Simulação pós-aporte: o desvio agregado das classes {direction} de {before:0.##} para {after:0.##} p.p. considerando {allocatedTotal:0.##} alocados.";
+        guidance.UpdateIntelligence(guidance.Provider, guidance.Model, guidance.IntelligenceAvailability,
+            string.IsNullOrWhiteSpace(guidance.Reasoning) ? projection : $"{guidance.Reasoning}\n{projection}", guidance.MetadataJson);
+    }
 
     private static async Task<ContributionGuidanceJob?> ClaimNextAsync(LodiraDbContext db, CancellationToken ct)
     {

@@ -81,6 +81,7 @@ export function ContributionSectionModern({ portfolioId, positions, privacyHidde
             : <div className="mt-4 space-y-3 text-sm text-slate-600">{completed?.reasons.slice(0, 4).map((reason, index) => <div key={`${reason}-${index}`} className="flex gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-500" /><span>{reason}</span></div>)}</div>}
         </div>
       </div>
+      <p role="note" className="mt-6 border-t border-slate-100 pt-4 text-xs leading-5 text-slate-500">As informações apresentadas pelo Lodira têm caráter exclusivamente informativo e educacional. As sugestões não constituem recomendação ou aconselhamento financeiro. Considere seus objetivos e perfil de risco e valide as informações antes de investir. Você é responsável pela decisão final.</p>
     </div>
     {selected && <AppDialog title={`Registrar aporte em ${selected.ticker}`} description={`Sugestão: ${money(selected.amount, privacyHidden)}. Informe o que foi realizado.`} fields={[{ name: 'quantity', label: 'Quantidade comprada', defaultValue: '1', inputMode: 'decimal' }, { name: 'unitPrice', label: 'Preço unitário realizado', defaultValue: '0', inputMode: 'decimal' }]} confirmLabel="Confirmar aporte" onClose={() => setSelected(null)} onConfirm={values => { const quantity = parse(values.quantity), unitPrice = parse(values.unitPrice); if (quantity > 0 && unitPrice >= 0) confirm.mutate({ quantity, unitPrice }) }} />}
   </section>

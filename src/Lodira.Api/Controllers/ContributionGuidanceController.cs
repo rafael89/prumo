@@ -16,7 +16,8 @@ namespace Lodira.Api.Controllers;
 [Route("api/portfolios/{portfolioId:guid}/contribution-guidance")]
 public sealed class ContributionGuidanceController(LodiraDbContext db, PortfolioAssessmentCurrentService current) : ControllerBase
 {
-    private const string ContributionEngineVersion = "R4-3.0";
+    private const string ContributionEngineVersion = "R4-8.0";
+    private static readonly TimeSpan RecentContributionWindow = TimeSpan.FromDays(90);
 
     [HttpPost]
     public async Task<ActionResult<object>> Generate(Guid portfolioId, ContributionRequest request, CancellationToken ct)
@@ -34,11 +35,66 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
         var targetKey = TargetAllocationKeyCalculator.Calculate(targets)!;
         var amount = decimal.Round(request.Amount, 2);
+        var recentSince = DateTimeOffset.UtcNow.Subtract(RecentContributionWindow);
+        var recentPurchases = await db.PortfolioTransactions.AsNoTracking()
+            .Include(x => x.Items)
+            .Where(x => x.PortfolioId == portfolioId && x.Type == PortfolioTransactionType.Buy && x.OccurredAt >= recentSince)
+            .ToListAsync(ct);
+        var recentByAsset = recentPurchases.SelectMany(transaction => transaction.Items.Select(item => new
+            {
+                item.AssetId,
+                Amount = item.Quantity * item.UnitPrice,
+                transaction.OccurredAt
+            }))
+            .GroupBy(x => x.AssetId)
+            .ToDictionary(x => x.Key, x => new
+            {
+                Amount = decimal.Round(x.Sum(item => item.Amount), 2),
+                Count = x.Count(),
+                LastOccurredAt = x.Max(item => item.OccurredAt)
+            });
+        var classTotals = portfolio.Positions.Where(x => x.Asset is not null && x.CurrentValue.HasValue)
+            .GroupBy(x => x.Asset!.AssetClass)
+            .ToDictionary(x => x.Key, x => x.Sum(position => position.CurrentValue!.Value));
+        var sectorTotals = portfolio.Positions.Where(x => x.Asset is not null && x.CurrentValue.HasValue)
+            .GroupBy(x => new { AssetClass = x.Asset!.AssetClass, Sector = NormalizeSector(x.Asset.Sector) })
+            .ToDictionary(x => x.Key, x => x.Sum(position => position.CurrentValue!.Value));
 
         var health = new PortfolioHealthCalculator().Calculate(portfolio, targets);
         var total = portfolio.Positions.Sum(x => x.CurrentValue ?? 0);
-        var positions = portfolio.Positions.Where(x => x.Asset is not null && x.CurrentValue.HasValue)
-            .Select(x => new GuidancePosition(x.AssetId, x.Asset!.Ticker, x.Asset.AssetClass, x.CurrentValue!.Value, total == 0 ? 0 : x.CurrentValue.Value / total * 100m)).ToList();
+        var existingPositions = portfolio.Positions.Where(x => x.Asset is not null && x.CurrentValue.HasValue)
+            .Select(x =>
+            {
+                var asset = x.Asset!;
+                var recent = recentByAsset.GetValueOrDefault(x.AssetId);
+                var sector = NormalizeSector(asset.Sector);
+                var sectorValue = sector.Length == 0 ? 0 : sectorTotals.GetValueOrDefault(new { AssetClass = asset.AssetClass, Sector = sector });
+                var sectorWeight = sector.Length == 0 || classTotals.GetValueOrDefault(asset.AssetClass) <= 0
+                    ? 100
+                    : sectorValue / classTotals[asset.AssetClass] * 100m;
+                var deviation = health.AllocationDeviations.FirstOrDefault(x => x.AssetClass == asset.AssetClass);
+                var allocationNeedScore = ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0);
+                var diversificationScore = sector.Length == 0 ? 0 : Math.Clamp(100m - sectorWeight, 0, 100);
+                var underweightScore = Math.Clamp(100m - (total == 0 ? 0 : x.CurrentValue!.Value / total * 100m), 0, 100);
+                var recentPenalty = recent is null ? 0 : Math.Clamp(25m + recent.Amount / Math.Max(total, 1m) * 100m, 0, 100);
+                return new GuidancePosition(x.AssetId, asset.Ticker, asset.AssetClass, x.CurrentValue!.Value,
+                    total == 0 ? 0 : x.CurrentValue.Value / total * 100m, asset.AssetType, asset.Sector,
+                    recent?.Amount ?? 0, recent?.Count ?? 0, recent?.LastOccurredAt, sectorWeight, true,
+                    allocationNeedScore, diversificationScore, underweightScore, recentPenalty);
+            }).ToList();
+        var positionAssetIds = existingPositions.Select(x => x.AssetId).ToHashSet();
+        var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
+        var catalogCandidates = await db.Assets.AsNoTracking()
+            .Where(x => x.IsActive && targetClasses.Contains(x.AssetClass) && !positionAssetIds.Contains(x.Id))
+            .OrderBy(x => x.Ticker)
+            .ToListAsync(ct);
+        var positions = existingPositions.Concat(catalogCandidates.Select(asset =>
+        {
+            var deviation = health.AllocationDeviations.FirstOrDefault(x => x.AssetClass == asset.AssetClass);
+            return new GuidancePosition(asset.Id, asset.Ticker, asset.AssetClass, 0, 0, asset.AssetType, asset.Sector,
+                HasPosition: false, AllocationNeedScore: ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0),
+                UnderweightScore: 100);
+        })).ToList();
         var ids = positions.Select(x => x.AssetId).ToHashSet();
         var assessments = await db.PortfolioAssessments.AsNoTracking()
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
@@ -83,7 +139,11 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
             return new ContributionCandidate(position.AssetId, position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
                 deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, classBudgets.GetValueOrDefault(position.AssetClass),
-                inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts);
+                inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts,
+                position.AssetType, position.Sector, position.RecentContributionAmount, position.RecentContributionCount,
+                position.LastContributionAt, position.SectorWeightWithinClass, position.HasPosition,
+                position.AllocationNeedScore, position.DiversificationScore, position.UnderweightScore,
+                position.RecentContributionPenalty);
         }).ToArray();
 
         var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, intelligenceContextKey, ContributionEngineVersion, "pending-ai", "pending", "Pending", "A IA está analisando os candidatos e os limites da carteira.", "{}");
@@ -114,11 +174,12 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
     {
         var positions = await db.PortfolioPositions.AsNoTracking().Include(x => x.Asset)
             .Where(x => x.PortfolioId == portfolioId).ToDictionaryAsync(x => x.AssetId, ct);
+        var assets = await db.Assets.AsNoTracking().ToDictionaryAsync(x => x.Id, ct);
         var allocations = item.Allocations.Select(x => new
         {
             x.AssetId,
-            ticker = positions.GetValueOrDefault(x.AssetId)?.Asset?.Ticker ?? string.Empty,
-            assetClass = (int)(positions.GetValueOrDefault(x.AssetId)?.Asset?.AssetClass ?? AssetClass.Other),
+            ticker = assets.GetValueOrDefault(x.AssetId)?.Ticker ?? positions.GetValueOrDefault(x.AssetId)?.Asset?.Ticker ?? string.Empty,
+            assetClass = (int)(assets.GetValueOrDefault(x.AssetId)?.AssetClass ?? positions.GetValueOrDefault(x.AssetId)?.Asset?.AssetClass ?? AssetClass.Other),
             x.Amount,
             x.Reason,
             evidence = DeserializeEvidence(x.EvidenceJson)
@@ -168,6 +229,10 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         IntelligenceConfidence.Medium => 0.7m,
         _ => 0.4m
     };
+
+    private static string NormalizeSector(string? sector) => string.IsNullOrWhiteSpace(sector) ? string.Empty : sector.Trim().ToUpperInvariant();
+
+    private static decimal ScoreNeed(decimal target, decimal current) => Math.Clamp((target - current) * 5m, 0, 100);
 
     private static string[] DeserializeEvidence(string json)
     {
