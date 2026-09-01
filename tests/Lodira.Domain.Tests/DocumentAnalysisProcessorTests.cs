@@ -146,6 +146,29 @@ public sealed class DocumentAnalysisProcessorTests
         Assert.Equal(2, await dbContext.PortfolioAssessments.CountAsync());
     }
 
+    [Fact]
+    public async Task Remove_duplicatas_de_assessments_pendentes_antes_de_persistir()
+    {
+        await using var dbContext = CreateDbContext();
+        var portfolioId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var snapshotKey = "snapshot-atual";
+        var targetKey = "target-atual";
+        var version = "portfolio-impact-v1";
+
+        dbContext.PortfolioAssessments.AddRange(
+            CreateAssessment(portfolioId, eventId, snapshotKey, targetKey, version),
+            CreateAssessment(portfolioId, eventId, snapshotKey, targetKey, version));
+
+        DocumentAnalysisProcessor.RemoveDuplicatePendingAssessments(dbContext);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, await dbContext.PortfolioAssessments.CountAsync());
+    }
+
+    private static PortfolioAssessment CreateAssessment(Guid portfolioId, Guid eventId, string snapshotKey, string targetKey, string version)
+        => new(portfolioId, eventId, AttentionPriority.Medium, ActionRequirement.Monitor, CapitalDecisionImpact.Caution, AssessmentStatus.Detected, AssessmentUserState.Unread, "Resumo", "Motivo", "Monitorar", IntelligenceConfidence.Medium, targetKey, version, snapshotKey, 1);
+
     private static DocumentAnalysisProcessor CreateProcessor(LodiraDbContext dbContext, IFileStorage fileStorage, IPdfTextExtractor extractor, IAiAnalysisService aiAnalysisService)
     {
         return new DocumentAnalysisProcessor(

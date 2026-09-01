@@ -144,6 +144,8 @@ public sealed class DocumentAnalysisProcessor
 
     private async Task SaveChangesHandlingConcurrentAssessmentsAsync(CancellationToken cancellationToken)
     {
+        RemoveDuplicatePendingAssessments(dbContext);
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -173,6 +175,24 @@ public sealed class DocumentAnalysisProcessor
             logger.LogInformation("Avaliação de carteira concorrente ignorada; o registro já existente foi preservado.");
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    internal static void RemoveDuplicatePendingAssessments(LodiraDbContext dbContext)
+    {
+        var duplicatePendingAssessments = dbContext.ChangeTracker.Entries<PortfolioAssessment>()
+            .Where(entry => entry.State == EntityState.Added)
+            .GroupBy(entry => new
+            {
+                entry.Entity.PortfolioId,
+                entry.Entity.InvestmentEventId,
+                entry.Entity.PortfolioSnapshotKey,
+                entry.Entity.TargetAllocationKey,
+                entry.Entity.AssessmentVersion
+            })
+            .SelectMany(group => group.Skip(1))
+            .ToList();
+
+        foreach (var entry in duplicatePendingAssessments) entry.State = EntityState.Detached;
     }
 
     private static bool IsPortfolioAssessmentUniqueViolation(DbUpdateException exception)
