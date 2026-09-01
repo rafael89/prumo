@@ -96,7 +96,7 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
                 UnderweightScore: 100);
         })).ToList();
         var ids = positions.Select(x => x.AssetId).ToHashSet();
-        var assessments = await db.PortfolioAssessments.AsNoTracking()
+        var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery()
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
             .Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed && x.InvestmentEvent!.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
