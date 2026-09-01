@@ -48,6 +48,7 @@ services:
       Storage__RootPath: /storage/documents
     volumes:
       - document-storage:/storage/documents
+      - worker-logs:/storage/logs/worker
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,3 +66,4 @@ services:
 volumes:
   postgres-data:
   document-storage:
+  worker-logs:

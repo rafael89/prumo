@@ -60,7 +60,7 @@ export function ContributionSectionModern({ portfolioId, positions, privacyHidde
             </div>
           </form>
           {pending && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-amber-700"><FontAwesomeIcon icon={faSpinner} spin /> A IA está analisando os ativos e definindo a distribuição...</p>}
-          {failed && <p className="mt-4 text-sm text-rose-700">Não foi possível concluir a análise da IA. Tente novamente.</p>}
+          {failed && <p className="mt-4 text-sm text-rose-700">Não foi possível concluir a análise. Tente novamente.</p>}
         </div>
 
         <div>{completed ? <>
@@ -72,7 +72,7 @@ export function ContributionSectionModern({ portfolioId, positions, privacyHidde
             <button type="button" onClick={() => setSelected(item)} className="mt-2 cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:border-amber-500">Registrar aporte</button>
           </div>)}</div>
         </> : <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm text-slate-500">
-          {pending ? 'A distribuição será exibida somente após a conclusão da análise da IA.' : 'Informe um valor para iniciar a análise.'}
+          {pending ? 'A distribuição será exibida somente após a conclusão da análise.' : 'Informe um valor para iniciar a análise.'}
         </div>}</div>
 
         <div className="lg:border-l lg:border-slate-100 lg:pl-8">

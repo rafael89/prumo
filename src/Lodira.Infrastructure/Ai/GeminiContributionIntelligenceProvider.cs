@@ -7,16 +7,29 @@ using Lodira.Application.Explainability;
 
 namespace Lodira.Infrastructure.Ai;
 
-public sealed class GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter) : IContributionIntelligenceProvider
+public sealed class GeminiContributionIntelligenceProvider : IContributionIntelligenceProvider
 {
-    private readonly AiProviderOptions settings = options.Value;
+    private readonly HttpClient http;
+    private readonly AiProviderOptions settings;
+    private readonly IAiRequestRateLimiter limiter;
+
+    public GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter)
+    {
+        this.http = http;
+        settings = options.Value;
+        this.limiter = limiter;
+        http.Timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
+    }
+
     public async Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal amount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
-        using var permit = await limiter.AcquireAsync(ct);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
+        using var permit = await limiter.AcquireAsync(timeout.Token);
         var prompt = ContributionIntelligencePrompt.Build(portfolioId, amount, candidates);
         var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = Schema } };
-        var raw = await SendAsync(settings.Model, request, ct);
+        var raw = await SendAsync(settings.Model, request, timeout.Token);
         return Parse(raw, settings.Model);
     }
 

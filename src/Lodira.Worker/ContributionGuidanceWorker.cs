@@ -4,22 +4,27 @@ using Microsoft.EntityFrameworkCore;
 using Lodira.Application.Contributions;
 using Lodira.Domain.Entities;
 using Lodira.Infrastructure.Persistence;
+using Lodira.Infrastructure.Ai;
 using Lodira.Domain.Enums;
+using Microsoft.Extensions.Options;
 
 namespace Lodira.Worker;
 
-public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILogger<ContributionGuidanceWorker> logger, WorkerMetrics metrics) : BackgroundService
+public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILogger<ContributionGuidanceWorker> logger, WorkerMetrics metrics, IOptions<AiProviderOptions> aiOptions) : BackgroundService
 {
     private const int MaxAttempts = 3;
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(30);
+    private readonly TimeSpan aiTimeout = TimeSpan.FromSeconds(Math.Max(1, aiOptions.Value.TimeoutSeconds));
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            Guid? claimedJobId = null;
             try
             {
                 using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<LodiraDbContext>(); var job = await ClaimNextAsync(db, stoppingToken);
                 if (job is null) { await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); continue; }
+                claimedJobId = job.Id;
                 var stopwatch = Stopwatch.StartNew();
                 var backlog = await db.ContributionGuidanceJobs.CountAsync(x => x.Status == ContributionGuidanceJobStatus.Queued, stoppingToken);
                 metrics.SetBacklog("ContributionGuidance", backlog);
@@ -32,7 +37,9 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var usedFallback = false;
                     try
                     {
-                        var result = await provider.EvaluateAsync(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, stoppingToken);
+                        var result = await provider
+                            .EvaluateAsync(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, stoppingToken)
+                            .WaitAsync(aiTimeout, stoppingToken);
                         if (result.Availability == ContributionIntelligenceAvailability.InsufficientIntelligence)
                         {
                             ApplyFallback(guidance, workItem.Baseline, "A IA não encontrou inteligência suficiente; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "insufficient-intelligence");
@@ -64,16 +71,20 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         logger.LogWarning(ex, "IA indisponível para o job de guidance {JobId}; fallback determinístico aplicado; reason={FallbackReason}", job.Id, code);
                     }
 
-                    job.Complete();
+                    var publication = ContributionGuidancePublication.From(guidance);
+                    var published = await PublishAsync(job.Id, publication, stoppingToken);
+                    if (!published)
+                    {
+                        logger.LogWarning("Resultado do job de guidance {JobId} descartado porque o job não está mais em processamento", job.Id);
+                        continue;
+                    }
                     metrics.RecordCompleted("ContributionGuidance", stopwatch.Elapsed);
-                    await db.SaveChangesAsync(stoppingToken);
                     logger.LogInformation("Job de guidance {JobId} concluído em {DurationMs} ms; backlog={Backlog}; fallback={UsedFallback}", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog, usedFallback);
                 }
                 catch (Exception ex)
                 {
-                    var retry = job.RetryOrFail(ex.Message, MaxAttempts);
                     metrics.RecordFailed("ContributionGuidance", stopwatch.Elapsed);
-                    await db.SaveChangesAsync(stoppingToken);
+                    await RecoverClaimedJobAsync(job.Id, ex.Message, stoppingToken);
                     logger.LogError(ex, "Falha no job de guidance {JobId} após {DurationMs} ms; backlog={Backlog}; nenhuma alocação foi publicada", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog);
                 }
             }
@@ -83,6 +94,10 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             }
             catch (Exception ex)
             {
+                if (claimedJobId.HasValue)
+                {
+                    await RecoverClaimedJobAsync(claimedJobId.Value, ex.Message, stoppingToken);
+                }
                 logger.LogError(ex, "Erro inesperado no polling de jobs de guidance; nova tentativa em {RetryDelay}", TimeSpan.FromSeconds(2));
                 await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
             }
@@ -141,4 +156,71 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         await transaction.CommitAsync(ct);
         return job;
     }
+
+    private async Task RecoverClaimedJobAsync(Guid jobId, string error, CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LodiraDbContext>();
+            var job = await db.ContributionGuidanceJobs.SingleOrDefaultAsync(x => x.Id == jobId, ct);
+            if (job?.Status != ContributionGuidanceJobStatus.Processing) return;
+            job.RetryOrFail(error, MaxAttempts);
+            await db.SaveChangesAsync(ct);
+        }
+        catch (Exception recoveryException)
+        {
+            logger.LogError(recoveryException, "Falha ao recuperar o job de guidance {JobId} após erro inesperado", jobId);
+        }
+    }
+
+    private async Task<bool> PublishAsync(Guid jobId, ContributionGuidancePublication publication, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LodiraDbContext>();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var job = await db.ContributionGuidanceJobs
+            .FromSqlInterpolated($"SELECT * FROM \"ContributionGuidanceJobs\" WHERE \"Id\" = {jobId} FOR UPDATE")
+            .SingleAsync(ct);
+        if (job.Status != ContributionGuidanceJobStatus.Processing)
+        {
+            await transaction.CommitAsync(ct);
+            return false;
+        }
+
+        var guidance = await db.ContributionGuidances.Include(x => x.Allocations)
+            .SingleAsync(x => x.Id == job.ContributionGuidanceId, ct);
+        guidance.UpdateIntelligence(publication.Provider, publication.Model, publication.Availability, publication.Reasoning, publication.MetadataJson);
+        guidance.ReplaceAllocations(publication.Allocations.Select(x => new PersistedContributionGuidanceAllocation(
+            guidance.Id, x.AssetId, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)));
+        job.Complete();
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return true;
+    }
+
+    private sealed record ContributionGuidancePublication(
+        string Provider,
+        string Model,
+        string Availability,
+        string Reasoning,
+        string MetadataJson,
+        IReadOnlyList<ContributionGuidanceAllocationPublication> Allocations)
+    {
+        public static ContributionGuidancePublication From(PersistedContributionGuidance guidance) => new(
+            guidance.Provider,
+            guidance.Model,
+            guidance.IntelligenceAvailability,
+            guidance.Reasoning,
+            guidance.MetadataJson,
+            guidance.Allocations.Select(x => new ContributionGuidanceAllocationPublication(
+                x.AssetId, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)).ToArray());
+    }
+
+    private sealed record ContributionGuidanceAllocationPublication(
+        Guid AssetId,
+        decimal Amount,
+        string Reason,
+        decimal Confidence,
+        string EvidenceJson);
 }

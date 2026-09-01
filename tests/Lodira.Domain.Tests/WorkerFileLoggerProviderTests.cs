@@ -1,0 +1,43 @@
+using Lodira.Worker;
+using Microsoft.Extensions.Logging;
+
+namespace Lodira.Domain.Tests;
+
+public sealed class WorkerFileLoggerProviderTests
+{
+    [Fact]
+    public void WritesWarningsAndErrorsToDailyTextFile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "lodira-worker-log-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var provider = new WorkerFileLoggerProvider(directory);
+            var logger = provider.CreateLogger("Lodira.Worker.Test");
+
+            logger.LogInformation("Informational message");
+            logger.LogWarning("Warning message");
+            logger.LogError(new InvalidOperationException("Provider failed"), "Error message");
+
+            var file = Assert.Single(Directory.GetFiles(directory, "worker-*.txt"));
+            var contents = File.ReadAllText(file);
+            Assert.DoesNotContain("Informational message", contents);
+            Assert.Contains("Warning message", contents);
+            Assert.Contains("Error message", contents);
+            Assert.Contains("InvalidOperationException", contents);
+            Assert.Contains("Provider failed", contents);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public void ResolvesLogDirectoryBesideDocuments()
+    {
+        var storageRoot = Path.Combine(Path.GetTempPath(), "lodira-storage", "documents");
+        var expected = Path.Combine(Path.GetDirectoryName(storageRoot)!, "logs", "worker");
+
+        Assert.Equal(Path.GetFullPath(expected), WorkerFileLoggerProvider.ResolveDirectory(storageRoot));
+    }
+}

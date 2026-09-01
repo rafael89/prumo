@@ -14,6 +14,12 @@ using Lodira.Infrastructure.Storage;
 using Lodira.Infrastructure.Jobs;
 
 IHost host = Host.CreateDefaultBuilder(args)
+    .ConfigureLogging((context, logging) =>
+    {
+        var storageRoot = context.Configuration["Storage:RootPath"] ?? "/storage/documents";
+        var logDirectory = WorkerFileLoggerProvider.ResolveDirectory(storageRoot, context.Configuration["Logging:WorkerFile:Path"]);
+        logging.AddProvider(new WorkerFileLoggerProvider(logDirectory));
+    })
     .ConfigureServices((context, services) =>
     {
         var aiProvider = context.Configuration["AI:Provider"]?.Trim();

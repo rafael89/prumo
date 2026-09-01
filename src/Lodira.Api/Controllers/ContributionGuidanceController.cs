@@ -155,7 +155,7 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         allocationStyle = "Pending",
         allocations = Array.Empty<object>(),
         avoidedCandidates = Array.Empty<object>(),
-        reasons = jobStatus == ContributionGuidanceJobStatus.Failed ? new[] { "Não foi possível concluir a análise da IA. Tente gerar uma nova orientação." } : Array.Empty<string>(),
+        reasons = jobStatus == ContributionGuidanceJobStatus.Failed ? new[] { "Não foi possível concluir a análise. Tente gerar uma nova orientação." } : Array.Empty<string>(),
         evidence = Array.Empty<string>(),
         intelligenceAvailability = "Pending",
         jobStatus = jobStatus.ToString(),
