@@ -7,7 +7,7 @@ namespace Lodira.Application.Documents;
 public static class DocumentAnalysisPrompt
 {
     public const string Version = "document-analysis-v2";
-    public const string GlobalVersion = "document-analysis-global-v2";
+    public const string GlobalVersion = "document-analysis-global-v3";
 
     private const string GlobalInstructions = """
         Você é o componente de análise documental do Lodira. Analise exclusivamente o conteúdo fornecido e identifique seu significado para o ativo indicado.

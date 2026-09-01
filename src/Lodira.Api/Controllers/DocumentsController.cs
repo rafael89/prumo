@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Lodira.Domain.Enums;
+using Lodira.Domain.Entities;
 using Lodira.Application.Radar;
 using Lodira.Application.Documents;
 using Lodira.Infrastructure.Persistence;
@@ -130,10 +131,21 @@ public sealed class DocumentsController : ControllerBase
             .ToListAsync(cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
+        var downloadsQueued = new HashSet<Guid>();
         foreach (var job in jobs)
         {
             job.Requeue(now);
-            job.Document?.MarkWaitingProcessing();
+            if (job.Document is null) continue;
+
+            if (string.IsNullOrWhiteSpace(job.Document.FilePath))
+            {
+                job.Document.MarkPendingDownload();
+                var activeDownload = await dbContext.ProcessingJobs.AnyAsync(item => item.DocumentId == job.DocumentId
+                    && item.JobType == ProcessingJobType.DownloadDocument
+                    && (item.Status == ProcessingJobStatus.Queued || item.Status == ProcessingJobStatus.Processing), cancellationToken);
+                if (!activeDownload && downloadsQueued.Add(job.DocumentId)) dbContext.ProcessingJobs.Add(new ProcessingJob(job.DocumentId, ProcessingJobType.DownloadDocument, now));
+            }
+            else job.Document.MarkWaitingProcessing();
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -254,7 +266,7 @@ public sealed class DocumentsController : ControllerBase
             analysis.SuggestedAction.ToString(),
             analysis.Summary,
             analysis.Impact,
-            analysis.PortfolioImpact,
+            assessment?.PortfolioImpactText ?? "O impacto na carteira é calculado separadamente para cada carteira.",
             analysis.AffectedAssets,
             analysis.Confidence,
             analysis.CreatedAt, assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.RadarStatus.ToString()));

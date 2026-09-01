@@ -45,6 +45,8 @@ public sealed class DocumentAnalysis
         SuggestedAction = suggestedAction;
         Summary = summary.Trim();
         Impact = impact.Trim();
+        // Kept for database compatibility; portfolio impact is now produced by
+        // PortfolioAssessment per portfolio and is not sourced from the AI.
         PortfolioImpact = portfolioImpact.Trim();
         AffectedAssets = affectedAssets
             .Where(asset => !string.IsNullOrWhiteSpace(asset))

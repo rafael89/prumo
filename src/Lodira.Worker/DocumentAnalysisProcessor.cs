@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Lodira.Application.Abstractions;
 using Lodira.Domain.Entities;
 using Lodira.Domain.Enums;
 using Lodira.Application.Portfolio;
 using Lodira.Domain.Rules;
 using Lodira.Application.Intelligence;
+using Lodira.Application.PortfolioImports;
 using Lodira.Infrastructure.Persistence;
 
 namespace Lodira.Worker;
@@ -18,6 +20,7 @@ public sealed class DocumentAnalysisProcessor
     private readonly IAiAnalysisService aiAnalysisService;
     private readonly ILogger<DocumentAnalysisProcessor> logger;
     private readonly IPortfolioImpactAssessmentService portfolioImpactAssessmentService;
+    private readonly DocumentRetentionOptions retention;
 
     public DocumentAnalysisProcessor(
         LodiraDbContext dbContext,
@@ -26,7 +29,8 @@ public sealed class DocumentAnalysisProcessor
         ITextQualityValidator textQualityValidator,
         IAiAnalysisService aiAnalysisService,
         IPortfolioImpactAssessmentService portfolioImpactAssessmentService,
-        ILogger<DocumentAnalysisProcessor> logger)
+        ILogger<DocumentAnalysisProcessor> logger,
+        IOptions<DocumentRetentionOptions> retention)
     {
         this.dbContext = dbContext;
         this.fileStorage = fileStorage;
@@ -35,6 +39,7 @@ public sealed class DocumentAnalysisProcessor
         this.aiAnalysisService = aiAnalysisService;
         this.portfolioImpactAssessmentService = portfolioImpactAssessmentService;
         this.logger = logger;
+        this.retention = retention.Value;
     }
 
     public DocumentAnalysisProcessor(
@@ -44,7 +49,7 @@ public sealed class DocumentAnalysisProcessor
         ITextQualityValidator textQualityValidator,
         IAiAnalysisService aiAnalysisService,
         ILogger<DocumentAnalysisProcessor> logger)
-        : this(dbContext, fileStorage, pdfTextExtractor, textQualityValidator, aiAnalysisService, new PortfolioImpactAssessmentService(), logger)
+        : this(dbContext, fileStorage, pdfTextExtractor, textQualityValidator, aiAnalysisService, new PortfolioImpactAssessmentService(), logger, Options.Create(new DocumentRetentionOptions()))
     {
     }
 
@@ -93,7 +98,7 @@ public sealed class DocumentAnalysisProcessor
             throw new InvalidOperationException(quality.Error ?? "Texto do documento invalido.");
         }
 
-        var context = await BuildPortfolioContextAsync(document.AssetId, cancellationToken);
+        var context = await BuildDocumentContextAsync(document.AssetId, cancellationToken);
         logger.LogInformation("Iniciando analise do documento {DocumentId}; providerModel={Model}; promptVersion={PromptVersion}.", document.Id, aiAnalysisService.Model, aiAnalysisService.PromptVersion);
 
         var result = await aiAnalysisService.AnalyzeAsync(extraction.Text, context, cancellationToken);
@@ -108,7 +113,7 @@ public sealed class DocumentAnalysisProcessor
             result.SuggestedAction,
             result.Summary,
             result.Impact,
-            result.PortfolioImpact,
+            "O impacto na carteira é calculado separadamente para cada carteira.",
             result.AffectedAssets,
             result.Confidence,
             result.RawResponse);
@@ -118,7 +123,22 @@ public sealed class DocumentAnalysisProcessor
         document.MarkProcessed();
         job.Complete(DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await ReleasePdfAfterAnalysisAsync(document, cancellationToken);
         logger.LogInformation("Analise persistida com sucesso para o documento {DocumentId} e job {JobId}.", document.Id, job.Id);
+    }
+
+    private async Task ReleasePdfAfterAnalysisAsync(Document document, CancellationToken cancellationToken)
+    {
+        if (!retention.DeletePdfAfterAnalysis || string.IsNullOrWhiteSpace(document.FilePath)) return;
+
+        var path = document.FilePath;
+        var shared = await dbContext.Documents.AsNoTracking()
+            .AnyAsync(item => item.Id != document.Id && item.FilePath == path, cancellationToken);
+        if (!shared) await fileStorage.DeleteAsync(path, cancellationToken);
+
+        document.ReleaseStoredFile();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("PDF temporário liberado para o documento {DocumentId}; compartilhado={Shared}.", document.Id, shared);
     }
 
     private async Task EnsureExistingAnalysisFeedsRadarAsync(DocumentAnalysis analysis, CancellationToken cancellationToken)
@@ -208,55 +228,15 @@ public sealed class DocumentAnalysisProcessor
         }
     }
 
-    private async Task<PortfolioAnalysisContext> BuildPortfolioContextAsync(Guid assetId, CancellationToken cancellationToken)
+    private async Task<PortfolioAnalysisContext> BuildDocumentContextAsync(Guid assetId, CancellationToken cancellationToken)
     {
         var asset = await dbContext.Assets.AsNoTracking().SingleOrDefaultAsync(item => item.Id == assetId, cancellationToken)
             ?? throw new InvalidOperationException("Ativo do documento nao encontrado.");
 
-        var portfolio = await dbContext.Portfolios
-            .Include(item => item.Positions)
-            .ThenInclude(item => item.Asset)
-            .Where(item => item.Positions.Any(position => position.AssetId == assetId))
-            .OrderBy(item => item.CreatedAt)
-            .ThenBy(item => item.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (portfolio is null)
-        {
-            return new PortfolioAnalysisContext(
-                Guid.Empty, "Indisponivel", 0, 0, asset.Ticker, asset.AssetType.ToString(), asset.Sector,
-                0, 0, null, null, 0, Array.Empty<PortfolioAnalysisPositionContext>(), 0, 0);
-        }
-
-        PortfolioCalculator.RecalculateWeights(portfolio.Positions);
-        var totalPortfolioValue = PortfolioCalculator.CalculateTotalValue(portfolio.Positions);
-        var relatedPosition = portfolio.Positions.SingleOrDefault(item => item.AssetId == assetId);
-        var orderedPositions = portfolio.Positions
-            .OrderByDescending(item => item.PortfolioWeight)
-            .ThenBy(item => item.Asset?.Ticker ?? string.Empty, StringComparer.Ordinal)
-            .ToList();
-        var topPositions = orderedPositions
-            .Take(PortfolioAnalysisContext.MaxTopPositions)
-            .Select(item => new PortfolioAnalysisPositionContext(item.Asset?.Ticker ?? string.Empty, item.Asset?.AssetType.ToString() ?? "Indisponivel", item.PortfolioWeight))
-            .ToList();
-        var largestPositionWeight = orderedPositions.Count == 0 ? 0 : orderedPositions[0].PortfolioWeight;
-        var topThreePositionWeight = orderedPositions.Take(3).Sum(item => item.PortfolioWeight);
-
+        // Document analysis is global. Never load a portfolio here: the same
+        // analysis can be consumed by multiple portfolios and users.
         return new PortfolioAnalysisContext(
-            portfolio.Id,
-            portfolio.Name,
-            totalPortfolioValue,
-            portfolio.Positions.Count,
-            asset.Ticker,
-            asset.AssetType.ToString(),
-            asset.Sector,
-            relatedPosition?.Quantity ?? 0,
-            relatedPosition?.AveragePrice ?? 0,
-            relatedPosition?.CurrentPrice,
-            relatedPosition?.CurrentValue,
-            relatedPosition?.PortfolioWeight ?? 0,
-            topPositions,
-            largestPositionWeight,
-            topThreePositionWeight);
+            Guid.Empty, string.Empty, 0, 0, asset.Ticker, asset.AssetType.ToString(), asset.Sector,
+            0, 0, null, null, 0, Array.Empty<PortfolioAnalysisPositionContext>(), 0, 0);
     }
 }

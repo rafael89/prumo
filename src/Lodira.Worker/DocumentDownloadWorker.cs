@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using Lodira.Application.Abstractions;
+using Lodira.Application.PortfolioImports;
 using Lodira.Domain.Entities;
 using Lodira.Domain.Enums;
 using Lodira.Infrastructure.Persistence;
@@ -15,14 +16,16 @@ public sealed class DocumentDownloadWorker : BackgroundService
     private readonly JobProcessingOptions options;
     private readonly ILogger<DocumentDownloadWorker> logger;
     private readonly WorkerMetrics metrics;
+    private readonly DocumentRetentionOptions retention;
 
-    public DocumentDownloadWorker(IServiceScopeFactory scopeFactory, IHttpClientFactory httpClientFactory, IOptions<JobProcessingOptions> options, ILogger<DocumentDownloadWorker> logger, WorkerMetrics metrics)
+    public DocumentDownloadWorker(IServiceScopeFactory scopeFactory, IHttpClientFactory httpClientFactory, IOptions<JobProcessingOptions> options, ILogger<DocumentDownloadWorker> logger, WorkerMetrics metrics, IOptions<DocumentRetentionOptions> retention)
     {
         this.scopeFactory = scopeFactory;
         this.httpClientFactory = httpClientFactory;
         this.options = options.Value;
         this.logger = logger;
         this.metrics = metrics;
+        this.retention = retention.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -77,13 +80,17 @@ public sealed class DocumentDownloadWorker : BackgroundService
             {
                 dbContext.ProcessingJobs.Add(new ProcessingJob(job.DocumentId, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow));
             }
-            else if (analysisExists)
+            else if (analysisExists && !analysisJobActive)
             {
                 // O documento já foi analisado anteriormente; a recuperação do PDF encerra o fluxo.
                 job.Document.MarkProcessed();
             }
             job.Complete(DateTimeOffset.UtcNow);
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (analysisExists && !analysisJobActive && job.Document is not null)
+            {
+                await ReleasePdfAfterExistingAnalysisAsync(job.Document, dbContext, scope.ServiceProvider.GetRequiredService<IFileStorage>(), cancellationToken);
+            }
             logger.LogInformation("Job {JobId} concluído para documento {DocumentId}; duraçãoMs={DurationMs}; backlog={Backlog}", job.Id, job.DocumentId, stopwatch.Elapsed.TotalMilliseconds, backlog);
             metrics.RecordCompleted(ProcessingJobType.DownloadDocument, stopwatch.Elapsed);
         }
@@ -108,6 +115,16 @@ public sealed class DocumentDownloadWorker : BackgroundService
             await dbContext.SaveChangesAsync(cancellationToken);
             logger.LogError(exception, "Falha no job {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}", persistedJob.Id, retry, persistedJob.Attempts, options.MaxAttempts);
         }
+    }
+
+    private async Task ReleasePdfAfterExistingAnalysisAsync(Document document, LodiraDbContext dbContext, IFileStorage storage, CancellationToken cancellationToken)
+    {
+        if (!retention.DeletePdfAfterAnalysis || string.IsNullOrWhiteSpace(document.FilePath)) return;
+        var path = document.FilePath;
+        var shared = await dbContext.Documents.AsNoTracking().AnyAsync(item => item.Id != document.Id && item.FilePath == path, cancellationToken);
+        if (!shared) await storage.DeleteAsync(path, cancellationToken);
+        document.ReleaseStoredFile();
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task DownloadAsync(ProcessingJob job, LodiraDbContext dbContext, IFileStorage storage, CancellationToken cancellationToken)
