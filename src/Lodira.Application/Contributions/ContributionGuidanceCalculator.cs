@@ -84,7 +84,7 @@ public sealed class ContributionGuidanceCalculator
             allocationsByAsset[selected.AssetId] = allocationsByAsset.GetValueOrDefault(selected.AssetId) + allocation;
             classAllocated[selected.AssetClass] = classAllocated.GetValueOrDefault(selected.AssetClass) + allocation;
             remaining = Money(remaining - allocation);
-            reasons.Add(string.Format("{0} recebe capital pela necessidade projetada após o novo aporte; {1} foi selecionado pelo ranking determinístico.", selected.AssetClass, selected.Ticker));
+            reasons.Add(string.Format("{0} recebe capital pela necessidade projetada após o novo aporte; {1} foi selecionado pelo ranking determinístico.", ContributionText.AssetClassLabel(selected.AssetClass), selected.Ticker));
         }
 
         foreach (var group in positions.GroupBy(x => x.AssetClass))

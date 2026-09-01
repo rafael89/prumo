@@ -8,6 +8,7 @@ using Lodira.Domain.Rules;
 using Lodira.Application.Intelligence;
 using Lodira.Application.PortfolioImports;
 using Lodira.Infrastructure.Persistence;
+using Npgsql;
 
 namespace Lodira.Worker;
 
@@ -122,7 +123,7 @@ public sealed class DocumentAnalysisProcessor
 
         document.MarkProcessed();
         job.Complete(DateTimeOffset.UtcNow);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesHandlingConcurrentAssessmentsAsync(cancellationToken);
         await ReleasePdfAfterAnalysisAsync(document, cancellationToken);
         logger.LogInformation("Analise persistida com sucesso para o documento {DocumentId} e job {JobId}.", document.Id, job.Id);
     }
@@ -140,6 +141,43 @@ public sealed class DocumentAnalysisProcessor
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("PDF temporário liberado para o documento {DocumentId}; compartilhado={Shared}.", document.Id, shared);
     }
+
+    private async Task SaveChangesHandlingConcurrentAssessmentsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsPortfolioAssessmentUniqueViolation(exception))
+        {
+            var pendingAssessments = dbContext.ChangeTracker.Entries<PortfolioAssessment>()
+                .Where(entry => entry.State == EntityState.Added)
+                .Select(entry => entry.Entity)
+                .ToList();
+
+            if (pendingAssessments.Count == 0) throw;
+
+            foreach (var assessment in pendingAssessments) dbContext.Entry(assessment).State = EntityState.Detached;
+            foreach (var assessment in pendingAssessments
+                         .GroupBy(item => new { item.PortfolioId, item.InvestmentEventId, item.PortfolioSnapshotKey, item.TargetAllocationKey, item.AssessmentVersion })
+                         .Select(group => group.First()))
+            {
+                var alreadyPersisted = await dbContext.PortfolioAssessments.AnyAsync(item =>
+                    item.PortfolioId == assessment.PortfolioId
+                    && item.InvestmentEventId == assessment.InvestmentEventId
+                    && item.PortfolioSnapshotKey == assessment.PortfolioSnapshotKey
+                    && item.TargetAllocationKey == assessment.TargetAllocationKey
+                    && item.AssessmentVersion == assessment.AssessmentVersion, cancellationToken);
+                if (!alreadyPersisted) dbContext.PortfolioAssessments.Add(assessment);
+            }
+            logger.LogInformation("AvaliaÃ§Ã£o de carteira concorrente ignorada; o registro jÃ¡ existente foi preservado.");
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private static bool IsPortfolioAssessmentUniqueViolation(DbUpdateException exception)
+        => exception.GetBaseException() is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: not null } postgresException
+            && postgresException.ConstraintName.StartsWith("IX_PortfolioAssessments_", StringComparison.Ordinal);
 
     private async Task EnsureExistingAnalysisFeedsRadarAsync(DocumentAnalysis analysis, CancellationToken cancellationToken)
     {

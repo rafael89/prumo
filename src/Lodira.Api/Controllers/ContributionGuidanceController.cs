@@ -181,7 +181,7 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
             ticker = assets.GetValueOrDefault(x.AssetId)?.Ticker ?? positions.GetValueOrDefault(x.AssetId)?.Asset?.Ticker ?? string.Empty,
             assetClass = (int)(assets.GetValueOrDefault(x.AssetId)?.AssetClass ?? positions.GetValueOrDefault(x.AssetId)?.Asset?.AssetClass ?? AssetClass.Other),
             x.Amount,
-            x.Reason,
+            reason = ContributionText.NormalizeAssetClassNames(x.Reason),
             evidence = DeserializeEvidence(x.EvidenceJson)
         }).ToArray();
         var allocated = allocations.Sum(x => x.Amount);
@@ -196,10 +196,10 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
             allocationStyle = allocations.Length == 1 ? "Concentrated" : allocations.Length > 1 ? "Distributed" : "NoAllocation",
             allocations,
             avoidedCandidates = Array.Empty<object>(),
-            reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { item.Reasoning },
+            reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { ContributionText.NormalizeAssetClassNames(item.Reasoning) },
             evidence = allocations.SelectMany(x => x.evidence).Distinct().ToArray(),
             item.IntelligenceAvailability,
-            item.Reasoning,
+            reasoning = ContributionText.NormalizeAssetClassNames(item.Reasoning),
             jobStatus = ContributionGuidanceJobStatus.Completed.ToString(),
             reused = true
         };

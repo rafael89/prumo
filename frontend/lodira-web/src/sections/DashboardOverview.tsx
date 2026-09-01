@@ -22,7 +22,7 @@ type Position = {
   portfolioWeight: number
 }
 
-type DashboardAssessment = {
+export type DashboardAssessment = {
   assessmentId: string
   documentId: string | null
   asset: string
@@ -251,7 +251,7 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
   </article>
 }
 
-function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve, actionPending = false }: { item: DashboardAssessment; portfolioId: string; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; actionPending?: boolean }) {
+export function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve, actionPending = false }: { item: DashboardAssessment; portfolioId: string; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; actionPending?: boolean }) {
   const analysis = useQuery({
     queryKey: ['dashboard-document-analysis', item.documentId, portfolioId],
     queryFn: async () => {

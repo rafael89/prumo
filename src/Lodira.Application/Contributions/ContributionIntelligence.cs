@@ -70,10 +70,10 @@ public static class ContributionIntelligenceApplier
         var allocations = result.CandidateEvaluations.Where(x => x.SuggestedAmount > 0 && byId.ContainsKey(x.AssetId)).OrderBy(x => x.Rank).Select(x =>
         {
             var position = byId[x.AssetId];
-            return new ContributionAllocation(x.AssetId, position.Ticker, position.AssetClass, decimal.Round(x.SuggestedAmount, 2), x.Reason, x.Evidence.Select(e => e.Label).Where(e => !string.IsNullOrWhiteSpace(e)).ToArray());
+            return new ContributionAllocation(x.AssetId, position.Ticker, position.AssetClass, decimal.Round(x.SuggestedAmount, 2), ContributionText.NormalizeAssetClassNames(x.Reason), x.Evidence.Select(e => e.Label).Where(e => !string.IsNullOrWhiteSpace(e)).ToArray());
         }).ToArray();
         var reasons = new List<string>();
-        if (!string.IsNullOrWhiteSpace(result.OverallReasoning)) reasons.Add(result.OverallReasoning);
+        if (!string.IsNullOrWhiteSpace(result.OverallReasoning)) reasons.Add(ContributionText.NormalizeAssetClassNames(result.OverallReasoning));
         var deferred = candidatesForExplanation(positions, allocations.Select(x => x.AssetId).ToHashSet());
         if (deferred.Count > 0) reasons.Add($"Alternativas adiadas: {string.Join(" ", deferred)}");
         return fallback with { Allocations = allocations, UnallocatedAmount = decimal.Round(fallback.ContributionAmount - allocations.Sum(x => x.Amount), 2), Reasons = reasons, Evidence = allocations.SelectMany(x => x.Evidence).Distinct().ToArray(), AllocationStyle = allocations.Length switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed } };
