@@ -1,51 +1,111 @@
 # Lodira
 
-Aplicacao self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira.
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![React 19.2.8](https://img.shields.io/badge/React-19.2.8-61DAFB?logo=react&logoColor=20232A)](https://react.dev/)
+[![TypeScript 7.0.2](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite 8.2.2](https://img.shields.io/badge/Vite-8.2.2-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![Tailwind CSS 4.3.3](https://img.shields.io/badge/Tailwind_CSS-4.3.3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker Compose](https://img.shields.io/badge/Docker_Compose-ready-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
-O repositorio contempla os incrementos funcionais de descoberta e analise de documentos, Radar, priorizacao, orientação de aporte sob demanda, importação de carteira B3 em XLSX e as melhorias de UX do Incremento 10.
+Aplicação self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira e apoiar decisões de alocação com contexto da própria carteira.
+
+O Lodira combina importação de carteira da B3, descoberta e análise de documentos da CVM/FNet, avaliação do impacto por carteira, Radar e orientação de aportes sob demanda.
+
+## Funcionalidades
+
+- Carteiras e posições com cadastro, edição, exclusão e visualização paginada.
+- Importação do Relatório Consolidado Mensal da B3 em XLSX, com prévia antes da confirmação.
+- Descoberta, download, extração, validação e análise de documentos da CVM/FNet.
+- Análise global do evento e avaliação do impacto em cada carteira.
+- Visão geral com saúde da carteira, Radar e atualizações recentes.
+- Radar com prioridades, filtros, estados por carteira, paginação e resolução de situações.
+- Tela própria de Aportes (`/contributions`) para gerar orientação, acompanhar a análise da IA e registrar aportes realizados.
+- Configuração de alocações-alvo por classe de ativo.
+- Privacy mode para ocultar valores financeiros durante a sessão.
+- Providers de IA `Fake`, `Gemini`, `OpenAI` e HTTP customizado.
 
 ## Stack
 
-- React, TypeScript, Vite e Tailwind CSS
-- ASP.NET Core Web API em .NET 10
-- .NET Worker
-- PostgreSQL 16
-- Docker Compose
+### Backend
 
-## Funcionalidades atuais
+- .NET 10.0 com ASP.NET Core Web API.
+- Worker Service .NET 10.0 para descoberta, processamento e análise assíncrona.
+- Entity Framework Core 10.0.11.
+- PostgreSQL 16 com Npgsql Entity Framework Core 10.0.3.
+- Swagger/OpenAPI com Swashbuckle 10.2.3.
 
-- Carteiras e posições com detalhe do ativo; o Dashboard oferece paginação server-side das posições.
-- Importação do Relatório Consolidado Mensal da B3 em XLSX, com prévia e sincronização.
-- Descoberta e processamento de documentos da CVM/FNet.
-- Análise global do evento e avaliação do impacto em cada carteira.
-- Radar com prioridade, filtros, estados por portfolio e paginação.
-- Orientação de aporte sob demanda baseada em alocações-alvo e impactos de eventos relevantes.
-- Privacy mode para ocultar valores financeiros na sessão atual.
-- Frontend organizado em sections para Dashboard, Carteira e Documentos, com Radar, Aporte e importação B3.
+### Frontend
 
-## Fluxo de dados
+- React 19.2.8.
+- TypeScript 7.0.2.
+- Vite 8.2.2.
+- Tailwind CSS 4.3.3.
+- TanStack React Query 5.102.8.
+- React Router 7.18.2.
+
+### Operação
+
+- Docker e Docker Compose.
+- Serviços Compose: `postgres`, `api`, `worker` e `frontend`.
+- Portas publicadas apenas em `localhost` por padrão.
+
+## Organização da aplicação
 
 ```text
 B3 XLSX -> prévia -> confirmação -> carteira atualizada
 CVM/FNet -> descoberta -> download -> extração/validação -> análise IA
-Documento -> DocumentAnalysis global -> InvestmentEvent -> PortfolioAssessment por portfolio -> Radar/Aporte
+Documento -> DocumentAnalysis global -> InvestmentEvent
+                                -> PortfolioAssessment por carteira -> Radar/Aportes
 ```
 
-O backend é a fonte de verdade para os cálculos financeiros e a inteligência de produto. O Radar determina `RequiresAttention` pela `RadarAttentionNowPolicy`; a orientação de aporte usa os impactos dos assessments (`CapitalDecisionImpact`) para selecionar e priorizar candidatos. O frontend gerencia apresentação, filtros, estado de tela e entrada dos formulários.
+O backend é a fonte de verdade para os cálculos financeiros e as decisões de produto. A IA interpreta o texto extraído e o contexto consolidado, mas não altera dados financeiros durante a análise.
 
-## Renomeacao tecnica e compatibilidade
+O frontend é organizado por fluxos:
 
-O nome oficial do produto e Lodira, com a solucao e os projetos organizados sob esse nome. O diretorio local pode continuar sendo `prumo` sem impacto no build ou na execucao.
+```text
+/                 Visão geral da carteira
+/portfolio        Carteira, posições e alocações-alvo
+/radar            Eventos que exigem atenção
+/contributions    Orientação e registro de aportes
+/documents        Documentos e análises
+```
 
-Para preservar o ambiente local existente, os valores padrao do PostgreSQL continuam usando o banco, usuario e senha `prumo`, e o `UserSecretsId` historico do worker foi mantido. O historico de migrations foi consolidado na baseline oficial descrita abaixo; nao ha compromisso de upgrade a partir das migrations antigas.
+A orientação de aportes fica concentrada na tela `/contributions`; a visão geral não exibe mais o card de aportes.
 
 ## Executar localmente
+
+### Pré-requisitos
+
+- .NET SDK 10.0.
+- Node.js compatível com o frontend e npm.
+- PostgreSQL 16 local ou Docker Desktop com Docker Compose.
+
+### Banco com Docker Compose
+
+Na raiz do repositório:
+
+```powershell
+docker compose up -d postgres
+```
+
+Os defaults locais são:
+
+```text
+Database: prumo
+User:     postgres
+Password: dev123
+Host:     localhost
+Port:     5432
+```
+
+Altere esses valores com `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` quando necessário.
 
 ### API e worker
 
 ```powershell
 dotnet restore Lodira.sln
-dotnet build Lodira.sln
+dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api
 dotnet run --project src/Lodira.Api
 dotnet run --project src/Lodira.Worker
 ```
@@ -58,158 +118,108 @@ npm install
 npm run dev
 ```
 
-## Documentos e analise
+Durante o desenvolvimento, o Vite encaminha `/api` para `http://localhost:5041`. A porta pode ser ajustada em [vite.config.ts](frontend/lodira-web/vite.config.ts).
 
-Fluxo atual:
+### Executar tudo com Compose
+
+```powershell
+docker compose up --build
+```
+
+O frontend fica disponível em `http://localhost:5173` e a API em `http://localhost:8080`.
+
+## IA e configuração
+
+As configurações principais do worker ficam em [src/Lodira.Worker/appsettings.json](src/Lodira.Worker/appsettings.json):
+
+- `AI:Provider`
+- `AI:Endpoint`
+- `AI:ApiKey`
+- `AI:Model`
+- `AI:FallbackModel`
+- `AI:TimeoutSeconds`
+- `AI:RateLimit`
+- `Jobs:*`
+- `TextQuality:*`
+- `Storage:RootPath`
+
+Providers suportados:
+
+- `Fake`: determinístico, indicado para desenvolvimento e testes.
+- `Gemini`: Gemini Developer API via `generateContent` com Structured Output.
+- `OpenAI`: Responses API com JSON Schema estrito.
+- Qualquer outro valor: provider HTTP customizado legado.
+
+Para usar o Gemini localmente sem versionar a chave:
+
+```powershell
+dotnet user-secrets set "AI:Provider" "Gemini" --project src/Lodira.Worker
+dotnet user-secrets set "AI:ApiKey" "<sua-chave>" --project src/Lodira.Worker
+dotnet user-secrets set "AI:Model" "gemini-3.5-flash-lite" --project src/Lodira.Worker
+```
+
+Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves de providers.
+
+## Documentos e análise
+
+O fluxo assíncrono é executado pelo worker:
 
 ```text
 DocumentDiscoveryWorker
-  -> ProcessingJob DownloadDocument
+  -> DownloadDocument
   -> DocumentDownloadWorker
-  -> Document em WaitingProcessing
-  -> ProcessingJob AnalyzeDocument
+  -> AnalyzeDocument
   -> DocumentAnalysisWorker
-  -> PDF armazenado
-  -> IPdfTextExtractor
-  -> ITextQualityValidator
+  -> extração e validação de texto
   -> IAiAnalysisService
-  -> AiAnalysisValidator
-  -> DocumentAnalysis persistido
+  -> validação e persistência de DocumentAnalysis
 ```
 
-O backend continua como fonte de verdade. A IA apenas interpreta o texto extraido e o contexto consolidado da carteira. Nenhum dado financeiro da carteira e alterado durante a analise.
+O contexto enviado para análise pode incluir a carteira relacionada ao ativo, patrimônio total, quantidade de posições, posição afetada, maiores posições por peso e indicadores de concentração.
 
-O endpoint `GET /api/documents/{id}/analysis` retorna a analise validada mais recente do documento. `RawResponse` nao e exposto por padrao.
-
-## Contexto da carteira
-
-O `PortfolioAnalysisContext` e reconstruido no momento da analise e fornece a carteira principal relacionada ao ativo do documento, patrimonio total, quantidade de posicoes, dados da posicao afetada, top 5 posicoes por peso e indicadores de concentracao.
-
-Os calculos financeiros continuam no backend e preservam a precisao interna. No prompt, valores monetarios sao apresentados com duas casas em `pt-BR` e percentuais com duas casas, sem depender da cultura da maquina. A concentracao inclui o maior peso individual e a soma dos tres maiores pesos.
+O endpoint `GET /api/documents/{id}/analysis` retorna a análise validada mais recente; `RawResponse` não é exposto por padrão.
 
 ## Migrations
 
-As migrations ficam em [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations). O estado atual e representado por uma unica `InitialCreate` gerada diretamente do modelo EF.
-
-Para aplicar migrations com ambiente compativel:
+As migrations ficam em [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations). O estado atual é uma baseline única `InitialCreate`, gerada diretamente do modelo EF.
 
 ```powershell
 dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api
 ```
 
-O banco deve ser inicializado com `dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api` antes de usar as funcionalidades correspondentes.
-
-## Estrutura do frontend
-
-```text
-frontend/lodira-web/src/
-  App.tsx                         # shell, navegação e estado compartilhado
-  components/Pagination.tsx       # paginação reutilizável
-  sections/DashboardSection.tsx
-  sections/PortfolioSection.tsx
-  sections/DocumentsSection.tsx
-  sections/FeatureSections.tsx    # Radar, Aporte e importação B3
-```
-
-As listas de posições do Dashboard, documentos e Radar são paginadas no backend. Filtros resetam a página para 1 e as query keys incluem o `portfolioId` quando o dado é específico da carteira.
-
-## Configuracao
-
-Configuracoes principais do worker em [src/Lodira.Worker/appsettings.json](src/Lodira.Worker/appsettings.json):
-
-- `Jobs:PollInterval`
-- `Jobs:Lease`
-- `Jobs:RetryDelay`
-- `Jobs:MaxAttempts`
-- `TextQuality:MinimumCharacters`
-- `TextQuality:MinimumPrintableRatio`
-- `AI:Endpoint`
-- `AI:Provider`
-- `AI:ApiKey`
-- `AI:Model`
-- `AI:TimeoutSeconds`
-
-Providers suportados pelo Worker:
-
-- `Fake`: deterministico, permitido apenas fora de Production.
-- `Gemini`: Gemini Developer API via `generateContent`, usando Structured Output.
-- `OpenAI`: Responses API com JSON Schema estrito.
-- qualquer outro valor: provider HTTP custom legado (`HttpAiAnalysisService`).
-
-Para usar o Gemini:
-
-```powershell
-$env:AI__Provider="Gemini"
-$env:AI__ApiKey="sua-chave"
-$env:AI__Model="gemini-3.5-flash-lite"
-$env:AI__FallbackModel="gemini-3.1-flash-lite"
-$env:AI__TimeoutSeconds="60"
-dotnet run --project src/Lodira.Worker
-```
-
-Para usar OpenAI, defina `AI__Provider="OpenAI"`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves no repositorio.
-
-### Configuração local de IA
-
-O `Lodira.Worker` é o executável que instancia os providers de IA e já possui suporte padrão a .NET User Secrets em `Development`. Para armazenar uma chave Gemini localmente sem versioná-la:
-
-```powershell
-dotnet user-secrets set "AI:ApiKey" "<sua-chave-gemini>" --project src/Lodira.Worker
-dotnet user-secrets list --project src/Lodira.Worker
-dotnet user-secrets remove "AI:ApiKey" --project src/Lodira.Worker
-```
-
-O provider `Fake` continua sendo carregado por `src/Lodira.Worker/appsettings.Development.json`. Para containers, Beta e Production, `AI__ApiKey` continua sendo uma fonte de configuração suportada.
-
-## Validação automatizada
-
-- `dotnet build Lodira.sln`: aprovado
-- Execute `dotnet test Lodira.sln` para verificar a suíte atual.
-- `npm run build`: aprovado
-- `npm run lint`: executado; 2 warnings conhecidos no frontend
-
-O E2E real com serviços externos, como CVM/FNet e providers de IA, depende da configuração correspondente no ambiente.
-
-## Warning conhecido
-
-Avisos `NU1900` podem aparecer quando o indice de vulnerabilidades do NuGet esta indisponivel. Eles nao impedem a compilacao ou os testes.
-
-## Baseline atual de migrations
-
-O historico de migrations foi consolidado em uma unica baseline oficial:
+A baseline atual é:
 
 ```text
 20260829151400_InitialCreate
 ```
 
-A pasta [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations) contem somente essa migration, seu Designer e `LodiraDbContextModelSnapshot.cs`. A baseline foi validada em banco PostgreSQL `prumo` vazio usando exclusivamente `dotnet ef database update`.
+Depois do primeiro banco Beta com dados importantes, novas migrations devem ser append-only.
 
-A partir do primeiro banco Beta com dados importantes, migrations devem ser append-only. Este squash nao deve ser repetido depois desse marco.
+## Validação
 
-Checkpoint local:
+```powershell
+dotnet build Lodira.sln
+dotnet test Lodira.sln
 
-```text
-Commit: be47836
-Tag: lodira-2.0-r6-migration-squash
+Set-Location frontend/lodira-web
+npm run build
+npm run lint
 ```
 
-O banco vazio nao depende de seed manual: `POST /api/portfolios` cria uma carteira e Strategy/Objective podem ser configurados posteriormente.
-
-As chaves OpenAI/Gemini devem ser fornecidas por variaveis de ambiente, como `AI__ApiKey`; nenhuma chave real de provider esta versionada. Os valores `prumo` usados em `appsettings` e `docker-compose.yml` sao defaults locais de desenvolvimento.
-
-Ownership futuro deve iniciar em `Portfolio.UserId`. Positions, imports, Objective, Strategy, StrategyAllocation, PortfolioAssessment e RadarItemState sao dependentes da carteira. Assets, Documents, DocumentAnalysis e InvestmentEvent permanecem globais nesta etapa.
-
-O deployment Compose atual assume uso self-hosted em rede privada: o frontend faz proxy same-origin para a API, as portas são vinculadas ao localhost e o TLS deve ser terminado por um reverse proxy externo. Autenticação multiusuário não faz parte do modelo atual; não exponha a API diretamente à Internet.
-
-Débitos conhecidos mantidos fora deste marco: teste real de concorrência PostgreSQL para `PortfolioAssessment`, configuração Beta dedicada, autenticação multiusuário e warnings conhecidos de frontend/EF.
+O E2E com serviços externos, como CVM/FNet e providers de IA, depende da configuração correspondente no ambiente.
 
 ## Reset local do banco
 
-Para simular uma instalação limpa em Development, execute a partir da raiz:
+Para simular uma instalação limpa em Development:
 
 ```powershell
-cd D:\Dev\lodira
 .\scripts\reset-local-database.ps1
 ```
 
-O script lê a connection string da API, bloqueia hosts remotos, exige a confirmação literal `RESET`, solicita interativamente a senha do usuário local sem armazená-la e reseta o schema `public`. Em seguida, reaplica as migrations atuais com `dotnet ef database update` e valida o histórico e as tabelas vazias. Nenhum seed, carteira ou usuário é criado.
+O script valida a connection string, bloqueia hosts remotos, exige a confirmação literal `RESET`, reseta o schema `public`, reaplica as migrations e verifica se o banco está vazio. Nenhum seed, carteira ou usuário é criado.
+
+## Segurança e deployment
+
+O Compose atual foi desenhado para uso self-hosted em rede privada. As portas são vinculadas ao localhost e o TLS deve ser terminado por um reverse proxy externo. Autenticação multiusuário ainda não faz parte do modelo atual; não exponha a API diretamente à Internet.
+
+Os valores `prumo` e `dev123` são apenas defaults locais de desenvolvimento. Em ambientes reais, forneça credenciais e chaves por variáveis de ambiente ou secrets.

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowRight, faCircleCheck, faCircleInfo, faSpinner, faTriangleExclamation, faWandMagicSparkles, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowRight, faCircleCheck, faCircleInfo, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl } from '../api/client'
 const contributionApiUrl = apiBaseUrl
@@ -97,8 +97,6 @@ type DashboardOverviewProps = {
   dashboard: { data?: Dashboard; isLoading: boolean; isError: boolean }
   activePortfolio: { id: string; positionCount: number } | null
   portfoliosLoading?: boolean
-  privacyHidden: boolean
-  onGenerateGuidance: (amount: number) => Promise<DashboardGuidance>
 }
 
 const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'Ativos internacionais', 4: 'Outros ativos' }
@@ -110,12 +108,6 @@ const classificationLabels: Record<string, string> = { CorporateAction: 'Ação 
 
 void actionLabels
 void capitalImpactLabels
-
-function formatCurrency(value: number | null | undefined, hidden = false) {
-  if (hidden) return 'R$ ••••••'
-  if (value == null) return 'Sem valor'
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
-}
 
 function formatPercentage(value: number) {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)
@@ -133,18 +125,6 @@ function formatRelativeDate(value: string | null) {
   if (elapsedDays === 1) return 'Ontem'
   if (elapsedDays < 7) return `${elapsedDays} dias atrás`
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date)
-}
-
-function parseContributionAmount(value: string) {
-  const cleaned = value.trim().replace(/[^\d,.-]/g, '')
-  if (!cleaned) return Number.NaN
-  if (cleaned.includes(',')) return Number(cleaned.replace(/\./g, '').replace(',', '.'))
-  if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) return Number(cleaned.replace(/\./g, ''))
-  return Number(cleaned)
-}
-
-function matchesEnum(value: number | string | undefined, numericValue: number, stringValue: string) {
-  return value === numericValue || value === stringValue
 }
 
 function CardHeader({ eyebrow, linkLabel, to }: { eyebrow: string; linkLabel: string; to: string }) {
@@ -214,111 +194,6 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
       </div>)}
     </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900">Ver mais <FontAwesomeIcon icon={faArrowRight} /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} onMarkSeen={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: false })} onResolve={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: true })} actionPending={statusMutation.isPending} />}
   </article>
-}
-
-function ContributionCard({ preview: rawPreview, portfolioId, privacyHidden, onGenerateGuidance }: { preview: Dashboard['contributionPreview']; portfolioId: string; privacyHidden: boolean; onGenerateGuidance: (amount: number) => Promise<DashboardGuidance> }) {
-  const [amount, setAmount] = useState('')
-  const [validationError, setValidationError] = useState<string | null>(null)
-  const mutation = useMutation({ mutationFn: onGenerateGuidance })
-  const guidance = mutation.data
-  const persistedGuidance = useQuery({
-    queryKey: ['dashboard-contribution-guidance', portfolioId, guidance?.guidanceId],
-    queryFn: async () => {
-      const response = await fetch(`${contributionApiUrl}/api/portfolios/${portfolioId}/contribution-guidance/${guidance?.guidanceId}`)
-      if (!response.ok) throw new Error('Não foi possível atualizar a orientação.')
-      return response.json() as Promise<DashboardGuidance>
-    },
-    enabled: Boolean(guidance?.guidanceId && guidance.jobStatus && guidance.jobStatus !== 'Completed' && guidance.jobStatus !== 'Failed'),
-    refetchInterval: query => query.state.data?.jobStatus === 'Completed' || query.state.data?.jobStatus === 'Failed' ? false : 1500
-  })
-  const currentGuidance = persistedGuidance.data ?? guidance
-  const visibleGuidance = currentGuidance?.jobStatus === 'Completed' ? currentGuidance : undefined
-  const enriching = Boolean(currentGuidance?.jobStatus && currentGuidance.jobStatus !== 'Completed' && currentGuidance.jobStatus !== 'Failed')
-  const analysisFailed = currentGuidance?.jobStatus === 'Failed'
-  const hasNoNeeds = matchesEnum(rawPreview?.status, 2, 'NoNeeds')
-  const preview = hasNoNeeds && rawPreview ? { ...rawPreview, summary: 'Sua carteira está alinhada; o próximo aporte buscará preservar suas alocações-alvo.' } : rawPreview
-  const isNoNeeds = false
-  const isAvailable = matchesEnum(preview?.status, 0, 'Available') || hasNoNeeds
-  const isNotConfigured = matchesEnum(preview?.status, 1, 'NotConfigured')
-
-  const submit = () => {
-    const parsedAmount = parseContributionAmount(amount)
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setValidationError('Informe um valor de aporte válido e maior que zero.')
-      return
-    }
-    setValidationError(null)
-    mutation.mutate(parsedAmount)
-  }
-
-  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-    <CardHeader eyebrow="Próximo aporte" linkLabel="Ver aportes" to="/contributions" />
-    <div className={`mt-5 grid min-w-0 gap-6 lg:gap-8 ${visibleGuidance ? 'lg:grid-cols-[minmax(0,.75fr)_minmax(0,1.35fr)_minmax(0,1fr)]' : 'lg:grid-cols-[minmax(17rem,.7fr)_minmax(0,1.3fr)]'}`}>
-      <div className="min-w-0 lg:border-r lg:border-slate-100 lg:pr-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Necessidade atual</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{preview?.summary ?? 'A orientação de aporte ainda não está disponível.'}</h2>
-        {isAvailable && <form className="mt-5" onSubmit={event => { event.preventDefault(); submit() }}>
-          <label htmlFor="dashboard-contribution" className="text-sm font-medium text-slate-700">Quanto pretende aportar?</label>
-          <div className="mt-2 flex min-w-0 flex-wrap gap-2">
-            <input id="dashboard-contribution" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="w-36 min-w-0 flex-[1.15] basis-24 rounded-xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" />
-            <button type="submit" disabled={mutation.isPending} className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faWandMagicSparkles} className="mr-2" />{mutation.isPending ? 'Calculando...' : 'Gerar orientação'}</button>
-          </div>
-          {validationError && <p className="mt-2 text-xs text-rose-700">{validationError}</p>}
-          {mutation.isError && <p className="mt-2 text-xs text-rose-700">Não foi possível gerar a orientação. Confira o valor e tente novamente.</p>}
-        </form>}
-        {isNotConfigured && <Link to="/portfolio" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Configurar estratégia <FontAwesomeIcon icon={faArrowRight} /></Link>}
-        {isNoNeeds && <p className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-700"><FontAwesomeIcon icon={faCircleCheck} /> Nenhuma classe precisa ser priorizada agora.</p>}
-        {enriching && <p role="status" className="mt-4 flex items-center gap-2 text-sm font-medium text-amber-700"><FontAwesomeIcon icon={faSpinner} spin /> A IA está analisando os ativos e definindo a distribuição...</p>}
-        {analysisFailed && <p className="mt-4 text-sm font-medium text-rose-700">Não foi possível concluir a análise. Tente novamente.</p>}
-      </div>
-
-      <div className="min-w-0">
-        {!visibleGuidance ? <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm leading-6 text-slate-500">
-          {enriching ? 'A distribuição será exibida somente após a conclusão da análise.' : isAvailable ? 'Informe um valor para iniciar a análise.' : isNotConfigured ? 'A orientação ficará disponível depois que a estratégia for configurada.' : 'Não há orientação de compra necessária para o estado atual da carteira.'}
-        </div> : <GuidanceResult guidance={visibleGuidance} privacyHidden={privacyHidden} />}
-      </div>
-      {visibleGuidance && <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8"><ContributionSummary guidance={visibleGuidance} /></div>}
-    </div>
-  </article>
-}
-
-function ContributionSummary({ guidance }: { guidance: DashboardGuidance }) {
-  const reasons = guidance.reasons.slice(0, 4)
-  return <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-8">
-    <p className="text-sm font-semibold text-slate-900">Resumo</p>
-    <div className="mt-4 space-y-3 text-sm text-slate-600">
-      {reasons.length > 0 ? reasons.map((reason, index) => <div key={`${reason}-${index}`} className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={index === 2 ? faTriangleExclamation : faCircleCheck} className={`mt-1 shrink-0 ${index === 2 ? 'text-amber-500' : 'text-emerald-500'}`} /><span className="min-w-0 wrap-break-word">{reason}</span></div>) : <div className="flex min-w-0 items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 shrink-0 text-emerald-500" /><span className="min-w-0 wrap-break-word">Aporte calculado com base na estratégia da carteira.</span></div>}
-    </div>
-  </div>
-}
-
-function GuidanceResult({ guidance, privacyHidden }: { guidance: DashboardGuidance; privacyHidden: boolean }) {
-  const allocatedAmount = guidance.allocatedAmount ?? guidance.allocations.reduce((total, item) => total + item.amount, 0)
-  const styleLabel = matchesEnum(guidance.allocationStyle, 0, 'Concentrated') ? 'Aporte concentrado' : matchesEnum(guidance.allocationStyle, 1, 'Distributed') ? 'Aporte distribuído' : 'Sem alocação sugerida'
-  const importantAvoided = guidance.avoidedCandidates.filter(item => item.reasonType <= 2).slice(0, 3)
-
-  return <div className="min-w-0">
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Onde aportar</p><h3 className="mt-1 text-lg font-semibold">{styleLabel}</h3></div>
-      <div className="text-right text-xs text-slate-500"><span className="block">Alocado</span><strong className="text-sm text-slate-900">{formatCurrency(allocatedAmount, privacyHidden)}</strong></div>
-    </div>
-    {guidance.allocations.length > 0 ? <div className="mt-4 space-y-4">
-      {guidance.allocations.map(item => {
-        const share = guidance.contributionAmount > 0 ? item.amount / guidance.contributionAmount * 100 : 0
-        return <div key={item.assetId} className="min-w-0">
-          <div className="flex items-center justify-between gap-3 text-sm"><strong>{item.ticker}</strong><span className="shrink-0 font-semibold">{formatCurrency(item.amount, privacyHidden)}</span></div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(share, 100)}%` }} /></div>
-          <p className="mt-1 text-xs leading-5 text-slate-500">{formatPercentage(share)}% do valor informado · {item.reason}</p>
-        </div>
-      })}
-    </div> : <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900"><strong>Nenhum candidato elegível.</strong><p className="mt-1 leading-6">{guidance.reasons[0] ?? 'As restrições atuais impedem uma alocação responsável.'}</p></div>}
-
-    {guidance.unallocatedAmount > 0 && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-      <strong>{formatCurrency(guidance.unallocatedAmount, privacyHidden)} sem alocação</strong>
-      <p className="mt-1 text-xs leading-5 text-amber-800">O valor não foi redistribuído para preservar as necessidades e restrições calculadas pelo Lodira.</p>
-    </div>}
-    {importantAvoided.length > 0 && <div className="mt-4"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Restrições relevantes</p>{importantAvoided.map(item => <p key={item.assetId} className="mt-2 text-xs leading-5 text-slate-600"><strong>{item.ticker}:</strong> {item.reason}</p>)}</div>}
-  </div>
 }
 
 function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve, actionPending = false }: { item: DashboardAssessment; portfolioId: string; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; actionPending?: boolean }) {
@@ -403,7 +278,7 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
   </article>
 }
 
-export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, privacyHidden, onGenerateGuidance }: DashboardOverviewProps) {
+export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false }: DashboardOverviewProps) {
   if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Lodira entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
   if (dashboard.isLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
@@ -421,7 +296,6 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
       <PortfolioHealthCard data={data} />
       <RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} />
       <div className="order-2 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
-      <div className="order-3 min-w-0 self-start lg:col-span-2"><ContributionCard preview={data.contributionPreview} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} onGenerateGuidance={onGenerateGuidance} /></div>
     </div>
   </section>
 }
