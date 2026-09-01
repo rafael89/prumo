@@ -122,8 +122,8 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
   if (!portfolioId) return null
 
   return (
-    <div className="grid min-w-0 items-stretch gap-3 lg:grid-cols-2 *:min-w-0">
-      <div id="documentos" className="h-full rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="grid min-w-0 items-start gap-3 lg:grid-cols-2 *:min-w-0">
+      <div id="documentos" className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Documentos recentes</h2>
           <span className="text-xs text-slate-500">{documents.data?.totalItems ?? 0} encontrados</span>
@@ -152,7 +152,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
         {documents.data && <Pagination page={documents.data.page} totalPages={documents.data.totalPages} onPageChange={setDocumentPage} />}
         <DocumentJobDetails document={selectedDocument} />
       </div>
-      <section id="document-details" className="h-full scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <section id="document-details" className="scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
         {!selectedDocument && <p className="text-sm text-slate-500">Selecione um documento para ver os detalhes.</p>}
         {selectedDocument && <div className="space-y-6"><div className="border-b border-slate-200 pb-4"><p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Detalhe do documento</p><h2 className="mt-3 text-3xl font-semibold">{selectedDocument.ticker}</h2><p className="mt-2 text-sm text-slate-500">{selectedDocument.assetName} - {selectedDocument.sourceName}</p><div className="mt-4 grid gap-2 text-sm text-slate-600 md:grid-cols-2"><span>Publicado em {formatDate(selectedDocument.publishedAt)}</span><span>Status {processingStatuses[selectedDocument.processingStatus] ?? 'Desconhecido'}</span><span>Processado em {formatDate(selectedDocument.processedAt)}</span><a href={selectedDocument.sourceUrl} target="_blank" rel="noreferrer" className="text-amber-700 hover:text-amber-800"><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="mr-2" />Abrir origem</a></div></div>
           {analysis.isLoading && <p className="text-sm text-slate-500">Carregando an&aacute;lise...</p>}{analysis.isError && <p className="text-sm text-rose-700">N&atilde;o foi poss&iacute;vel carregar a an&aacute;lise deste documento.</p>}{!analysis.isLoading && !analysis.isError && !analysis.data && <div className="rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">Nenhuma an&aacute;lise validada foi encontrada para este documento ainda.</div>}

@@ -264,6 +264,13 @@ function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, onResolve
     enabled: Boolean(item.documentId),
   })
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+  useEffect(() => {
     if (!analysis.data) return
     const dialog = document.querySelector('[aria-labelledby="recent-analysis-title"]')
     const confidenceLabel = Array.from(dialog?.querySelectorAll('p') ?? []).find(element => element.textContent === 'Confiança')

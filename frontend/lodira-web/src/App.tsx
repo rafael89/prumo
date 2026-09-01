@@ -6,6 +6,7 @@ import { B3ImportSection, RadarSection, TargetAllocationSection } from './sectio
 import { ContributionSectionModern as ContributionSection } from './sections/ContributionSectionModern'
 import { PortfolioSection } from './sections/PortfolioSection'
 import { DocumentsSection } from './sections/DocumentsSection'
+import { AboutSection } from './sections/AboutSection'
 import { DashboardOverview, type Dashboard } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUp } from '@fortawesome/free-solid-svg-icons'
@@ -129,6 +130,9 @@ function App() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [location.pathname, location.search])
   const [portfolioName, setPortfolioName] = useState('Minha carteira')
   const [editingPortfolioId, setEditingPortfolioId] = useState<string | null>(null)
   const [editingPortfolioName, setEditingPortfolioName] = useState('')
@@ -331,14 +335,15 @@ function App() {
         <nav className="sticky top-0 z-20 border-b border-slate-200 bg-stone-50/95 px-4 py-4 backdrop-blur md:px-6">
           <div className="mx-auto flex max-w-358 flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">lodira<span className="text-amber-600">.</span></Link>
-            <div className="order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Visão geral</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aportes</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents', true)}>Documentos</Link></div>
+            <div className="order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Visão geral</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aportes</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents')}>Documentos</Link><Link to="/about" aria-current={route === '/about' ? 'page' : undefined} className={navigationLinkClass(route === '/about', true)}>Sobre</Link></div>
             <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.failedCount > 0 && !failedNoticeDismissed && <div role="status" className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"><span>{processingStatus.data.failedCount} documento(s) com erro</span><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="underline">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar'}</button><button type="button" aria-label="Marcar aviso como visto" onClick={() => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: true }); localStorage.setItem(`lodira.failed-notice.${activePortfolio.id}`, '1') } }} className="text-base leading-none">×</button></div>}{processingStatus.data && processingStatus.data.status !== 'Completed' && processingStatus.data.status !== 'Failed' && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{processingStatus.data.status === 'Processing' ? 'Analisando seus documentos...' : 'Seus documentos serão analisados em instantes.'}</span>}</div>
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
+        {route === '/about' && <AboutSection />}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} privacyHidden={privacyHidden} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
-        <section className="mx-auto max-w-358 px-6 pb-12">
+        <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') ? 'pb-0' : 'pb-12'}`}>
           {feedback && (
             <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
               {feedback.message}
@@ -355,7 +360,7 @@ function App() {
           </div>}
         </section>
         {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-358 gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio.id} /></div>}
-        {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
+        {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} privacyHidden={privacyHidden} /></div>}
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
   )
