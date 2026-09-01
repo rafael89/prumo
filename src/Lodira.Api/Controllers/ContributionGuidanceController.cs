@@ -242,6 +242,16 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
             avoidedCandidates,
             reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { ContributionText.NormalizeAssetClassNames(item.Reasoning) },
             evidence = allocations.SelectMany(x => x.evidence).Distinct().ToArray(),
+            analysis = new
+            {
+                generatedAt = item.GeneratedAt,
+                engineVersion = item.EngineVersion,
+                provider = item.Provider,
+                model = item.Model,
+                policyVersion = ExtractPolicyVersion(item.MetadataJson),
+                assessmentVersions = ExtractAssessmentVersions(item.MetadataJson),
+                evidenceCount = allocations.SelectMany(x => x.evidence).Distinct().Count()
+            },
             item.IntelligenceAvailability,
             reasoning = ContributionText.NormalizeAssetClassNames(item.Reasoning),
             jobStatus = ContributionGuidanceJobStatus.Completed.ToString(),
@@ -283,6 +293,30 @@ public sealed class ContributionGuidanceController(LodiraDbContext db, Portfolio
         try { return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>(); }
         catch (JsonException) { return Array.Empty<string>(); }
     }
+
+    private static string? ExtractPolicyVersion(string json)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            return TryGet(root, "policyVersion", "PolicyVersion", out var value) ? value.GetString() : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static string[] ExtractAssessmentVersions(string json)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            if (!TryGet(root, "assessmentVersions", "AssessmentVersions", out var value) || value.ValueKind != JsonValueKind.Array) return Array.Empty<string>();
+            return value.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToArray();
+        }
+        catch (JsonException) { return Array.Empty<string>(); }
+    }
+
+    private static bool TryGet(JsonElement root, string camelName, string pascalName, out JsonElement value)
+        => root.TryGetProperty(camelName, out value) || root.TryGetProperty(pascalName, out value);
 }
 
 public sealed record ContributionRequest(decimal Amount);

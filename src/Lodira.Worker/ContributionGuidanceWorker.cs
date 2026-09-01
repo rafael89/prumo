@@ -62,7 +62,16 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                             }
                             else
                             {
-                                guidance.UpdateIntelligence(result.Metadata.Provider, result.Metadata.Model, result.Availability.ToString(), string.Join("\n", applied.Reasons), JsonSerializer.Serialize(result.Metadata));
+                                guidance.UpdateIntelligence(result.Metadata.Provider, result.Metadata.Model, result.Availability.ToString(), string.Join("\n", applied.Reasons), JsonSerializer.Serialize(new
+                                {
+                                    engineVersion = result.Metadata.EngineVersion,
+                                    policyVersion = result.Metadata.PolicyVersion,
+                                    promptVersion = result.Metadata.PromptVersion,
+                                    provider = result.Metadata.Provider,
+                                    model = result.Metadata.Model,
+                                    generatedAt = result.Metadata.GeneratedAt,
+                                    assessmentVersions = workItem.Baseline.AssessmentVersions
+                                }));
                                 var evaluations = result.CandidateEvaluations.ToDictionary(x => x.AssetId);
                                 guidance.ReplaceAllocations(applied.Allocations.Select(a => new PersistedContributionGuidanceAllocation(
                                     guidance.Id, a.AssetId, a.Amount, a.Reason, evaluations[a.AssetId].Confidence, JsonSerializer.Serialize(a.Evidence))));
@@ -123,7 +132,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R4-8.0", policyVersion = fallback.PortfolioHealthPolicyVersion, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow }));
+            JsonSerializer.Serialize(new { engineVersion = "R4-8.0", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }

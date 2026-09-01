@@ -81,7 +81,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                         CvmDocumentTypeMapper.Map(record.Categoria, record.TipoDocumento, record.Especie),
                         publishedAt,
                         string.IsNullOrWhiteSpace(record.IdDocumento) ? record.NomeArquivo : record.IdDocumento,
-                        documentUrl,
+                        ToOfficialViewerUrl(documentUrl),
                         documentUrl,
                         record.Categoria,
                         record.TipoDocumento,
@@ -171,6 +171,21 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
     private static string NormalizeCnpj(string? value) =>
         new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+    private static string ToOfficialViewerUrl(string documentUrl)
+    {
+        if (!Uri.TryCreate(documentUrl, UriKind.Absolute, out var uri)
+            || !uri.Host.Contains("fnet.bmfbovespa.com.br", StringComparison.OrdinalIgnoreCase)) return documentUrl;
+
+        var id = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(parameter => parameter.Split('=', 2))
+            .Where(parameter => parameter.Length == 2 && string.Equals(parameter[0], "id", StringComparison.OrdinalIgnoreCase))
+            .Select(parameter => Uri.UnescapeDataString(parameter[1]))
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        return string.IsNullOrWhiteSpace(id)
+            ? documentUrl
+            : $"https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id={Uri.EscapeDataString(id)}";
+    }
 
     private static bool TryParseDate(string? value, out DateTimeOffset date)
     {

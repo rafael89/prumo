@@ -58,6 +58,24 @@ public sealed class CvmFnetDocumentSourceTests
     }
 
     [Fact]
+    public async Task UsaVisualizadorOficialDoFnetComoOrigemEMantemDownloadSeparado()
+    {
+        const string csv = "CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;TP_DOC;NM_ARQ;ID_DOC;LINK_ARQ\n" +
+            "26.502.794/0001-85;31/07/2026;05/08/2026;Fato Relevante;fato.pdf;1306470;https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1306470\n";
+        using var client = new HttpClient(new CsvHandler(csv));
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            DocumentosEventuaisUrlTemplate = "https://dados.cvm.gov.br/eventual_{0}.csv",
+            CnpjPorTicker = new Dictionary<string, string> { ["XPLG11"] = "26.502.794/0001-85" }
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidate = Assert.Single(await source.FindAsync(new[] { "XPLG11" }));
+
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1306470", candidate.SourceUrl);
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1306470", candidate.DownloadUrl);
+    }
+
+    [Fact]
     public async Task PreservaCategoriaTipoEEspecieOficiaisQuandoDisponiveis()
     {
         const string csv = "CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;CATEGORIA;TP_DOC;ESPECIE;NM_ARQ;ID_DOC;LINK_ARQ\n" +

@@ -7,6 +7,7 @@ import { ContributionSectionModern as ContributionSection } from './sections/Con
 import { PortfolioSection } from './sections/PortfolioSection'
 import { DocumentsSection } from './sections/DocumentsSection'
 import { AboutSection } from './sections/AboutSection'
+import { LEGAL_DOCUMENT_VERSION, LegalConsentGate, LegalSection, SiteFooter } from './sections/LegalSection'
 import { DashboardOverview, type Dashboard } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUp } from '@fortawesome/free-solid-svg-icons'
@@ -115,6 +116,7 @@ function App() {
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [privacyHidden, setPrivacyHidden] = useState(true)
+  const [legalAccepted, setLegalAccepted] = useState(() => window.localStorage.getItem(`lodira.legal.${LEGAL_DOCUMENT_VERSION}`) === 'accepted')
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [importProcessing, setImportProcessing] = useState(false)
@@ -341,6 +343,7 @@ function App() {
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}
+        {(route === '/terms' || route === '/privacy' || route === '/legal') && <LegalSection />}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') ? 'pb-0' : 'pb-12'}`}>
@@ -361,7 +364,9 @@ function App() {
         </section>
         {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-358 gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
+        <SiteFooter />
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
+        {!legalAccepted && <LegalConsentGate onAccept={() => { window.localStorage.setItem(`lodira.legal.${LEGAL_DOCUMENT_VERSION}`, 'accepted'); setLegalAccepted(true) }} />}
       </main>
   )
 }

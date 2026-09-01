@@ -84,7 +84,7 @@ public sealed class ContributionGuidanceCalculator
             allocationsByAsset[selected.AssetId] = allocationsByAsset.GetValueOrDefault(selected.AssetId) + allocation;
             classAllocated[selected.AssetClass] = classAllocated.GetValueOrDefault(selected.AssetClass) + allocation;
             remaining = Money(remaining - allocation);
-            reasons.Add(string.Format("{0} recebe capital pela necessidade projetada após o novo aporte; {1} foi selecionado pelo ranking determinístico.", ContributionText.AssetClassLabel(selected.AssetClass), selected.Ticker));
+            reasons.Add(string.Format("{0} recebe capital pela necessidade projetada após o novo aporte. {1} foi priorizado pelo ranking determinístico, que considera necessidade de alocação, diversificação, peso atual e aportes recentes.", ContributionText.AssetClassLabel(selected.AssetClass), selected.Ticker));
         }
 
         foreach (var group in positions.GroupBy(x => x.AssetClass))
@@ -96,7 +96,7 @@ public sealed class ContributionGuidanceCalculator
                 avoided.Add(new(candidate.AssetId, candidate.Ticker, candidate.AssetClass, ContributionAvoidanceReasonType.LowerPriority,
                     candidate.RecentContributionCount > 0
                         ? $"Foi adiado porque recebeu {candidate.RecentContributionCount} aporte(s) recentemente; outros candidatos elegíveis podem melhorar mais a carteira neste momento."
-                        : "Foi preterido por outro candidato elegível da mesma classe.", EvidenceFor(candidate.AssetId, input.Assessments)));
+                        : "Foi preterido por outro candidato elegível da mesma classe com maior benefício marginal calculado para reduzir o desvio da carteira.", EvidenceFor(candidate.AssetId, input.Assessments)));
         }
 
         var allocated = allocationsByAsset.Where(x => x.Value > 0).OrderBy(x => x.Key).Select(x =>
@@ -107,8 +107,8 @@ public sealed class ContributionGuidanceCalculator
                 .Concat(new[] { string.Format("Necessidade calculada pela projeção da PortfolioHealth policy {0}.", input.Health.PolicyVersion) })
                 .Distinct(StringComparer.Ordinal).ToList();
             var reason = impact == CapitalDecisionImpact.Caution
-                ? "Posição existente elegível, com cautela ativa."
-                : "Posição existente priorizada dentro de uma classe com necessidade projetada.";
+                ? "Posição existente elegível, com cautela ativa; a seleção decorre do cálculo de necessidade e diversificação, não de uma promessa de retorno."
+                : "Posição existente priorizada dentro de uma classe com necessidade projetada, considerando peso atual, diversificação e benefício marginal calculado.";
             return new ContributionAllocation(x.Key, position.Ticker, position.AssetClass, Money(x.Value), reason, evidence);
         }).ToList();
 
