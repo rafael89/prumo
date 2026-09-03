@@ -16,7 +16,7 @@ namespace Prumo.Api.Controllers;
 [Route("api/portfolios/{portfolioId:guid}/contribution-guidance")]
 public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioAssessmentCurrentService current) : ControllerBase
 {
-    private const string ContributionEngineVersion = "R4-8.0";
+    private const string ContributionEngineVersion = "R4-9.0";
     private static readonly TimeSpan RecentContributionWindow = TimeSpan.FromDays(90);
 
     [HttpPost]
@@ -85,13 +85,14 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var positionAssetIds = existingPositions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
         var catalogCandidates = await db.Assets.AsNoTracking()
-            .Where(x => x.IsActive && targetClasses.Contains(x.AssetClass) && !positionAssetIds.Contains(x.Id))
+            .Where(x => x.IsActive && (targetClasses.Contains(x.AssetClass) || targetClasses.Contains(AssetClass.International) && x.AssetType == AssetType.Etf) && !positionAssetIds.Contains(x.Id))
             .OrderBy(x => x.Ticker)
             .ToListAsync(ct);
         var positions = existingPositions.Concat(catalogCandidates.Select(asset =>
         {
             var deviation = health.AllocationDeviations.FirstOrDefault(x => x.AssetClass == asset.AssetClass);
-            return new GuidancePosition(asset.Id, asset.Ticker, asset.AssetClass, 0, 0, asset.AssetType, asset.Sector,
+            var assetClass = asset.AssetType == AssetType.Etf ? AssetClass.International : asset.AssetClass;
+            return new GuidancePosition(asset.Id, asset.Ticker, assetClass, 0, 0, asset.AssetType, asset.Sector,
                 HasPosition: false, AllocationNeedScore: ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0),
                 UnderweightScore: 100);
         })).ToList();
@@ -204,6 +205,12 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             reason = ContributionText.NormalizeAssetClassNames(x.Reason),
             evidence = DeserializeEvidence(x.EvidenceJson)
         }).ToArray();
+        var classAllocations = ExtractClassAllocations(item.MetadataJson).Select(x => new
+        {
+            assetClass = (int)x.AssetClass,
+            x.Amount,
+            reason = ContributionText.NormalizeAssetClassNames(x.Reason)
+        }).ToArray();
         var selectedAssetIds = allocations.Select(x => x.AssetId).ToHashSet();
         var jobCandidates = await db.ContributionGuidanceJobs.AsNoTracking()
             .Where(x => x.ContributionGuidanceId == item.Id)
@@ -228,17 +235,18 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 })
                 .ToArray() ?? Array.Empty<object>();
         }
-        var allocated = allocations.Sum(x => x.Amount);
+        var allocated = allocations.Sum(x => x.Amount) + classAllocations.Sum(x => x.Amount);
         return new
         {
             guidanceId = item.Id,
-            status = allocations.Length == 0 ? ContributionGuidanceStatus.NoEligibleCandidates.ToString() : ContributionGuidanceStatus.Calculated.ToString(),
+            status = allocations.Length == 0 && classAllocations.Length == 0 ? ContributionGuidanceStatus.NoEligibleCandidates.ToString() : ContributionGuidanceStatus.Calculated.ToString(),
             contributionAmount = item.RequestedAmount,
             requestedAmount = item.RequestedAmount,
             allocatedAmount = allocated,
             unallocatedAmount = item.RequestedAmount - allocated,
             allocationStyle = allocations.Length == 1 ? "Concentrated" : allocations.Length > 1 ? "Distributed" : "NoAllocation",
             allocations,
+            classAllocations,
             avoidedCandidates,
             reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { ContributionText.NormalizeAssetClassNames(item.Reasoning) },
             evidence = allocations.SelectMany(x => x.evidence).Distinct().ToArray(),
@@ -292,6 +300,17 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     {
         try { return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>(); }
         catch (JsonException) { return Array.Empty<string>(); }
+    }
+
+    private static ContributionClassAllocation[] ExtractClassAllocations(string json)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            if (!TryGet(root, "classAllocations", "ClassAllocations", out var value) || value.ValueKind != JsonValueKind.Array) return Array.Empty<ContributionClassAllocation>();
+            return JsonSerializer.Deserialize<ContributionClassAllocation[]>(value.GetRawText()) ?? Array.Empty<ContributionClassAllocation>();
+        }
+        catch (JsonException) { return Array.Empty<ContributionClassAllocation>(); }
     }
 
     private static string? ExtractPolicyVersion(string json)

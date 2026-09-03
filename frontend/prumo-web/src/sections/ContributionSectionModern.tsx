@@ -8,11 +8,13 @@ import { apiBaseUrl } from '../api/client'
 type Allocation = { assetId: string; ticker: string; assetClass: number; amount: number; reason: string }
 type AvoidedCandidate = { assetId: string; ticker: string; assetClass: number; reason: string }
 type AnalysisTrace = { generatedAt?: string; engineVersion?: string; provider?: string; model?: string; policyVersion?: string; assessmentVersions?: string[]; evidenceCount?: number }
-type Guidance = { guidanceId: string; requestedAmount: number; allocations: Allocation[]; avoidedCandidates?: AvoidedCandidate[]; allocatedAmount: number; unallocatedAmount: number; reasons: string[]; evidence?: string[]; analysis?: AnalysisTrace; intelligenceAvailability?: string; jobStatus?: string }
+type ClassAllocation = { assetClass: number; amount: number; reason: string }
+type Guidance = { guidanceId: string; requestedAmount: number; allocations: Allocation[]; classAllocations?: ClassAllocation[]; avoidedCandidates?: AvoidedCandidate[]; allocatedAmount: number; unallocatedAmount: number; reasons: string[]; evidence?: string[]; analysis?: AnalysisTrace; intelligenceAvailability?: string; jobStatus?: string }
 type Position = { id: string }
 
 const money = (value: number, hidden: boolean) => hidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 const parse = (value: string) => Number(value.replace(/\./g, '').replace(',', '.'))
+const classLabels: Record<number, string> = { 0: 'Ações brasileiras', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros' }
 
 async function api<T>(path: string, body?: unknown) {
   const response = await fetch(apiBaseUrl + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined)
@@ -81,7 +83,11 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
 
         <div>{completed ? <>
           <div className="flex justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Alocação calculada</p><h2 className="mt-1 text-lg font-semibold">Cenário de distribuição</h2><p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">O cálculo considera necessidade da classe, peso atual, diversificação, concentração e aportes recentes. Altere o valor acima para simular outro cenário.</p></div><strong>{money(completed.allocatedAmount, false)}</strong></div>
-          <div className="mt-4 space-y-4">{completed.allocations.map(item => <div key={item.assetId}>
+          <div className="mt-4 space-y-4">{completed.classAllocations?.map(item => <div key={`class-${item.assetClass}`} className="rounded-xl border border-dashed border-amber-300 p-3">
+            <div className="flex justify-between text-sm"><strong>{classLabels[item.assetClass] ?? 'Classe de ativos'}</strong><span>{money(item.amount, false)}</span></div>
+            <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.min(item.amount / completed.requestedAmount * 100, 100)}%` }} /></div>
+            <p className="mt-1 text-xs text-slate-500">{item.reason} Escolha um ativo dessa classe antes de realizar o aporte.</p>
+          </div>)}{completed.allocations.map(item => <div key={item.assetId}>
             <div className="flex justify-between text-sm"><strong>{item.ticker}</strong><span>{money(item.amount, false)}</span></div>
             <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(item.amount / completed.requestedAmount * 100, 100)}%` }} /></div>
             <p className="mt-1 text-xs text-slate-500">{item.reason}</p>

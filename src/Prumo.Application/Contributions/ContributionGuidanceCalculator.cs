@@ -34,8 +34,10 @@ public sealed record AvoidedCandidate(Guid AssetId, string Ticker, AssetClass As
 public sealed record ContributionGuidance(ContributionGuidanceStatus Status, Guid PortfolioId, decimal ContributionAmount, IReadOnlyList<ContributionAllocation> Allocations, IReadOnlyList<AvoidedCandidate> AvoidedCandidates, decimal UnallocatedAmount, ContributionAllocationStyle AllocationStyle, IReadOnlyList<string> Reasons, IReadOnlyList<string> Evidence, string PortfolioHealthPolicyVersion, IReadOnlyList<string> AssessmentVersions, DateTimeOffset GeneratedAt)
 {
     public decimal RequestedAmount => ContributionAmount;
-    public decimal AllocatedAmount => Allocations.Sum(x => x.Amount);
+    public decimal AllocatedAmount => Allocations.Sum(x => x.Amount) + ClassAllocations.Sum(x => x.Amount);
+    public IReadOnlyList<ContributionClassAllocation> ClassAllocations { get; init; } = Array.Empty<ContributionClassAllocation>();
 }
+public sealed record ContributionClassAllocation(AssetClass AssetClass, decimal Amount, string Reason);
 
 public sealed class ContributionGuidanceCalculator
 {
@@ -55,6 +57,7 @@ public sealed class ContributionGuidanceCalculator
         var avoided = new List<AvoidedCandidate>();
         var reasons = new List<string>();
         var allocationsByAsset = new Dictionary<Guid, decimal>();
+        var classAllocations = new Dictionary<AssetClass, decimal>();
         var classAllocated = new Dictionary<AssetClass, decimal>();
         var total = positions.Sum(x => x.CurrentValue);
         var projectedTotal = total + amount;
@@ -76,11 +79,20 @@ public sealed class ContributionGuidanceCalculator
                 .ThenBy(x => x.AssetClass.ToString(), StringComparer.Ordinal)
                 .ToList();
 
-            var selectedNeed = needs.FirstOrDefault(x => candidatesByClass.TryGetValue(x.AssetClass, out var candidates) && candidates.Count > 0);
+            var selectedNeed = needs.FirstOrDefault(x => candidatesByClass.TryGetValue(x.AssetClass, out var candidates) && candidates.Count > 0 || positions.All(p => p.AssetClass != x.AssetClass));
             if (selectedNeed is null) break;
 
-            var selected = candidatesByClass[selectedNeed.AssetClass][0];
             var allocation = Math.Min(remaining, selectedNeed.Need);
+            if (!candidatesByClass.TryGetValue(selectedNeed.AssetClass, out var candidates) || candidates.Count == 0)
+            {
+                if (positions.Any(x => x.AssetClass == selectedNeed.AssetClass)) break;
+                classAllocations[selectedNeed.AssetClass] = classAllocations.GetValueOrDefault(selectedNeed.AssetClass) + allocation;
+                remaining = Money(remaining - allocation);
+                reasons.Add($"{ContributionText.AssetClassLabel(selectedNeed.AssetClass)} recebe uma reserva de {allocation:0.00} porque ainda não há um ativo cadastrado nessa classe para indicar.");
+                continue;
+            }
+
+            var selected = candidates[0];
             allocationsByAsset[selected.AssetId] = allocationsByAsset.GetValueOrDefault(selected.AssetId) + allocation;
             classAllocated[selected.AssetClass] = classAllocated.GetValueOrDefault(selected.AssetClass) + allocation;
             remaining = Money(remaining - allocation);
@@ -114,13 +126,17 @@ public sealed class ContributionGuidanceCalculator
 
         var unallocated = Money(remaining);
         if (unallocated > 0) reasons.Add(string.Format("{0:0.00} permanece sem alocação porque não há candidatos elegíveis para as necessidades projetadas.", unallocated));
-        var style = allocated.Count switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed };
+        var allocationCount = allocated.Count + classAllocations.Count;
+        var style = allocationCount switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed };
         return new(
-            allocated.Count == 0 ? ContributionGuidanceStatus.NoEligibleCandidates : ContributionGuidanceStatus.Calculated,
+            allocationCount == 0 ? ContributionGuidanceStatus.NoEligibleCandidates : ContributionGuidanceStatus.Calculated,
             input.PortfolioId, amount, allocated, avoided.GroupBy(x => x.AssetId).Select(g => g.First()).ToList(), unallocated, style,
             reasons.Distinct().ToList(),
             input.Assessments.SelectMany(a => a.Evidence is null ? Array.Empty<string>() : new[] { a.Evidence }).Distinct().ToList(),
-            input.Health.PolicyVersion, input.Assessments.Select(a => a.AssessmentVersion).Distinct().ToList(), DateTimeOffset.UtcNow);
+            input.Health.PolicyVersion, input.Assessments.Select(a => a.AssessmentVersion).Distinct().ToList(), DateTimeOffset.UtcNow)
+        {
+            ClassAllocations = classAllocations.Select(x => new ContributionClassAllocation(x.Key, Money(x.Value), "Reserva de classe sem ativo cadastrado para indicação.")).ToArray()
+        };
     }
 
     private static List<GuidancePosition> RankedCandidates(IEnumerable<GuidancePosition> positions, IReadOnlyDictionary<Guid, CapitalDecisionImpact> impacts) => positions

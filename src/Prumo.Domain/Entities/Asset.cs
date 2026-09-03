@@ -51,6 +51,7 @@ public sealed class Asset
     {
         AssetType.Stock => AssetClass.BrazilianStock,
         AssetType.Fii => AssetClass.Fii,
+        AssetType.Etf => AssetClass.International,
         _ => AssetClass.Other
     };
 

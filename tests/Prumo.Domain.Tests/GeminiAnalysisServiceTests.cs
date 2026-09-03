@@ -109,6 +109,23 @@ public sealed class GeminiAnalysisServiceTests
         Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", requests[1].ToString());
     }
 
+    [Fact]
+    public async Task UsaModeloFallbackQuandoGeminiEstaIndisponivel()
+    {
+        var requests = 0;
+        var service = new GeminiAnalysisService(
+            new HttpClient(new StubHandler(_ => ++requests == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                : JsonResponse(ValidResponse()))),
+            Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "primary", FallbackModel = "fallback" }),
+            new AiAnalysisValidator(),
+            NullLogger<GeminiAnalysisService>.Instance);
+
+        var result = await service.AnalyzeAsync("texto", Context);
+
+        Assert.Equal("fallback", result.Model);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, typeof(InvalidOperationException))]
     [InlineData(HttpStatusCode.Forbidden, typeof(InvalidOperationException))]

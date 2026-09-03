@@ -42,10 +42,18 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
             logger.LogWarning("Quota do modelo Gemini excedida; tentando fallback model={FallbackModel}; primaryModel={PrimaryModel}", options.FallbackModel, options.Model);
             return await AnalyzeWithModelAsync(options.FallbackModel, documentText, context, cancellationToken);
         }
+        catch (HttpRequestException exception) when (HasFallbackModel() && IsTemporaryProviderFailure(exception))
+        {
+            logger.LogWarning(exception, "Modelo Gemini indisponível; tentando fallback model={FallbackModel}; primaryModel={PrimaryModel}", options.FallbackModel, options.Model);
+            return await AnalyzeWithModelAsync(options.FallbackModel, documentText, context, cancellationToken);
+        }
     }
 
     private bool HasFallbackModel() => !string.IsNullOrWhiteSpace(options.FallbackModel)
         && !string.Equals(options.Model, options.FallbackModel, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTemporaryProviderFailure(HttpRequestException exception)
+        => exception.StatusCode is HttpStatusCode.RequestTimeout or >= HttpStatusCode.InternalServerError;
 
     private async Task<AiAnalysisResult> AnalyzeWithModelAsync(string model, string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken)
     {

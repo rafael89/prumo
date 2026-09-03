@@ -8,7 +8,7 @@ public sealed class AssetClassTests
     [Theory]
     [InlineData(AssetType.Stock, AssetClass.BrazilianStock)]
     [InlineData(AssetType.Fii, AssetClass.Fii)]
-    [InlineData(AssetType.Etf, AssetClass.Other)]
+    [InlineData(AssetType.Etf, AssetClass.International)]
     [InlineData(AssetType.Other, AssetClass.Other)]
     public void New_asset_gets_explicit_safe_class_from_asset_type(AssetType type, AssetClass expected)
     {

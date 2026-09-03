@@ -70,7 +70,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                     provider = result.Metadata.Provider,
                                     model = result.Metadata.Model,
                                     generatedAt = result.Metadata.GeneratedAt,
-                                    assessmentVersions = workItem.Baseline.AssessmentVersions
+                                    assessmentVersions = workItem.Baseline.AssessmentVersions,
+                                    classAllocations = applied.ClassAllocations
                                 }));
                                 var evaluations = result.CandidateEvaluations.ToDictionary(x => x.AssetId);
                                 guidance.ReplaceAllocations(applied.Allocations.Select(a => new PersistedContributionGuidanceAllocation(
@@ -132,7 +133,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R4-8.0", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow }));
+            JsonSerializer.Serialize(new { engineVersion = "R4-9.0", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }
