@@ -83,8 +83,11 @@ public sealed class DocumentAnalysisProcessor
         document.MarkProcessing();
         logger.LogInformation("Iniciando extracao do documento {DocumentId} para o job {JobId}.", document.Id, job.Id);
 
-        await using var pdfStream = await fileStorage.OpenReadAsync(document.FilePath, cancellationToken);
-        var extraction = await pdfTextExtractor.ExtractAsync(pdfStream, cancellationToken);
+        PdfTextExtractionResult extraction;
+        await using (var pdfStream = await fileStorage.OpenReadAsync(document.FilePath, cancellationToken))
+        {
+            extraction = await pdfTextExtractor.ExtractAsync(pdfStream, cancellationToken);
+        }
         if (!extraction.Succeeded)
         {
             logger.LogWarning("Falha na extracao do documento {DocumentId}: {Error}", document.Id, extraction.Error);

@@ -9,13 +9,14 @@ import { DocumentsSection } from './sections/DocumentsSection'
 import { AboutSection } from './sections/AboutSection'
 import { DashboardOverview, type Dashboard } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUp } from '@fortawesome/free-solid-svg-icons'
+import { faArrowUp, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
 import { apiBaseUrl } from './api/client'
 
 const apiUrl = apiBaseUrl
 
 type AssetType = 0 | 1 | 2 | 3
 type Feedback = { tone: 'success' | 'error'; message: string } | null
+type ThemePreference = 'system' | 'light' | 'dark'
 
 type PortfolioSummary = { id: string; name: string; totalValue: number; positionCount: number }
 type ProcessingStatus = { status: 'Pending' | 'Processing' | 'Completed' | 'Failed'; activeCount: number; failedCount: number; message: string }
@@ -119,7 +120,25 @@ function App() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [importProcessing, setImportProcessing] = useState(false)
   const [failedNoticeOverride, setFailedNoticeOverride] = useState<{ portfolioId: string; dismissed: boolean } | null>(null)
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
+    const saved = localStorage.getItem('prumo.theme.preference')
+    return saved === 'light' || saved === 'dark' ? saved : 'system'
+  })
+  const [systemDarkMode, setSystemDarkMode] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const darkMode = themePreference === 'dark' || (themePreference === 'system' && systemDarkMode)
   const [positionPage, setPositionPage] = useState(1)
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const onSystemThemeChange = (event: MediaQueryListEvent) => setSystemDarkMode(event.matches)
+    mediaQuery.addEventListener('change', onSystemThemeChange)
+    return () => mediaQuery.removeEventListener('change', onSystemThemeChange)
+  }, [])
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
+    document.documentElement.style.colorScheme = darkMode ? 'dark' : 'light'
+    if (themePreference === 'system') localStorage.removeItem('prumo.theme.preference')
+    else localStorage.setItem('prumo.theme.preference', themePreference)
+  }, [darkMode, themePreference])
   useEffect(() => {
     if (feedback?.tone !== 'success') return
     const timeout = window.setTimeout(() => setFeedback(null), 4000)
@@ -337,6 +356,7 @@ function App() {
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">prumo<span className="text-amber-600">.</span></Link>
             <div className="order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Visão geral</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aportes</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents')}>Documentos</Link><Link to="/about" aria-current={route === '/about' ? 'page' : undefined} className={navigationLinkClass(route === '/about', true)}>Sobre</Link></div>
             <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.failedCount > 0 && !failedNoticeDismissed && <div role="status" className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"><span>{processingStatus.data.failedCount} documento(s) com erro</span><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="underline">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar'}</button><button type="button" aria-label="Marcar aviso como visto" onClick={() => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: true }); localStorage.setItem(`prumo.failed-notice.${activePortfolio.id}`, '1') } }} className="text-base leading-none">×</button></div>}{processingStatus.data && processingStatus.data.status !== 'Completed' && processingStatus.data.status !== 'Failed' && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{processingStatus.data.status === 'Processing' ? 'Analisando seus documentos...' : 'Seus documentos serão analisados em instantes.'}</span>}</div>
+            <button type="button" aria-label={themePreference === 'system' ? 'Personalizar tema' : 'Seguir tema do sistema'} title={themePreference === 'system' ? `Tema do sistema: ${darkMode ? 'dark' : 'claro'}` : 'Seguir tema do sistema'} onClick={() => setThemePreference(current => current === 'system' ? (darkMode ? 'light' : 'dark') : 'system')} className="theme-toggle order-4 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700"><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /></button>
           </div>
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}

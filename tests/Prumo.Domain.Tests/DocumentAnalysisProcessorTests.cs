@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using Prumo.Application.Abstractions;
 using Prumo.Application.Documents;
+using Prumo.Application.Intelligence;
+using Prumo.Application.Portfolio;
+using Prumo.Application.PortfolioImports;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
@@ -34,6 +38,19 @@ public sealed class DocumentAnalysisProcessorTests
         Assert.Equal(30.17m, position.AveragePrice);
         Assert.Equal(6335.70m, position.CurrentValue!.Value);
         Assert.True(position.PortfolioWeight > 0);
+    }
+
+    [Fact]
+    public async Task PDF_e_fechado_antes_de_ser_liberado()
+    {
+        await using var dbContext = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(dbContext);
+        var storage = new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText()));
+        var processor = CreateProcessor(dbContext, storage, new FakePdfTextExtractor(), new FakeAiAnalysisService(), deletePdfAfterAnalysis: true);
+
+        await processor.ProcessAsync(seeded.Job, CancellationToken.None);
+
+        Assert.True(storage.DeleteWasCalledAfterStreamClosed);
     }
 
     [Fact]
@@ -169,7 +186,7 @@ public sealed class DocumentAnalysisProcessorTests
     private static PortfolioAssessment CreateAssessment(Guid portfolioId, Guid eventId, string snapshotKey, string targetKey, string version)
         => new(portfolioId, eventId, AttentionPriority.Medium, ActionRequirement.Monitor, CapitalDecisionImpact.Caution, AssessmentStatus.Detected, AssessmentUserState.Unread, "Resumo", "Motivo", "Monitorar", IntelligenceConfidence.Medium, targetKey, version, snapshotKey, 1);
 
-    private static DocumentAnalysisProcessor CreateProcessor(PrumoDbContext dbContext, IFileStorage fileStorage, IPdfTextExtractor extractor, IAiAnalysisService aiAnalysisService)
+    private static DocumentAnalysisProcessor CreateProcessor(PrumoDbContext dbContext, IFileStorage fileStorage, IPdfTextExtractor extractor, IAiAnalysisService aiAnalysisService, bool deletePdfAfterAnalysis = false)
     {
         return new DocumentAnalysisProcessor(
             dbContext,
@@ -177,7 +194,9 @@ public sealed class DocumentAnalysisProcessorTests
             extractor,
             new TextQualityValidator(new TextQualityOptions { MinimumCharacters = 20, MinimumPrintableRatio = 0.7m }),
             aiAnalysisService,
-            NullLogger<DocumentAnalysisProcessor>.Instance);
+            new PortfolioImpactAssessmentService(),
+            NullLogger<DocumentAnalysisProcessor>.Instance,
+            Options.Create(new DocumentRetentionOptions { DeletePdfAfterAnalysis = deletePdfAfterAnalysis }));
     }
 
     private sealed class CapturingAiAnalysisService : IAiAnalysisService
@@ -231,6 +250,7 @@ public sealed class DocumentAnalysisProcessorTests
     private sealed class FakeFileStorage : IFileStorage
     {
         private readonly MemoryStream stream;
+        public bool DeleteWasCalledAfterStreamClosed { get; private set; }
 
         public FakeFileStorage(MemoryStream stream)
         {
@@ -247,6 +267,12 @@ public sealed class DocumentAnalysisProcessorTests
         public Task<StoredFile> SaveAsync(Guid documentId, Stream content, string extension, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
+        }
+
+        public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
+        {
+            DeleteWasCalledAfterStreamClosed = !stream.CanRead;
+            return Task.CompletedTask;
         }
     }
 
