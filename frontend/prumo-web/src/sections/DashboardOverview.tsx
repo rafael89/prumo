@@ -99,14 +99,13 @@ type DashboardOverviewProps = {
   portfoliosLoading?: boolean
 }
 
-const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'Ativos internacionais', 4: 'Outros ativos' }
+const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros ativos' }
 const priorityLabels = ['Baixa', 'Média', 'Alta', 'Crítica']
-const actionLabels = ['Sem ação', 'Acompanhar', 'Revisar', 'Agir']
+const suggestedActionLabels: Record<string, string> = { Maintain: 'Manter', IncreasePosition: 'Aumentar posição', ReduceExposure: 'Reduzir exposição', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem ação', OpenPosition: 'Abrir posição' }
 const capitalImpactLabels = ['Favorável a aumentar exposição', 'Sem impacto relevante', 'Cautela ao aumentar exposição', 'Evitar aumentar exposição agora']
 const importanceLabels: Record<string, string> = { Critical: 'Crítico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem ação' }
 const classificationLabels: Record<string, string> = { CorporateAction: 'Ação corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribuição', CapitalRaise: 'Captação', AssetTransaction: 'Transação de ativos', Governance: 'Governança', Operational: 'Operacional', Liquidation: 'Liquidação', Other: 'Outro' }
 
-void actionLabels
 void capitalImpactLabels
 
 function formatPercentage(value: number) {
@@ -259,7 +258,7 @@ export function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, on
       if (response.status === 404) return null
       if (!response.ok) throw new Error('Não foi possível carregar a análise deste documento.')
       const data = await response.json() as RecentDocumentAnalysis
-      return { ...data, importance: importanceLabels[data.importance] ?? data.importance, classification: classificationLabels[data.classification] ?? data.classification }
+      return { ...data, importance: importanceLabels[data.importance] ?? data.importance, classification: classificationLabels[data.classification] ?? data.classification, suggestedAction: suggestedActionLabels[data.suggestedAction] ?? data.suggestedAction }
     },
     enabled: Boolean(item.documentId),
   })
@@ -325,8 +324,8 @@ export function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, on
       {analysis.data && <div className="mt-5 space-y-5 text-sm text-slate-700"><div className="grid gap-4 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Importância</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Classificação</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.classification}</p></div></div><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Resumo</p><p className="mt-2 leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto</p><p className="mt-2 leading-7">{analysis.data.impact}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto na minha carteira</p><p className="mt-2 leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p></article><div className="grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ação sugerida</p><p className="mt-1 font-semibold text-slate-950">{analysis.data.suggestedAction}{analysis.data.requiresAction ? ' · Requer atenção' : ''}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Confiança</p><p className="mt-1 font-semibold text-slate-950">{Math.round(analysis.data.confidence * 100)}%</p></div></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ativos afetados</p><div className="mt-2 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map(asset => <span key={asset} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span>Nenhum ativo listado.</span>}</div></div></div>}
       </div>
       <div data-radar-actions="true" className="mt-6 flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-white pt-4">
-        {onMarkSeen && <button type="button" onClick={onMarkSeen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"><FontAwesomeIcon icon={faEye} />Marcar como visto</button>}
-        {onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-amber-500 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
+        {onMarkSeen && <button type="button" onClick={onMarkSeen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"><FontAwesomeIcon icon={faEye} />Marcar como visto</button>}
+        {onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
       </div>
     </div>
   </div>

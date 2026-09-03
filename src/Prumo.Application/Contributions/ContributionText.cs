@@ -11,7 +11,7 @@ public static class ContributionText
         AssetClass.BrazilianStock => "A\u00e7\u00f5es",
         AssetClass.Fii => "FIIs",
         AssetClass.FixedIncome => "Renda fixa",
-        AssetClass.International => "Ativos internacionais",
+        AssetClass.International => "ETF",
         _ => "Outros ativos",
     };
 

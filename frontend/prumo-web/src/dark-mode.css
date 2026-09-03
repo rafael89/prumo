@@ -29,6 +29,7 @@
 [data-theme='dark'] .bg-amber-100 { background-color: #713f12; }
 [data-theme='dark'] .text-amber-900,
 [data-theme='dark'] .text-amber-800 { color: #fde68a; }
+[data-theme='dark'] .text-amber-950 { color: #fef3c7; }
 [data-theme='dark'] .text-amber-700 { color: #fbbf24; }
 [data-theme='dark'] .bg-rose-50 { background-color: #450a0a; }
 [data-theme='dark'] .bg-rose-100 { background-color: #881337; }
@@ -49,4 +50,8 @@
 [data-theme='dark'] .text-orange-950,
 [data-theme='dark'] .text-orange-700 { color: #fdba74; }
 [data-theme='dark'] .hover\:bg-slate-100:hover { background-color: #334155; }
+[data-theme='dark'] .hover\:bg-stone-50:hover { background-color: #263449; }
 [data-theme='dark'] .theme-toggle { color: #fff; }
+[data-theme='dark'] .radar-medium { background-color: #302a20; border-color: #8a7440; color: #eadfbd; }
+[data-theme='dark'] .radar-high { background-color: #30261f; border-color: #8a6846; color: #ead7c3; }
+[data-theme='dark'] .radar-critical { background-color: #301f24; border-color: #8a4f5b; color: #f0c9d0; }

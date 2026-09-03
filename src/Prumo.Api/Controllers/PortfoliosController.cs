@@ -151,7 +151,7 @@ public sealed class PortfoliosController : ControllerBase
         PortfolioHealthStatus.Aligned => "Carteira alinhada à estratégia.", PortfolioHealthStatus.SlightlyUnbalanced => "Carteira levemente fora da estratégia.", PortfolioHealthStatus.Unbalanced => "Carteira fora da estratégia.", PortfolioHealthStatus.StronglyUnbalanced => "Carteira significativamente fora da estratégia.", PortfolioHealthStatus.NotConfigured => "Estratégia ainda não configurada.", PortfolioHealthStatus.EmptyPortfolio => "Carteira ainda sem posições.", _ => "Estado da carteira indisponível."
     };
     private static string DeviationLabel(MainDeviation deviation) => $"{AssetClassLabel(deviation.AssetClass)} estão {Math.Abs(deviation.DeviationPercentagePoints):0.##} p.p. {(deviation.Direction == AllocationDeviationDirection.Underweight ? "abaixo" : "acima")} da alocação definida.";
-    private static string AssetClassLabel(AssetClass assetClass) => assetClass switch { AssetClass.Fii => "FIIs", AssetClass.BrazilianStock => "Ações", AssetClass.FixedIncome => "Renda fixa", AssetClass.International => "Ativos internacionais", _ => "Outros ativos" };
+    private static string AssetClassLabel(AssetClass assetClass) => assetClass switch { AssetClass.Fii => "FIIs", AssetClass.BrazilianStock => "Ações", AssetClass.FixedIncome => "Renda fixa", AssetClass.International => "ETF", _ => "Outros ativos" };
 
     [HttpGet("{portfolioId:guid}/health")]
     public async Task<ActionResult<PortfolioHealthResult>> GetHealth(Guid portfolioId, CancellationToken cancellationToken)

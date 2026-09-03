@@ -115,7 +115,7 @@ function App() {
   const [documentSelection, setDocumentSelection] = useState<{ key: string; id: string | null }>({ key: '', id: null })
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
-  const [privacyHidden, setPrivacyHidden] = useState(true)
+  const [privacyHidden, setPrivacyHidden] = useState(false)
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [importProcessing, setImportProcessing] = useState(false)
