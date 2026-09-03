@@ -20,11 +20,11 @@ public sealed class NewAssetBootstrapService
 
     public async Task DiscoverLatestOnlyAsync(IEnumerable<Guid> assetIds, CancellationToken ct)
     {
-        var assets = await db.Assets.Where(a => assetIds.Contains(a.Id) && a.AssetClass == AssetClass.Fii).ToListAsync(ct);
+        var assets = await db.Assets.Where(a => assetIds.Contains(a.Id) && (a.AssetClass == AssetClass.Fii || a.AssetClass == AssetClass.BrazilianStock)).ToListAsync(ct);
         if (assets.Count == 0) return;
-        logger.LogInformation("CVM bootstrap iniciado para {AssetCount} novo(s) FII", assets.Count);
-        var candidates = await source.FindAsync(assets.Select(a => new DocumentSourceAsset(a.Ticker, a.Cnpj)).ToArray(), ct);
-        logger.LogInformation("CVM bootstrap descobriu {DocumentCount} candidato(s) para novos FIIs", candidates.Count);
+        logger.LogInformation("CVM bootstrap iniciado para {AssetCount} novo(s) ativo(s)", assets.Count);
+        var candidates = await source.FindAsync(assets.Select(a => new DocumentSourceAsset(a.Ticker, a.Cnpj, a.AssetClass)).ToArray(), ct);
+        logger.LogInformation("CVM bootstrap descobriu {DocumentCount} candidato(s) para novos ativos", candidates.Count);
         foreach (var candidate in LatestDocumentSelector.SelectBootstrap(candidates, DateTimeOffset.UtcNow, options.MaterialFactLookbackMonths))
         {
             var asset = assets.Single(a => a.Ticker.Equals(candidate.Ticker, StringComparison.OrdinalIgnoreCase));
@@ -47,7 +47,7 @@ public sealed class NewAssetBootstrapService
     public async Task<BootstrapRepairResult> EnsurePortfolioDocumentBootstrapAsync(Guid portfolioId, CancellationToken ct)
     {
         var assets = await db.PortfolioPositions.Where(p => p.PortfolioId == portfolioId)
-            .Select(p => p.Asset!).Where(a => a.AssetClass == AssetClass.Fii).Distinct().ToListAsync(ct);
+            .Select(p => p.Asset!).Where(a => (a.AssetClass == AssetClass.Fii || a.AssetClass == AssetClass.BrazilianStock)).Distinct().ToListAsync(ct);
         var candidates = new List<Guid>();
         var skipped = 0;
         foreach (var asset in assets)
@@ -63,4 +63,4 @@ public sealed class NewAssetBootstrapService
     }
 }
 
-public sealed record BootstrapRepairResult(int FiiCount, int BootstrapCandidateCount, int BootstrapSkippedExistingCoverageCount);
+public sealed record BootstrapRepairResult(int AssetCount, int BootstrapCandidateCount, int BootstrapSkippedExistingCoverageCount);

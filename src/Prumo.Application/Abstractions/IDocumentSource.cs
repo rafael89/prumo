@@ -10,7 +10,7 @@ public interface IDocumentSource
         => FindAsync(assets.Select(asset => asset.Ticker).ToArray(), cancellationToken);
 }
 
-public sealed record DocumentSourceAsset(string Ticker, string? Cnpj);
+public sealed record DocumentSourceAsset(string Ticker, string? Cnpj, AssetClass? AssetClass = null);
 
 public sealed record DocumentCandidate(
     string Ticker,

@@ -72,7 +72,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         IReadOnlyList<DocumentCandidate> candidates;
         try
         {
-            candidates = await source.FindAsync(assets.Select(asset => new DocumentSourceAsset(asset.Ticker, asset.Cnpj)).ToArray(), cancellationToken);
+            candidates = await source.FindAsync(assets.Select(asset => new DocumentSourceAsset(asset.Ticker, asset.Cnpj, asset.AssetClass)).ToArray(), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

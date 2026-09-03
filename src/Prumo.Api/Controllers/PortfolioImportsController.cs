@@ -89,15 +89,15 @@ public sealed class PortfolioImportsController : ControllerBase
         session.MarkConfirmed(); session.SetPortfolioSnapshotKey(PortfolioSnapshotKeyCalculator.Calculate(portfolio)); session.MarkCompleted(); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
         logger.LogInformation("Import confirmed: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, CreatedAssetCount={CreatedAssetCount}, AddedToPortfolioAssetCount={AddedToPortfolioAssetCount}, UpdatedPositionCount={UpdatedPositionCount}", session.Id, portfolioId, createdAssets, addedToPortfolio, updated);
         try { await bootstrap.DiscoverLatestOnlyAsync(addedAssetIds, ct); } catch (Exception exception) { logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId); }
-        var importedFiiAssetIds = portfolio.Positions
-            .Where(position => position.Asset?.AssetClass == AssetClass.Fii)
+        var importedDocumentAssetIds = portfolio.Positions
+            .Where(position => position.Asset?.AssetClass is AssetClass.Fii or AssetClass.BrazilianStock)
             .Select(position => position.AssetId)
             .Distinct()
             .ToList();
         try
         {
-            await bootstrap.DiscoverLatestOnlyAsync(importedFiiAssetIds, ct);
-            logger.LogInformation("Discovery pós-importação concluído: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, FiiCount={FiiCount}", session.Id, portfolioId, importedFiiAssetIds.Count);
+            await bootstrap.DiscoverLatestOnlyAsync(importedDocumentAssetIds, ct);
+            logger.LogInformation("Discovery pós-importação concluído: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, AssetCount={AssetCount}", session.Id, portfolioId, importedDocumentAssetIds.Count);
         }
         catch (Exception exception)
         {

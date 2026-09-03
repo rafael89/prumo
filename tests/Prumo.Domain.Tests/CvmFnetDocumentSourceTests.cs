@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -124,5 +125,43 @@ public sealed class CvmFnetDocumentSourceTests
                 Content = new ByteArrayContent(content)
             });
         }
+    }    [Fact]
+    public async Task MapeiaDocumentosIpeDeCompanhiaParaAcao()
+    {
+        const string csv = "CNPJ_Companhia;Nome_Companhia;Codigo_CVM;Data_Referencia;Categoria;Tipo;Especie;Assunto;Data_Entrega;Tipo_Apresentacao;Protocolo_Entrega;Versao;Link_Download\n" +
+            "02.916.265/0001-60;Companhia;20575;2026-04-30;Fato Relevante;;;Assunto;2026-05-04;AP;020575IPE000001;1;https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&numProtocolo=1\n";
+        using var client = new HttpClient(new ZipHandler(csv));
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            CompanhiasIpeUrlTemplate = "https://dados.cvm.gov.br/ipe_{0}.zip"
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidate = Assert.Single(await source.FindAsync(new[]
+            { new DocumentSourceAsset("BBSE3", "02.916.265/0001-60", AssetClass.BrazilianStock) }));
+
+        Assert.Equal("BBSE3", candidate.Ticker);
+        Assert.Equal(DocumentType.RelevantFact, candidate.DocumentType);
+        Assert.Equal("020575IPE000001", candidate.SourceIdentifier);
+        Assert.Equal(candidate.SourceUrl, candidate.DownloadUrl);
+    }
+
+    private sealed class ZipHandler : HttpMessageHandler
+    {
+        private readonly byte[] content;
+
+        public ZipHandler(string csv)
+        {
+            using var stream = new MemoryStream();
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
+            {
+                var entry = archive.CreateEntry("ipe_cia_aberta_2026.csv");
+                using var writer = new StreamWriter(entry.Open(), Encoding.Latin1);
+                writer.Write(csv);
+            }
+            content = stream.ToArray();
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) });
     }
 }

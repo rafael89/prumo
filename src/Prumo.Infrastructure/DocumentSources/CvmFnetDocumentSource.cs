@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -37,72 +38,85 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         }
 
         var year = DateTimeOffset.UtcNow.Year;
-        var uri = string.Format(CultureInfo.InvariantCulture, options.DocumentosEventuaisUrlTemplate, year);
-            logger.LogInformation("Consultando recurso CVM {ResourceUrl} para {TickerCount} ticker(s)", uri, assets.Count);
+        var candidates = new List<DocumentCandidate>();
 
-        try
+        foreach (var group in assets.GroupBy(asset => asset.AssetClass == AssetClass.BrazilianStock))
         {
-            using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            logger.LogInformation("Recurso CVM {ResourceUrl} respondeu com HTTP {StatusCode}", uri, (int)response.StatusCode);
-            response.EnsureSuccessStatusCode();
+            var isStock = group.Key;
+            var groupAssets = group.ToArray();
+            var template = isStock ? options.CompanhiasIpeUrlTemplate : options.DocumentosEventuaisUrlTemplate;
+            var uri = string.Format(CultureInfo.InvariantCulture, template, year);
+            logger.LogInformation("Consultando recurso CVM {ResourceUrl} para {TickerCount} ativo(s)", uri, groupAssets.Length);
 
-            var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            var records = ParseCsv(Encoding.Latin1.GetString(content));
-            logger.LogInformation("Recurso CVM {ResourceUrl} retornou {RecordCount} registro(s)", uri, records.Count);
-
-            var candidates = new List<DocumentCandidate>();
-            foreach (var asset in assets)
+            try
             {
-                var ticker = asset.Ticker;
-                var cnpj = asset.Cnpj;
-                if (string.IsNullOrWhiteSpace(cnpj)) options.CnpjPorTicker.TryGetValue(ticker, out cnpj);
-                if (string.IsNullOrWhiteSpace(cnpj))
-                {
-                    logger.LogWarning("Ticker {Ticker} descartado: não há CNPJ CVM configurado", ticker);
-                    continue;
-                }
+                using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                var records = isStock
+                    ? await ParseZipCsvAsync(content, cancellationToken)
+                    : ParseCsv(Encoding.Latin1.GetString(content));
+                logger.LogInformation("Recurso CVM {ResourceUrl} retornou {RecordCount} registro(s)", uri, records.Count);
 
-                var normalizedCnpj = NormalizeCnpj(cnpj);
-                logger.LogInformation("Ticker {Ticker} resolvido para identificador CVM/CNPJ {Cnpj}", ticker, normalizedCnpj);
-                var tickerRecords = records.Where(record => NormalizeCnpj(record.Cnpj) == normalizedCnpj).ToList();
-                logger.LogInformation("Recurso CVM mapeou {RecordCount} registro(s) para o ticker {Ticker}", tickerRecords.Count, ticker);
-
-                foreach (var record in tickerRecords)
+                foreach (var asset in groupAssets)
                 {
-                    var documentUrl = record.LinkArquivo?.Trim();
-                    if (string.IsNullOrWhiteSpace(documentUrl) || !TryParseDate(record.DataRecebimento ?? record.DataCompetencia, out var publishedAt))
+                    var cnpj = asset.Cnpj;
+                    if (string.IsNullOrWhiteSpace(cnpj)) options.CnpjPorTicker.TryGetValue(asset.Ticker, out cnpj);
+                    if (string.IsNullOrWhiteSpace(cnpj))
                     {
-                        logger.LogWarning("Registro CVM descartado para {Ticker}: URL ou data inválida, identificador={DocumentId}", ticker, record.IdDocumento);
+                        logger.LogWarning("Ticker {Ticker} descartado: não há CNPJ CVM configurado", asset.Ticker);
                         continue;
                     }
 
-                    candidates.Add(new DocumentCandidate(
-                        ticker,
-                        CvmDocumentTypeMapper.Map(record.Categoria, record.TipoDocumento, record.Especie),
-                        publishedAt,
-                        string.IsNullOrWhiteSpace(record.IdDocumento) ? record.NomeArquivo : record.IdDocumento,
-                        ToOfficialViewerUrl(documentUrl),
-                        documentUrl,
-                        record.Categoria,
-                        record.TipoDocumento,
-                        record.Especie));
+                    var normalizedCnpj = NormalizeCnpj(cnpj);
+                    var tickerRecords = records.Where(record => NormalizeCnpj(record.Cnpj) == normalizedCnpj).ToList();
+                    logger.LogInformation("Recurso CVM mapeou {RecordCount} registro(s) para o ticker {Ticker}", tickerRecords.Count, asset.Ticker);
+
+                    foreach (var record in tickerRecords)
+                    {
+                        var documentUrl = record.LinkArquivo?.Trim();
+                        if (string.IsNullOrWhiteSpace(documentUrl) || !TryParseDate(record.DataRecebimento ?? record.DataCompetencia, out var publishedAt))
+                        {
+                            logger.LogWarning("Registro CVM descartado para {Ticker}: URL ou data inválida, identificador={DocumentId}", asset.Ticker, record.IdDocumento);
+                            continue;
+                        }
+
+                        candidates.Add(new DocumentCandidate(
+                            asset.Ticker,
+                            CvmDocumentTypeMapper.Map(record.Categoria, record.TipoDocumento, record.Especie),
+                            publishedAt,
+                            string.IsNullOrWhiteSpace(record.IdDocumento) ? record.NomeArquivo : record.IdDocumento,
+                            ToOfficialViewerUrl(documentUrl),
+                            documentUrl,
+                            record.Categoria,
+                            record.TipoDocumento,
+                            record.Especie));
+                    }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Erro ao consultar a fonte {SourceName} em {RequestUrl}", Name, uri);
+                throw;
+            }
+        }
 
-            logger.LogInformation("Fonte {SourceName} criou {CandidateCount} candidato(s)", Name, candidates.Count);
-            return candidates;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "Erro ao consultar ou desserializar a fonte {SourceName} em {RequestUrl}", Name, uri);
-            throw;
-        }
+        logger.LogInformation("Fonte {SourceName} criou {CandidateCount} candidato(s)", Name, candidates.Count);
+        return candidates;
     }
 
+    private static async Task<List<CvmDocumentRecord>> ParseZipCsvAsync(byte[] content, CancellationToken cancellationToken)
+    {
+        using var archive = new ZipArchive(new MemoryStream(content), ZipArchiveMode.Read);
+        var entry = archive.Entries.FirstOrDefault(item => item.FullName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidDataException("O pacote IPE da CVM não contém um CSV.");
+        using var reader = new StreamReader(entry.Open(), Encoding.Latin1);
+        return ParseCsv(await reader.ReadToEndAsync(cancellationToken));
+    }
     private static List<CvmDocumentRecord> ParseCsv(string content)
     {
         var lines = content.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
@@ -117,15 +131,15 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             .Select(line => ParseCsvLine(line))
             .Where(fields => fields.Count > 0)
             .Select(fields => new CvmDocumentRecord(
-                Get(fields, index, "CNPJ_FUNDO_CLASSE"),
-                Get(fields, index, "DT_COMPTC"),
-                Get(fields, index, "DT_RECEB"),
-                Get(fields, index, "TP_DOC"),
-                GetAny(fields, index, "CATEGORIA", "CATEGORIA_DOCUMENTO", "DS_CATEGORIA"),
-                GetAny(fields, index, "ESPECIE", "ESPECIE_DOCUMENTO", "TP_ESPECIE", "DS_ESPECIE"),
-                Get(fields, index, "NM_ARQ"),
-                Get(fields, index, "ID_DOC"),
-                Get(fields, index, "LINK_ARQ")))
+                GetAny(fields, index, "CNPJ_FUNDO_CLASSE", "CNPJ_Companhia", "CNPJ_COMPANHIA"),
+                GetAny(fields, index, "DT_COMPTC", "Data_Referencia"),
+                GetAny(fields, index, "DT_RECEB", "Data_Entrega"),
+                GetAny(fields, index, "TP_DOC", "Tipo", "TIPO"),
+                GetAny(fields, index, "CATEGORIA", "CATEGORIA_DOCUMENTO", "DS_CATEGORIA", "Categoria"),
+                GetAny(fields, index, "ESPECIE", "ESPECIE_DOCUMENTO", "TP_ESPECIE", "DS_ESPECIE", "Especie"),
+                GetAny(fields, index, "NM_ARQ", "Nome_Arquivo"),
+                GetAny(fields, index, "ID_DOC", "Protocolo_Entrega", "ID_DOCUMENTO"),
+                GetAny(fields, index, "LINK_ARQ", "Link_Download")))
             .ToList();
     }
 
