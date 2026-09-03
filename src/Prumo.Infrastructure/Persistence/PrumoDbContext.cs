@@ -26,6 +26,7 @@ public sealed class PrumoDbContext : DbContext
     public DbSet<PersistedContributionGuidanceAllocation> ContributionGuidanceAllocations => Set<PersistedContributionGuidanceAllocation>();
     public DbSet<PortfolioTransaction> PortfolioTransactions => Set<PortfolioTransaction>();
     public DbSet<PortfolioTransactionItem> PortfolioTransactionItems => Set<PortfolioTransactionItem>();
+    public DbSet<PortfolioCashFlow> PortfolioCashFlows => Set<PortfolioCashFlow>();
     public DbSet<ContributionGuidanceJob> ContributionGuidanceJobs => Set<ContributionGuidanceJob>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

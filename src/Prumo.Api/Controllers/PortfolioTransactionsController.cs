@@ -25,7 +25,8 @@ public sealed class PortfolioTransactionsController(PrumoDbContext db) : Control
         if (assets.Count != requestedAssetIds.Count) return BadRequest("Só é permitido registrar compras de ativos conhecidos e ativos.");
         if (request.Items.Select(x => x.AssetId).Distinct().Count() != request.Items.Count) return BadRequest("Não repita o mesmo ativo no registro do aporte.");
         var total = request.Items.Sum(x => x.Quantity * x.UnitPrice); if (guidance is not null && total > guidance.RequestedAmount) return BadRequest("O total confirmado não pode exceder o valor da guidance.");
-        var transaction = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, request.OccurredAt ?? DateTimeOffset.UtcNow, request.GuidanceId, total);
+        var source = request.GuidanceId.HasValue ? FinancialSource.ContributionGuidanceExecution : FinancialSource.Manual;
+        var transaction = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, request.OccurredAt ?? DateTimeOffset.UtcNow, request.GuidanceId, total, source: source);
         foreach (var item in request.Items)
         {
             transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, item.AssetId, item.Quantity, item.UnitPrice));
@@ -42,6 +43,50 @@ public sealed class PortfolioTransactionsController(PrumoDbContext db) : Control
         return Ok(new { transactionId = transaction.Id, totalAmount = transaction.TotalAmount, portfolioSnapshotChanged = true });
     }
 }
+
+[ApiController]
+[Route("api/portfolios/{portfolioId:guid}/financial-ledger")]
+public sealed class FinancialLedgerController(PrumoDbContext db) : ControllerBase
+{
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<LedgerItemDto>>> Get(Guid portfolioId, CancellationToken ct)
+    {
+        if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return NotFound();
+        var buysAndSells = await db.PortfolioTransactions.AsNoTracking().Include(x => x.Items).ThenInclude(x => x.PortfolioTransaction).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
+        var flows = await db.PortfolioCashFlows.AsNoTracking().Include(x => x.Asset).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
+        var assets = await db.Assets.AsNoTracking().ToDictionaryAsync(x => x.Id, ct);
+        var items = buysAndSells.SelectMany(t => t.Items.Select(i => new LedgerItemDto(t.OccurredAt, t.Type.ToString(), assets.GetValueOrDefault(i.AssetId)?.Ticker, i.Quantity, i.UnitPrice, i.Quantity * i.UnitPrice, t.Source.ToString(), t.DatePrecision.ToString())))
+            .Concat(flows.Select(f => new LedgerItemDto(f.OccurredAt, f.Type.ToString(), f.Asset?.Ticker, null, null, f.Amount, f.Source.ToString(), "Exact")))
+            .OrderByDescending(x => x.OccurredAt).ToList();
+        return Ok(items);
+    }
+
+    [HttpPost("sells")]
+    public async Task<ActionResult<object>> Sell(Guid portfolioId, SellRequest request, CancellationToken ct)
+    {
+        if (request.Quantity <= 0 || request.UnitPrice <= 0) return BadRequest("Quantidade e preço devem ser positivos.");
+        if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct) || !await db.Assets.AnyAsync(x => x.Id == request.AssetId && x.IsActive, ct)) return NotFound();
+        var transaction = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Sell, request.OccurredAt, null, request.Quantity * request.UnitPrice, source: FinancialSource.Manual);
+        transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, request.AssetId, request.Quantity, request.UnitPrice));
+        db.PortfolioTransactions.Add(transaction); await db.SaveChangesAsync(ct);
+        return Ok(new { transactionId = transaction.Id, totalAmount = transaction.TotalAmount });
+    }
+
+    [HttpPost("cash-flows")]
+    public async Task<ActionResult<object>> CashFlow(Guid portfolioId, CashFlowRequest request, CancellationToken ct)
+    {
+        if (request.Amount <= 0 || !Enum.IsDefined(request.Type)) return BadRequest("Tipo e valor são obrigatórios.");
+        if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return NotFound();
+        if (request.Type == PortfolioCashFlowType.Income && (!request.AssetId.HasValue || !await db.Assets.AnyAsync(x => x.Id == request.AssetId.Value, ct))) return BadRequest("Rendimento exige um ativo válido.");
+        var flow = new PortfolioCashFlow(portfolioId, request.Type, request.Amount, request.OccurredAt, FinancialSource.Manual, request.AssetId, request.Description);
+        db.PortfolioCashFlows.Add(flow); await db.SaveChangesAsync(ct);
+        return Ok(new { cashFlowId = flow.Id, amount = flow.Amount });
+    }
+}
+
+public sealed record SellRequest(Guid AssetId, decimal Quantity, decimal UnitPrice, DateTimeOffset OccurredAt);
+public sealed record CashFlowRequest(PortfolioCashFlowType Type, decimal Amount, DateTimeOffset OccurredAt, Guid? AssetId = null, string? Description = null);
+public sealed record LedgerItemDto(DateTimeOffset OccurredAt, string Type, string? Ticker, decimal? Quantity, decimal? UnitPrice, decimal Amount, string Source, string DatePrecision);
 
 public sealed record ConfirmContributionRequest(Guid? GuidanceId, IReadOnlyList<ContributionPurchaseRequest> Items, DateTimeOffset? OccurredAt = null);
 public sealed record ContributionPurchaseRequest(Guid AssetId, decimal Quantity, decimal UnitPrice);

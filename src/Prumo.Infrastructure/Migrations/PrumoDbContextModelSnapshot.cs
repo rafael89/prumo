@@ -561,6 +561,47 @@ namespace Prumo.Infrastructure.Migrations
                     b.ToTable("PortfolioAssessments");
                 });
 
+            modelBuilder.Entity("Prumo.Domain.Entities.PortfolioCashFlow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("PortfolioId", "OccurredAt");
+
+                    b.ToTable("PortfolioCashFlows");
+                });
+
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioImportSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -676,6 +717,9 @@ namespace Prumo.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("DatePrecision")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ImportFingerprint")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -685,6 +729,9 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.Property<Guid>("PortfolioId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
 
                     b.Property<decimal>("TotalAmount")
                         .HasPrecision(20, 2)
@@ -939,6 +986,22 @@ namespace Prumo.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("InvestmentEvent");
+                });
+
+            modelBuilder.Entity("Prumo.Domain.Entities.PortfolioCashFlow", b =>
+                {
+                    b.HasOne("Prumo.Domain.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Prumo.Domain.Entities.Portfolio", null)
+                        .WithMany()
+                        .HasForeignKey("PortfolioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioPosition", b =>

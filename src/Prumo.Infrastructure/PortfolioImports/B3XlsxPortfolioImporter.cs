@@ -56,6 +56,9 @@ public sealed class B3XlsxPortfolioImporter : IPortfolioImporter
                 var rows = negotiations.Descendants(Main + "row").ToList();
                 if (rows.Count > 0 && HasNegotiationHeaders(rows[0], shared))
                 {
+                    var headers = Cells(rows[0], shared);
+                    var sellQuantityColumn = headers.FirstOrDefault(x => x.Value.Contains("Venda", StringComparison.OrdinalIgnoreCase) && x.Value.Contains("Quantidade", StringComparison.OrdinalIgnoreCase)).Key;
+                    var sellPriceColumn = headers.FirstOrDefault(x => x.Value.Contains("Venda", StringComparison.OrdinalIgnoreCase) && x.Value.Contains("Preço Médio", StringComparison.OrdinalIgnoreCase)).Key;
                     foreach (var row in rows.Skip(1))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
@@ -69,7 +72,9 @@ public sealed class B3XlsxPortfolioImporter : IPortfolioImporter
                             warnings.Add($"Negociação de {ticker} ignorada: período inicial inválido.");
                             continue;
                         }
-                        transactions.Add(new(ticker, occurredAt, quantity, unitPrice, decimal.Round(quantity * unitPrice, 2), cells.GetValueOrDefault("D")));
+                        transactions.Add(new(ticker, occurredAt, quantity, unitPrice, decimal.Round(quantity * unitPrice, 2), cells.GetValueOrDefault("D"), PortfolioTransactionType.Buy));
+                        if (sellQuantityColumn is not null && sellPriceColumn is not null && TryDecimal(cells.GetValueOrDefault(sellQuantityColumn), out var soldQuantity) && soldQuantity > 0 && TryDecimal(cells.GetValueOrDefault(sellPriceColumn), out var soldPrice) && soldPrice > 0)
+                            transactions.Add(new(ticker, occurredAt, soldQuantity, soldPrice, decimal.Round(soldQuantity * soldPrice, 2), cells.GetValueOrDefault("D"), PortfolioTransactionType.Sell));
                     }
                 }
             }

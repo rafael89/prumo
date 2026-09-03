@@ -78,9 +78,9 @@ public sealed class PortfolioImportsController : ControllerBase
             if (!assetsByTicker.TryGetValue(imported.Ticker, out var asset)) continue;
             var transactionAmount = decimal.Round(imported.TotalAmount, 2);
             if (transactionAmount <= 0) continue;
-            var fingerprint = PortfolioTransaction.CreateImportFingerprint(portfolioId, asset.Id, imported.OccurredAt, imported.Quantity, imported.UnitPrice, imported.Institution);
+            var fingerprint = PortfolioTransaction.CreateImportFingerprint(portfolioId, asset.Id, imported.Type, imported.OccurredAt, imported.Quantity, imported.UnitPrice, imported.Institution);
             if (!importedFingerprints.Add(fingerprint) || existingFingerprints.Contains(fingerprint)) continue;
-            var transactionRecord = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, imported.OccurredAt, null, transactionAmount, fingerprint);
+            var transactionRecord = new PortfolioTransaction(portfolioId, imported.Type, imported.OccurredAt, null, transactionAmount, fingerprint, FinancialSource.B3Import, imported.DatePrecision);
             transactionRecord.Items.Add(new PortfolioTransactionItem(transactionRecord.Id, asset.Id, imported.Quantity, imported.UnitPrice));
             db.PortfolioTransactions.Add(transactionRecord);
             importedTransactions++;
