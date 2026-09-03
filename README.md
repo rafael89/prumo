@@ -96,7 +96,7 @@ Database: prumo
 User:     postgres
 Password: dev123
 Host:     localhost
-Port:     5432
+Port:     5433
 ```
 
 Altere esses valores com `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` quando necessário.
@@ -118,7 +118,7 @@ npm install
 npm run dev
 ```
 
-Durante o desenvolvimento, o Vite encaminha `/api` para `http://localhost:5041`. A porta pode ser ajustada em [vite.config.ts](frontend/prumo-web/vite.config.ts).
+Durante o desenvolvimento, o Vite encaminha `/api` para `http://localhost:5200`. A porta pode ser ajustada em [vite.config.ts](frontend/prumo-web/vite.config.ts).
 
 ### Executar tudo com Compose
 
@@ -126,7 +126,7 @@ Durante o desenvolvimento, o Vite encaminha `/api` para `http://localhost:5041`.
 docker compose up --build
 ```
 
-O frontend fica disponível em `http://localhost:5173` e a API em `http://localhost:8080`.
+O frontend fica disponível em `http://localhost:5273` e a API em `http://localhost:5200`.
 
 ## IA e configuração
 

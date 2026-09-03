@@ -350,7 +350,7 @@ function App() {
             </div>
           )}
           {portfolios.isLoading && <p className="text-slate-500">Carregando carteiras...</p>}
-          {portfolios.isError && <p className="text-rose-700">API indisponível. Inicie o backend em `http://localhost:5041`.</p>}
+          {portfolios.isError && <p className="text-rose-700">API indisponível. Inicie o backend em `http://localhost:5200`.</p>}
 
           {route === '/portfolio' && portfolios.isLoading && <p className="mt-4 rounded-2xl bg-white p-6 text-slate-500">Carregando sua carteira...</p>}
           {route === '/portfolio' && !portfolios.isLoading && !portfolios.isError && <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start *:min-w-0">

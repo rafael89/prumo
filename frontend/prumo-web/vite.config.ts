@@ -6,8 +6,9 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    port: 5273,
     proxy: {
-      '/api': 'http://localhost:5041',
+      '/api': 'http://localhost:5200',
     },
   },
 })
