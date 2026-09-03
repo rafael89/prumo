@@ -13,12 +13,23 @@ using Prumo.Infrastructure.PortfolioImports;
 using Prumo.Application.Intelligence;
 using Prumo.Api.Services;
 using Prumo.Api;
+using Prumo.Infrastructure.MarketData;
+using Prumo.Infrastructure.Performance;
+using Prumo.Infrastructure.Intelligence;
 
 var builder = WebApplication.CreateBuilder(args);
 
 
 builder.Services.AddControllers();
 builder.Services.AddScoped<PortfolioHistoryService>();
+builder.Services.Configure<BrapiOptions>(builder.Configuration.GetSection("MarketData:Brapi"));
+builder.Services.AddHttpClient<BrapiMarketDataProvider>();
+builder.Services.Configure<AlphaVantageOptions>(builder.Configuration.GetSection("MarketData:AlphaVantage"));
+builder.Services.AddHttpClient<AlphaVantageMarketDataProvider>();
+builder.Services.AddScoped<IMarketDataProvider>(sp => string.Equals(sp.GetRequiredService<IConfiguration>()["MarketData:Provider"], "AlphaVantage", StringComparison.OrdinalIgnoreCase) ? new FallbackMarketDataProvider(sp.GetRequiredService<AlphaVantageMarketDataProvider>(), sp.GetRequiredService<BrapiMarketDataProvider>(), sp.GetRequiredService<ILogger<FallbackMarketDataProvider>>()) : sp.GetRequiredService<BrapiMarketDataProvider>());
+builder.Services.AddScoped<MarketDataService>();
+builder.Services.AddScoped<PortfolioPerformanceService>();
+builder.Services.AddScoped<PortfolioIntelligenceService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>

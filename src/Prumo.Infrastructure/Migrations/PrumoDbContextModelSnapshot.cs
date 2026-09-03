@@ -80,6 +80,45 @@ namespace Prumo.Infrastructure.Migrations
                     b.ToTable("Assets");
                 });
 
+            modelBuilder.Entity("Prumo.Domain.Entities.AssetPrice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Close")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTimeOffset>("FetchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("PriceDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId", "PriceDate");
+
+                    b.HasIndex("AssetId", "PriceDate", "Source")
+                        .IsUnique();
+
+                    b.ToTable("AssetPrices");
+                });
+
             modelBuilder.Entity("Prumo.Domain.Entities.ContributionGuidanceJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -898,6 +937,17 @@ namespace Prumo.Infrastructure.Migrations
                         .HasForeignKey("InvestmentEventId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Prumo.Domain.Entities.AssetPrice", b =>
+                {
+                    b.HasOne("Prumo.Domain.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.Document", b =>
