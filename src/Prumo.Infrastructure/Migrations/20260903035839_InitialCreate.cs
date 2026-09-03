@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -58,6 +58,7 @@ namespace Prumo.Infrastructure.Migrations
                     RequestedAmount = table.Column<decimal>(type: "numeric(20,2)", precision: 20, scale: 2, nullable: false),
                     PortfolioSnapshotKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     TargetAllocationKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    IntelligenceContextKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     EngineVersion = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Provider = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Model = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
@@ -212,7 +213,8 @@ namespace Prumo.Infrastructure.Migrations
                     ContributionGuidanceId = table.Column<Guid>(type: "uuid", nullable: true),
                     TotalAmount = table.Column<decimal>(type: "numeric(20,2)", precision: 20, scale: 2, nullable: false),
                     OccurredAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    ImportFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -510,12 +512,18 @@ namespace Prumo.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_ContributionGuidances_PortfolioId_PortfolioSnapshotKey_Targ~",
                 table: "ContributionGuidances",
-                columns: new[] { "PortfolioId", "PortfolioSnapshotKey", "TargetAllocationKey", "RequestedAmount", "GeneratedAt" });
+                columns: new[] { "PortfolioId", "PortfolioSnapshotKey", "TargetAllocationKey", "IntelligenceContextKey", "RequestedAmount", "GeneratedAt" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_DocumentAnalyses_DocumentId_CreatedAt",
                 table: "DocumentAnalyses",
                 columns: new[] { "DocumentId", "CreatedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentAnalyses_DocumentId_Model_PromptVersion",
+                table: "DocumentAnalyses",
+                columns: new[] { "DocumentId", "Model", "PromptVersion" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_DocumentAnalyses_ProcessingJobId",
@@ -615,6 +623,13 @@ namespace Prumo.Infrastructure.Migrations
                 column: "ContributionGuidanceId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_PortfolioTransactions_PortfolioId_ImportFingerprint",
+                table: "PortfolioTransactions",
+                columns: new[] { "PortfolioId", "ImportFingerprint" },
+                unique: true,
+                filter: "\"ImportFingerprint\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_PortfolioTransactions_PortfolioId_OccurredAt",
                 table: "PortfolioTransactions",
                 columns: new[] { "PortfolioId", "OccurredAt" });
@@ -622,7 +637,9 @@ namespace Prumo.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_ProcessingJobs_DocumentId_JobType",
                 table: "ProcessingJobs",
-                columns: new[] { "DocumentId", "JobType" });
+                columns: new[] { "DocumentId", "JobType" },
+                unique: true,
+                filter: "\"Status\" IN (0, 1)");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProcessingJobs_Status_AvailableAt",

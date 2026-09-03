@@ -15,7 +15,7 @@ public sealed class PrumoDbContextFactory : IDesignTimeDbContextFactory<PrumoDbC
             .Build();
 
         var connectionString = configuration.GetConnectionString("Postgres")
-            ?? "Host=localhost;Port=5433;Database=prumo;Username=postgres;Password=dev123";
+            ?? "Host=localhost;Port=5432;Database=prumo;Username=postgres;Password=dev123";
 
         var options = new DbContextOptionsBuilder<PrumoDbContext>()
             .UseNpgsql(connectionString)

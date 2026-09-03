@@ -96,7 +96,7 @@ Database: prumo
 User:     postgres
 Password: dev123
 Host:     localhost
-Port:     5433
+Port:     5432
 ```
 
 Altere esses valores com `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` quando necessário.
@@ -190,7 +190,7 @@ dotnet ef database update --project src/Prumo.Infrastructure --startup-project s
 A baseline atual é:
 
 ```text
-20260829151400_InitialCreate
+20260903035839_InitialCreate
 ```
 
 Depois do primeiro banco Beta com dados importantes, novas migrations devem ser append-only.
