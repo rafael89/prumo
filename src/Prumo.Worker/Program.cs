@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Prumo.Worker;
 using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -12,13 +13,12 @@ using Prumo.Infrastructure.Documents;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.Storage;
 using Prumo.Infrastructure.Jobs;
+using Prumo.Infrastructure.Notifications;
 
 IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureLogging((context, logging) =>
     {
-        var storageRoot = context.Configuration["Storage:RootPath"] ?? "/storage/documents";
-        var logDirectory = WorkerFileLoggerProvider.ResolveDirectory(storageRoot, context.Configuration["Logging:WorkerFile:Path"]);
-        logging.AddProvider(new WorkerFileLoggerProvider(logDirectory));
+        logging.Services.AddSingleton<ILoggerProvider>(sp => new DiscordLogLoggerProvider(sp.GetRequiredService<IDiscordLogNotifier>(), sp.GetRequiredService<IOptions<DiscordOptions>>(), "Worker"));
     })
     .ConfigureServices((context, services) =>
     {
@@ -57,6 +57,11 @@ IHost host = Host.CreateDefaultBuilder(args)
                 provider.GetRequiredService<ILogger<RateLimitedAiAnalysisService>>()));
         }
 
+        services.Configure<DiscordOptions>(context.Configuration.GetSection("Discord"));
+        services.AddHttpClient("DiscordWebhook");
+        services.AddSingleton<DiscordLogNotificationService>();
+        services.AddSingleton<IDiscordLogNotifier>(sp => sp.GetRequiredService<DiscordLogNotificationService>());
+        services.AddHostedService(sp => sp.GetRequiredService<DiscordLogNotificationService>());
         services.AddDbContext<PrumoDbContext>(options => options.UseNpgsql(context.Configuration.GetConnectionString("Postgres")));
         services.AddScoped<IProcessingJobQueue, PostgresProcessingJobQueue>();
         services.Configure<CvmFnetOptions>(context.Configuration.GetSection("Documents"));

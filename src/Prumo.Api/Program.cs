@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Diagnostics;
 using System.Text.Json;
@@ -5,6 +6,7 @@ using Prumo.Application.Abstractions;
 using Prumo.Infrastructure.DocumentSources;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.Storage;
+using Prumo.Infrastructure.Notifications;
 using Prumo.Application.PortfolioImports;
 using Prumo.Application.Portfolio;
 using Prumo.Infrastructure.PortfolioImports;
@@ -14,9 +16,6 @@ using Prumo.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var storageRoot = builder.Configuration["Storage:RootPath"] ?? "/storage/documents";
-var logDirectory = ApiFileLoggerProvider.ResolveDirectory(storageRoot, builder.Configuration["Logging:ApiFile:Path"]);
-builder.Logging.AddProvider(new ApiFileLoggerProvider(logDirectory));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -25,6 +24,12 @@ builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>
     policy.WithOrigins("http://localhost:5273").AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddDbContext<PrumoDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection("Discord"));
+builder.Services.AddHttpClient("DiscordWebhook");
+builder.Services.AddSingleton<DiscordLogNotificationService>();
+builder.Services.AddSingleton<IDiscordLogNotifier>(sp => sp.GetRequiredService<DiscordLogNotificationService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DiscordLogNotificationService>());
+builder.Logging.Services.AddSingleton<ILoggerProvider>(sp => new DiscordLogLoggerProvider(sp.GetRequiredService<IDiscordLogNotifier>(), sp.GetRequiredService<IOptions<DiscordOptions>>(), "API"));
 builder.Services.Configure<CvmFnetOptions>(builder.Configuration.GetSection("Documents"));
 builder.Services.Configure<DocumentBootstrapOptions>(builder.Configuration.GetSection("DocumentBootstrap"));
 builder.Services.Configure<DocumentRetentionOptions>(builder.Configuration.GetSection("DocumentRetention"));
