@@ -1,1 +1,0 @@
-namespace Lodira.Worker;

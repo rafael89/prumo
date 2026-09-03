@@ -1,4 +1,4 @@
-# Lodira
+# Prumo
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![React 19.2.8](https://img.shields.io/badge/React-19.2.8-61DAFB?logo=react&logoColor=20232A)](https://react.dev/)
@@ -10,7 +10,7 @@
 
 Aplicação self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira e apoiar decisões de alocação com contexto da própria carteira.
 
-O Lodira combina importação de carteira da B3, descoberta e análise de documentos da CVM/FNet, avaliação do impacto por carteira, Radar e orientação de aportes sob demanda.
+O Prumo combina importação de carteira da B3, descoberta e análise de documentos da CVM/FNet, avaliação do impacto por carteira, Radar e orientação de aportes sob demanda.
 
 ## Funcionalidades
 
@@ -104,21 +104,21 @@ Altere esses valores com `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` qu
 ### API e worker
 
 ```powershell
-dotnet restore Lodira.sln
-dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api
-dotnet run --project src/Lodira.Api
-dotnet run --project src/Lodira.Worker
+dotnet restore Prumo.sln
+dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
+dotnet run --project src/Prumo.Api
+dotnet run --project src/Prumo.Worker
 ```
 
 ### Frontend
 
 ```powershell
-Set-Location frontend/lodira-web
+Set-Location frontend/prumo-web
 npm install
 npm run dev
 ```
 
-Durante o desenvolvimento, o Vite encaminha `/api` para `http://localhost:5041`. A porta pode ser ajustada em [vite.config.ts](frontend/lodira-web/vite.config.ts).
+Durante o desenvolvimento, o Vite encaminha `/api` para `http://localhost:5041`. A porta pode ser ajustada em [vite.config.ts](frontend/prumo-web/vite.config.ts).
 
 ### Executar tudo com Compose
 
@@ -130,7 +130,7 @@ O frontend fica disponível em `http://localhost:5173` e a API em `http://localh
 
 ## IA e configuração
 
-As configurações principais do worker ficam em [src/Lodira.Worker/appsettings.json](src/Lodira.Worker/appsettings.json):
+As configurações principais do worker ficam em [src/Prumo.Worker/appsettings.json](src/Prumo.Worker/appsettings.json):
 
 - `AI:Provider`
 - `AI:Endpoint`
@@ -153,9 +153,9 @@ Providers suportados:
 Para usar o Gemini localmente sem versionar a chave:
 
 ```powershell
-dotnet user-secrets set "AI:Provider" "Gemini" --project src/Lodira.Worker
-dotnet user-secrets set "AI:ApiKey" "<sua-chave>" --project src/Lodira.Worker
-dotnet user-secrets set "AI:Model" "gemini-3.5-flash-lite" --project src/Lodira.Worker
+dotnet user-secrets set "AI:Provider" "Gemini" --project src/Prumo.Worker
+dotnet user-secrets set "AI:ApiKey" "<sua-chave>" --project src/Prumo.Worker
+dotnet user-secrets set "AI:Model" "gemini-3.5-flash-lite" --project src/Prumo.Worker
 ```
 
 Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves de providers.
@@ -181,10 +181,10 @@ O endpoint `GET /api/documents/{id}/analysis` retorna a análise validada mais r
 
 ## Migrations
 
-As migrations ficam em [src/Lodira.Infrastructure/Persistence/Migrations](src/Lodira.Infrastructure/Persistence/Migrations). O estado atual é uma baseline única `InitialCreate`, gerada diretamente do modelo EF.
+As migrations ficam em [src/Prumo.Infrastructure/Persistence/Migrations](src/Prumo.Infrastructure/Persistence/Migrations). O estado atual é uma baseline única `InitialCreate`, gerada diretamente do modelo EF.
 
 ```powershell
-dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api
+dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
 ```
 
 A baseline atual é:
@@ -198,10 +198,10 @@ Depois do primeiro banco Beta com dados importantes, novas migrations devem ser 
 ## Validação
 
 ```powershell
-dotnet build Lodira.sln
-dotnet test Lodira.sln
+dotnet build Prumo.sln
+dotnet test Prumo.sln
 
-Set-Location frontend/lodira-web
+Set-Location frontend/prumo-web
 npm run build
 npm run lint
 ```

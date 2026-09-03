@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$apiSettingsPath = Join-Path $repositoryRoot 'src/Lodira.Api/appsettings.json'
+$apiSettingsPath = Join-Path $repositoryRoot 'src/Prumo.Api/appsettings.json'
 $environment = $env:DOTNET_ENVIRONMENT
 if ([string]::IsNullOrWhiteSpace($environment)) { $environment = $env:ASPNETCORE_ENVIRONMENT }
 if ([string]::IsNullOrWhiteSpace($environment)) { $environment = 'Development' }
@@ -32,13 +32,13 @@ $username = Get-ConnectionPart 'Username'
 if ($hostName -notin @('localhost', '127.0.0.1', '::1')) { Stop-Reset "host remoto não permitido: $hostName" }
 
 Write-Host ''
-Write-Host 'Lodira - Local Database Reset' -ForegroundColor Cyan
+Write-Host 'Prumo - Local Database Reset' -ForegroundColor Cyan
 Write-Host ''
 Write-Host "Environment : $environment"
 Write-Host "Host        : $hostName"
 Write-Host "Database    : $database"
 Write-Host ''
-Write-Host 'WARNING: todos os dados locais do Lodira serão apagados permanentemente.' -ForegroundColor Yellow
+Write-Host 'WARNING: todos os dados locais do Prumo serão apagados permanentemente.' -ForegroundColor Yellow
 $confirmation = Read-Host 'Digite RESET para continuar'
 if ($confirmation -cne 'RESET') { Stop-Reset 'confirmação não recebida.' }
 
@@ -66,11 +66,11 @@ try {
         if ($LASTEXITCODE -ne 0) { Stop-Reset 'falha ao resetar o schema PostgreSQL.' }
 
         Write-Host '[2/4] Recriando o schema pela baseline EF...'
-        & dotnet ef database update --project src/Lodira.Infrastructure --startup-project src/Lodira.Api --context LodiraDbContext --no-build
+        & dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api --context PrumoDbContext --no-build
         if ($LASTEXITCODE -ne 0) { Stop-Reset 'falha ao aplicar as migrations EF.' }
 
         Write-Host '[3/4] Validando histórico de migrations...'
-        $migrationFiles = @(Get-ChildItem -LiteralPath 'src/Lodira.Infrastructure/Persistence/Migrations' -Filter '*.cs' | Where-Object { $_.Name -match '^\d+_.+\.cs$' -and $_.Name -notmatch '\.Designer\.cs$' })
+        $migrationFiles = @(Get-ChildItem -LiteralPath 'src/Prumo.Infrastructure/Persistence/Migrations' -Filter '*.cs' | Where-Object { $_.Name -match '^\d+_.+\.cs$' -and $_.Name -notmatch '\.Designer\.cs$' })
         if ($migrationFiles.Count -eq 0) { Stop-Reset 'nenhuma migration foi encontrada.' }
         $expectedMigrations = @($migrationFiles | ForEach-Object { $_.BaseName })
         $history = (& $psql --host $hostName --port $port --username $username --dbname $database --tuples-only --no-align --command='SELECT \"MigrationId\" FROM \"__EFMigrationsHistory\" ORDER BY \"MigrationId\";')
@@ -87,7 +87,7 @@ try {
             if ([int64]$count.Trim() -ne 0) { Stop-Reset "a tabela $table não está vazia." }
         }
         Write-Host ''
-        Write-Host 'Local Lodira database reset successfully.' -ForegroundColor Green
+        Write-Host 'Local Prumo database reset successfully.' -ForegroundColor Green
         Write-Host "Migration history: $($actualMigrations -join ', ')"
         Write-Host 'Domain tables: empty'
     }
