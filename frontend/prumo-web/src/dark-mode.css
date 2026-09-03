@@ -6,8 +6,8 @@
 [data-theme='dark'] .bg-slate-50 { background-color: #172033; }
 [data-theme='dark'] .bg-slate-100 { background-color: #263449; }
 [data-theme='dark'] .bg-slate-200 { background-color: #334155; }
-[data-theme='dark'] .bg-slate-900,
-[data-theme='dark'] .bg-slate-950\/50 { background-color: #020617; }
+[data-theme='dark'] .bg-slate-900 { background-color: #020617; }
+[data-theme='dark'] .bg-slate-950\/50 { background-color: rgb(2 6 23 / 0.7); }
 [data-theme='dark'] .text-slate-950,
 [data-theme='dark'] .text-slate-900 { color: #f8fafc; }
 [data-theme='dark'] .text-slate-800 { color: #e2e8f0; }
