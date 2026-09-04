@@ -78,14 +78,14 @@ public sealed class FinancialLedgerController(PrumoDbContext db) : ControllerBas
         if (request.Amount <= 0 || !Enum.IsDefined(request.Type)) return BadRequest("Tipo e valor são obrigatórios.");
         if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return NotFound();
         if (request.Type == PortfolioCashFlowType.Income && (!request.AssetId.HasValue || !await db.Assets.AnyAsync(x => x.Id == request.AssetId.Value, ct))) return BadRequest("Rendimento exige um ativo válido.");
-        var flow = new PortfolioCashFlow(portfolioId, request.Type, request.Amount, request.OccurredAt, FinancialSource.Manual, request.AssetId, request.Description);
+        var flow = new PortfolioCashFlow(portfolioId, request.Type, request.Amount, request.OccurredAt, FinancialSource.Manual, request.AssetId, request.Description, request.DatePrecision);
         db.PortfolioCashFlows.Add(flow); await db.SaveChangesAsync(ct);
         return Ok(new { cashFlowId = flow.Id, amount = flow.Amount });
     }
 }
 
 public sealed record SellRequest(Guid AssetId, decimal Quantity, decimal UnitPrice, DateTimeOffset OccurredAt);
-public sealed record CashFlowRequest(PortfolioCashFlowType Type, decimal Amount, DateTimeOffset OccurredAt, Guid? AssetId = null, string? Description = null);
+public sealed record CashFlowRequest(PortfolioCashFlowType Type, decimal Amount, DateTimeOffset OccurredAt, Guid? AssetId = null, string? Description = null, FinancialDatePrecision DatePrecision = FinancialDatePrecision.Exact);
 public sealed record LedgerItemDto(DateTimeOffset OccurredAt, string Type, string? Ticker, decimal? Quantity, decimal? UnitPrice, decimal Amount, string Source, string DatePrecision);
 
 public sealed record ConfirmContributionRequest(Guid? GuidanceId, IReadOnlyList<ContributionPurchaseRequest> Items, DateTimeOffset? OccurredAt = null);

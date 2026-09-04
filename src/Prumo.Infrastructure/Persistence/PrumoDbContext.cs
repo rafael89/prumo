@@ -29,6 +29,13 @@ public sealed class PrumoDbContext : DbContext
     public DbSet<PortfolioCashFlow> PortfolioCashFlows => Set<PortfolioCashFlow>();
     public DbSet<AssetPrice> AssetPrices => Set<AssetPrice>();
     public DbSet<ContributionGuidanceJob> ContributionGuidanceJobs => Set<ContributionGuidanceJob>();
+    public DbSet<PortfolioHistoricalAnchor> PortfolioHistoricalAnchors => Set<PortfolioHistoricalAnchor>();
+    public DbSet<PortfolioHistoricalAnchorItem> PortfolioHistoricalAnchorItems => Set<PortfolioHistoricalAnchorItem>();
+    public DbSet<FinancialHistoryCoverage> FinancialHistoryCoverages => Set<FinancialHistoryCoverage>();
+    public DbSet<TransactionReconciliation> TransactionReconciliations => Set<TransactionReconciliation>();
+    public DbSet<TransactionReconciliationMember> TransactionReconciliationMembers => Set<TransactionReconciliationMember>();
+    public DbSet<AssetCorporateAction> AssetCorporateActions => Set<AssetCorporateAction>();
+    public DbSet<PortfolioCashAnchor> PortfolioCashAnchors => Set<PortfolioCashAnchor>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

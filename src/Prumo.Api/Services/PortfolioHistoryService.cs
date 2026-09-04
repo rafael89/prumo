@@ -2,10 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.Reconciliation;
 
 namespace Prumo.Api.Services;
 
-public sealed class PortfolioHistoryService(PrumoDbContext db)
+public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconciliationService? canonical = null)
 {
     public async Task<PortfolioTimelineResponse?> GetTimelineAsync(Guid portfolioId, int limit, DateTimeOffset? before, CancellationToken ct)
     {
@@ -21,7 +22,7 @@ public sealed class PortfolioHistoryService(PrumoDbContext db)
         var asset = data.Assets.Single(x => x.Id == assetId);
         var transitions = BuildTransitions(data.Assessments, assetId);
         var purchase = data.Transactions
-            .Where(x => x.Items.Any(item => item.AssetId == assetId) && x.Type == PortfolioTransactionType.Buy)
+            .Where(x => x.Items.Any(item => item.AssetId == assetId) && x.Type == nameof(PortfolioTransactionType.Buy))
             .OrderByDescending(x => x.OccurredAt).ThenByDescending(x => x.Id).FirstOrDefault();
         var lastPurchaseAt = purchase?.OccurredAt;
         var sinceItems = lastPurchaseAt is null
@@ -56,10 +57,10 @@ public sealed class PortfolioHistoryService(PrumoDbContext db)
         var assets = await db.Assets.AsNoTracking().Where(x => assetIds.Contains(x.Id)).ToListAsync(ct);
         var take = Math.Clamp(limit, 1, 200);
 
-        var transactions = await db.PortfolioTransactions.AsNoTracking().Include(x => x.Items)
-            .Where(x => x.PortfolioId == portfolioId && (!assetId.HasValue || x.Items.Any(item => item.AssetId == assetId.Value)))
+        var transactions = (await (canonical ?? new TransactionReconciliationService(db)).Canonical(portfolioId, ct))
+            .Where(x => !assetId.HasValue || x.Items.Any(item => item.AssetId == assetId.Value))
             .Where(x => !before.HasValue || x.OccurredAt < before.Value)
-            .OrderByDescending(x => x.OccurredAt).ThenByDescending(x => x.Id).Take(take).ToListAsync(ct);
+            .OrderByDescending(x => x.OccurredAt).ThenByDescending(x => x.Id).Take(take).ToList();
         var documents = await db.Documents.AsNoTracking().Include(x => x.Asset)
             .Where(x => assetIds.Contains(x.AssetId))
             .Where(x => !before.HasValue || x.PublishedAt < before.Value)
@@ -84,8 +85,8 @@ public sealed class PortfolioHistoryService(PrumoDbContext db)
             foreach (var item in transaction.Items.Where(item => assetIds.Contains(item.AssetId)))
             {
                 var asset = assets.FirstOrDefault(x => x.Id == item.AssetId);
-                items.Add(new(transaction.OccurredAt, transaction.ContributionGuidanceId.HasValue ? "ContributionExecuted" : "Transaction", asset?.Id, asset?.Ticker,
-                    transaction.ContributionGuidanceId.HasValue ? "Aporte realizado" : "Compra registrada",
+                items.Add(new(transaction.OccurredAt, transaction.HasContributionGuidance ? "ContributionExecuted" : "Transaction", asset?.Id, asset?.Ticker,
+                    transaction.HasContributionGuidance ? "Aporte realizado" : "Compra registrada",
                     $"{item.Quantity:0.####} unidade(s) a {item.UnitPrice:C}.", "PortfolioTransaction", transaction.Id, null, null, null));
             }
         }
@@ -127,7 +128,7 @@ public sealed class PortfolioHistoryService(PrumoDbContext db)
         return relevant;
     }
 
-    private sealed record HistoryData(HashSet<Guid> AssetIds, IReadOnlyList<Asset> Assets, IReadOnlyList<PortfolioTransaction> Transactions, IReadOnlyList<PortfolioAssessment> Assessments, IReadOnlyList<PortfolioTimelineItem> Items);
+    private sealed record HistoryData(HashSet<Guid> AssetIds, IReadOnlyList<Asset> Assets, IReadOnlyList<CanonicalTransactionDto> Transactions, IReadOnlyList<PortfolioAssessment> Assessments, IReadOnlyList<PortfolioTimelineItem> Items);
 }
 
 public sealed record PortfolioTimelineResponse(IReadOnlyList<PortfolioTimelineItem> Items, bool HasMore);

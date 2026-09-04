@@ -16,6 +16,8 @@ using Prumo.Api;
 using Prumo.Infrastructure.MarketData;
 using Prumo.Infrastructure.Performance;
 using Prumo.Infrastructure.Intelligence;
+using Prumo.Infrastructure.Historical;
+using Prumo.Infrastructure.Reconciliation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +32,14 @@ builder.Services.AddScoped<IMarketDataProvider>(sp => string.Equals(sp.GetRequir
 builder.Services.AddScoped<MarketDataService>();
 builder.Services.AddScoped<PortfolioPerformanceService>();
 builder.Services.AddScoped<PortfolioIntelligenceService>();
+builder.Services.AddScoped<HistoricalAnchorService>();
+builder.Services.AddScoped<CoverageService>();
+builder.Services.AddScoped<TransactionReconciliationService>();
+builder.Services.AddScoped<HistoricalFinancialStateService>();
+builder.Services.AddScoped<HistoricalPerformanceService>();
+builder.Services.AddScoped<CorporateActionService>();
+builder.Services.AddScoped<HistoricalCashStateService>();
+builder.Services.AddScoped<HistoricalCompletenessService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>

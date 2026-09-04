@@ -9,12 +9,13 @@ using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.Reconciliation;
 
 namespace Prumo.Api.Controllers;
 
 [ApiController]
 [Route("api/portfolios/{portfolioId:guid}/contribution-guidance")]
-public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioAssessmentCurrentService current) : ControllerBase
+public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioAssessmentCurrentService current, TransactionReconciliationService? canonical = null) : ControllerBase
 {
     private const string ContributionEngineVersion = "R4-9.0";
     private static readonly TimeSpan RecentContributionWindow = TimeSpan.FromDays(90);
@@ -36,10 +37,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var targetKey = TargetAllocationKeyCalculator.Calculate(targets)!;
         var amount = decimal.Round(request.Amount, 2);
         var recentSince = DateTimeOffset.UtcNow.Subtract(RecentContributionWindow);
-        var recentPurchases = await db.PortfolioTransactions.AsNoTracking()
-            .Include(x => x.Items)
-            .Where(x => x.PortfolioId == portfolioId && x.Type == PortfolioTransactionType.Buy && x.OccurredAt >= recentSince)
-            .ToListAsync(ct);
+        var recentPurchases = (await (canonical ?? new TransactionReconciliationService(db)).Canonical(portfolioId, ct))
+            .Where(x => x.Type == nameof(PortfolioTransactionType.Buy) && x.OccurredAt >= recentSince)
+            .ToList();
         var recentByAsset = recentPurchases.SelectMany(transaction => transaction.Items.Select(item => new
             {
                 item.AssetId,

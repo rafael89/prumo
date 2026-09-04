@@ -11,6 +11,7 @@ public sealed class PortfolioCashFlowConfiguration : IEntityTypeConfiguration<Po
         b.HasKey(x => x.Id);
         b.Property(x => x.Amount).HasPrecision(20, 2);
         b.Property(x => x.Description).HasMaxLength(300);
+        b.Property(x => x.DatePrecision).IsRequired();
         b.HasIndex(x => new { x.PortfolioId, x.OccurredAt });
         b.HasOne<Portfolio>().WithMany().HasForeignKey(x => x.PortfolioId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);

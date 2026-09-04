@@ -1,0 +1,54 @@
+using Microsoft.EntityFrameworkCore;
+using Prumo.Domain.Entities;
+using Prumo.Domain.Enums;
+using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.Reconciliation;
+
+namespace Prumo.Domain.Tests;
+
+public sealed class TransactionReconciliationTests
+{
+    [Fact]
+    public async Task Exact_different_sources_are_candidate_then_count_once_when_confirmed()
+    {
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null); db.AddRange(portfolio, asset);
+        var manual = AddTransaction(db, portfolio, asset, FinancialSource.Manual, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero));
+        var b3 = AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync();
+        var service = new TransactionReconciliationService(db);
+        Assert.Single(await service.Candidates(portfolio.Id, default));
+        await service.Resolve(portfolio.Id, new([manual.Id, b3.Id], TransactionReconciliationStatus.ConfirmedSameEconomicTransaction), default);
+        var canonical = await service.Canonical(portfolio.Id, default);
+        Assert.Single(canonical); Assert.Equal(2, canonical[0].SourceRecordIds.Count); Assert.Equal(2, await db.PortfolioTransactions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Candidate_does_not_change_count_and_same_source_is_ignored()
+    {
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("VALE3", "Vale", AssetType.Stock, null); db.AddRange(portfolio, asset);
+        AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow); await db.SaveChangesAsync();
+        var service = new TransactionReconciliationService(db); Assert.Empty(await service.Candidates(portfolio.Id, default)); Assert.Equal(2, (await service.Canonical(portfolio.Id, default)).Count);
+    }
+
+    [Fact]
+    public async Task Buy_and_sell_are_never_candidates()
+    {
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("ITSA4", "Itaú", AssetType.Stock, null); db.AddRange(portfolio, asset);
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, DateTimeOffset.UtcNow, PortfolioTransactionType.Buy); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow, PortfolioTransactionType.Sell); await db.SaveChangesAsync();
+        Assert.Empty(await new TransactionReconciliationService(db).Candidates(portfolio.Id, default));
+    }
+
+    [Fact]
+    public async Task Approximate_date_can_match_without_replacing_exact_date()
+    {
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("HGLG11", "HGLG", AssetType.Fii, null); db.AddRange(portfolio, asset);
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new(2026, 8, 14, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), datePrecision: FinancialDatePrecision.PeriodStart); await db.SaveChangesAsync();
+        var candidate = Assert.Single(await new TransactionReconciliationService(db).Candidates(portfolio.Id, default)); Assert.Equal("Possible", candidate.MatchStrength);
+    }
+
+    private static PortfolioTransaction AddTransaction(PrumoDbContext db, Portfolio portfolio, Asset asset, FinancialSource source, DateTimeOffset date, PortfolioTransactionType type = PortfolioTransactionType.Buy, FinancialDatePrecision datePrecision = FinancialDatePrecision.Exact)
+    {
+        var transaction = new PortfolioTransaction(portfolio.Id, type, date, null, 3200, source: source, datePrecision: datePrecision); transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, asset.Id, 100, 32)); db.PortfolioTransactions.Add(transaction); return transaction;
+    }
+
+    private static PrumoDbContext CreateDb() => new(new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+}

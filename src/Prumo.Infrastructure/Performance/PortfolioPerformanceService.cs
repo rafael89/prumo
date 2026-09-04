@@ -3,16 +3,17 @@ using Prumo.Application.Performance;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.Reconciliation;
 
 namespace Prumo.Infrastructure.Performance;
 
-public sealed class PortfolioPerformanceService(PrumoDbContext db)
+public sealed class PortfolioPerformanceService(PrumoDbContext db, TransactionReconciliationService? canonical = null)
 {
     public async Task<PortfolioPerformanceDto?> GetAsync(Guid portfolioId, DateOnly? from, DateOnly? to, CancellationToken ct = default)
     {
         if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return null;
         var positions = await db.PortfolioPositions.AsNoTracking().Include(x => x.Asset).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
-        var transactions = await db.PortfolioTransactions.AsNoTracking().Include(x => x.Items).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
+        var transactions = await (canonical ?? new TransactionReconciliationService(db)).Canonical(portfolioId, ct);
         var flows = await db.PortfolioCashFlows.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var assetIds = positions.Select(x => x.AssetId).ToHashSet();
         var prices = await db.AssetPrices.AsNoTracking().Where(x => assetIds.Contains(x.AssetId)).OrderByDescending(x => x.PriceDate).ThenByDescending(x => x.FetchedAt).ToListAsync(ct);
@@ -31,9 +32,9 @@ public sealed class PortfolioPerformanceService(PrumoDbContext db)
         return new(current, contributions, withdrawals, net, income, cost, unrealized, realized, assetResults, from, to);
     }
 
-    private static AssetPerformanceDto BuildAsset(PortfolioPosition position, IReadOnlyList<PortfolioTransaction> allTransactions, IReadOnlyList<AssetPrice> prices, IReadOnlyDictionary<Guid, AssetPrice> latest, DateOnly? from, DateOnly? to)
+    private static AssetPerformanceDto BuildAsset(PortfolioPosition position, IReadOnlyList<CanonicalTransactionDto> allTransactions, IReadOnlyList<AssetPrice> prices, IReadOnlyDictionary<Guid, AssetPrice> latest, DateOnly? from, DateOnly? to)
     {
-        var tx = allTransactions.Where(x => x.Items.Any(i => i.AssetId == position.AssetId)).SelectMany(x => x.Items.Where(i => i.AssetId == position.AssetId).Select(i => new PerformanceTransaction(x.Type, i.Quantity, i.UnitPrice, x.OccurredAt, x.DatePrecision))).ToList();
+        var tx = allTransactions.Where(x => x.Items.Any(i => i.AssetId == position.AssetId)).SelectMany(x => x.Items.Where(i => i.AssetId == position.AssetId).Select(i => new PerformanceTransaction(Enum.Parse<PortfolioTransactionType>(x.Type), i.Quantity, i.UnitPrice, x.OccurredAt, Enum.Parse<FinancialDatePrecision>(x.DatePrecision)))).ToList();
         var basis = PerformanceCalculator.CalculateCostBasis(tx, position.Quantity, position.AveragePrice);
         var valuation = latest.TryGetValue(position.AssetId, out var price)
             ? new PerformanceMetric(position.Quantity * price.Close, PerformanceCoverage.Complete, [])

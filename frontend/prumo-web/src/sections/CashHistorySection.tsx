@@ -1,0 +1,17 @@
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getJson, sendJson, sendVoid } from '../api/client'
+
+type Anchor = { id: string; anchorDate: string; balance: number; currency: string; source: string }
+type Cash = { balance: number | null; coverage: string; warnings: string[] }
+const money = (value: number | null) => value === null ? 'Desconhecido' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+
+export function CashHistorySection({ portfolioId }: { portfolioId: string }) {
+  const client = useQueryClient(); const today = new Date().toISOString().slice(0, 10); const [date, setDate] = useState(''); const [balance, setBalance] = useState('')
+  const anchors = useQuery({ queryKey: ['cash-anchors', portfolioId], queryFn: () => getJson<Anchor[]>(`/api/portfolios/${portfolioId}/cash-anchors`) })
+  const cash = useQuery({ queryKey: ['cash-state', portfolioId, today], queryFn: () => getJson<Cash>(`/api/portfolios/${portfolioId}/cash-state?asOf=${today}`) })
+  const refresh = () => { void client.invalidateQueries({ queryKey: ['cash-anchors', portfolioId] }); void client.invalidateQueries({ queryKey: ['cash-state', portfolioId] }); void client.invalidateQueries({ queryKey: ['historical-state', portfolioId] }); void client.invalidateQueries({ queryKey: ['performance-history', portfolioId] }) }
+  const create = useMutation({ mutationFn: () => sendJson<Anchor, unknown>(`/api/portfolios/${portfolioId}/cash-anchors`, 'POST', { anchorDate: date, balance: Number(balance), currency: 'BRL', source: 1, datePrecision: 1 }), onSuccess: () => { refresh(); setDate(''); setBalance('') } })
+  const remove = useMutation({ mutationFn: (id: string) => sendVoid(`/api/portfolios/${portfolioId}/cash-anchors/${id}`), onSuccess: refresh })
+  return <section className="mx-auto mt-6 max-w-6xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Caixa histórico</p><h2 className="mt-2 text-xl font-semibold">Âncoras de caixa</h2><p className="mt-1 text-sm text-slate-600">Saldo conhecido no fim do dia.</p></div>{cash.data && <p className="text-sm text-slate-600">Atual: <strong>{money(cash.data.balance)}</strong> · {cash.data.coverage}</p>}</div><form onSubmit={event => { event.preventDefault(); create.mutate() }} className="mt-5 grid gap-3 sm:grid-cols-3"><input required type="date" value={date} onChange={event => setDate(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" /><input required step="0.01" type="number" placeholder="Saldo BRL" value={balance} onChange={event => setBalance(event.target.value)} className="rounded-xl border border-slate-300 px-3 py-2" /><button disabled={create.isPending} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Salvar âncora</button></form><div className="mt-5 space-y-2">{anchors.data?.map(anchor => <div key={anchor.id} className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-sm"><span>{anchor.anchorDate} · {money(anchor.balance)} · {anchor.currency} · {anchor.source}</span><button type="button" onClick={() => remove.mutate(anchor.id)} className="text-rose-700">Remover</button></div>)}</div>{cash.data?.warnings.length ? <p className="mt-4 text-sm text-amber-800">Avisos: {cash.data.warnings.join(' · ')}</p> : null}</section>
+}
