@@ -16,7 +16,7 @@ public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptio
     {
         if (!quota.TryAcquire(settings.MonthlyRequestLimit)) throw new HttpRequestException("Limite mensal do Brapi atingido; usando fallback.");
         var url = assetType == AssetType.Fii
-            ? $"{settings.BaseUrl.TrimEnd('/')}/api/quote/{Uri.EscapeDataString(ticker)}?range={RangeFor(from, to)}&interval=1d"
+            ? $"{settings.BaseUrl.TrimEnd('/')}/api/quote/{Uri.EscapeDataString(ticker)}?range=3mo&interval=1d"
             : $"{settings.BaseUrl.TrimEnd('/')}/api/v2/stocks/historical?symbols={Uri.EscapeDataString(ticker)}&startDate={from:yyyy-MM-dd}&endDate={to:yyyy-MM-dd}";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrWhiteSpace(settings.Token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
@@ -40,11 +40,6 @@ public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptio
         return points;
     }
 
-    private static string RangeFor(DateOnly from, DateOnly to)
-    {
-        var years = Math.Max(1, (to.DayNumber - from.DayNumber) / 365 + 1);
-        return years <= 1 ? "1y" : years <= 5 ? "5y" : "max";
-    }
 
     private static bool TryReadDecimal(JsonElement value, out decimal result)
         => value.ValueKind == JsonValueKind.Number ? value.TryGetDecimal(out result) : decimal.TryParse(value.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out result);

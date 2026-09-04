@@ -19,6 +19,17 @@ public sealed class MarketDataProviderTests
     }
 
     [Fact]
+    public async Task AlphaVantage_reports_information_limit_response()
+    {
+        using var http = new HttpClient(new StubHandler("""{"Information":"API call frequency is 5 calls per minute."}"""));
+        var provider = new AlphaVantageMarketDataProvider(http, Options.Create(new AlphaVantageOptions { ApiKey = "test" }));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetHistoryAsync("PETR4", new(2026, 9, 4), new(2026, 9, 4)));
+
+        Assert.Contains("5 calls per minute", error.Message);
+    }
+
+    [Fact]
     public async Task Brapi_uses_current_historical_endpoint_and_authentication()
     {
         var handler = new StubHandler("""{"results":[{"currency":"BRL","data":{"historicalDataPrice":[{"date":1788476400,"close":31.42}]}}]}""");
@@ -40,7 +51,7 @@ public sealed class MarketDataProviderTests
         await provider.GetHistoryAsync("GGRC11", new(2026, 1, 1), new(2026, 9, 4), Prumo.Domain.Enums.AssetType.Fii);
 
         Assert.Contains("/api/quote/GGRC11", handler.RequestUri!.AbsolutePath);
-        Assert.Contains("range=1y", handler.RequestUri.Query);
+        Assert.Contains("range=3mo", handler.RequestUri.Query);
     }
 
     [Fact]
