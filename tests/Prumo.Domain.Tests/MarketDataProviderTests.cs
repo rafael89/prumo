@@ -24,9 +24,9 @@ public sealed class MarketDataProviderTests
         using var http = new HttpClient(new StubHandler("""{"Information":"API call frequency is 5 calls per minute."}"""));
         var provider = new AlphaVantageMarketDataProvider(http, Options.Create(new AlphaVantageOptions { ApiKey = "test" }));
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetHistoryAsync("PETR4", new(2026, 9, 4), new(2026, 9, 4)));
+        var error = await Assert.ThrowsAsync<AlphaVantageRateLimitException>(() => provider.GetHistoryAsync("PETR4", new(2026, 9, 4), new(2026, 9, 4)));
 
-        Assert.Contains("5 calls per minute", error.Message);
+        Assert.DoesNotContain("8GHVIU47N1494URL", error.Message);
     }
 
     [Fact]
@@ -39,6 +39,7 @@ public sealed class MarketDataProviderTests
 
         Assert.Contains("/api/v2/stocks/historical", handler.RequestUri!.AbsolutePath);
         Assert.Contains("symbols=HGLG11", handler.RequestUri.Query);
+        Assert.Contains("range=3mo", handler.RequestUri.Query);
         Assert.Equal("Bearer test", handler.Authorization);
     }
 

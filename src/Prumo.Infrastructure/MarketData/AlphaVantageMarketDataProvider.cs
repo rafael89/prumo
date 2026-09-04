@@ -21,8 +21,8 @@ public sealed class AlphaVantageMarketDataProvider(HttpClient http, IOptions<Alp
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
         if (document.RootElement.TryGetProperty("Note", out var note)) throw new InvalidOperationException(note.GetString() ?? "Alpha Vantage rate limit atingido.");
-        if (document.RootElement.TryGetProperty("Information", out var information)) throw new InvalidOperationException(information.GetString() ?? "Alpha Vantage limitou a requisição.");
-        if (document.RootElement.TryGetProperty("Error Message", out var error)) throw new InvalidOperationException(error.GetString() ?? "Alpha Vantage rejeitou o ativo.");
+        if (document.RootElement.TryGetProperty("Information", out _)) throw new AlphaVantageRateLimitException();
+        if (document.RootElement.TryGetProperty("Error Message", out _)) throw new InvalidOperationException("Alpha Vantage rejeitou o ativo.");
         if (!document.RootElement.TryGetProperty("Time Series (Daily)", out var series)) throw new InvalidOperationException("Alpha Vantage não retornou a série diária.");
         return series.EnumerateObject().Select(item => DateOnly.TryParseExact(item.Name, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) && date >= from && date <= to && item.Value.TryGetProperty("4. close", out var close) && TryReadDecimal(close, out var value) && value > 0 ? new MarketPricePoint(date, value, "BRL", Name) : null).Where(x => x is not null).Select(x => x!).ToList();
     }
@@ -30,3 +30,5 @@ public sealed class AlphaVantageMarketDataProvider(HttpClient http, IOptions<Alp
     private static bool TryReadDecimal(JsonElement value, out decimal result)
         => value.ValueKind == JsonValueKind.Number ? value.TryGetDecimal(out result) : decimal.TryParse(value.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out result);
 }
+
+public sealed class AlphaVantageRateLimitException() : InvalidOperationException("Alpha Vantage limitou a requisição.");

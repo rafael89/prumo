@@ -17,7 +17,7 @@ public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptio
         if (!quota.TryAcquire(settings.MonthlyRequestLimit)) throw new HttpRequestException("Limite mensal do Brapi atingido; usando fallback.");
         var url = assetType == AssetType.Fii
             ? $"{settings.BaseUrl.TrimEnd('/')}/api/quote/{Uri.EscapeDataString(ticker)}?range=3mo&interval=1d"
-            : $"{settings.BaseUrl.TrimEnd('/')}/api/v2/stocks/historical?symbols={Uri.EscapeDataString(ticker)}&startDate={from:yyyy-MM-dd}&endDate={to:yyyy-MM-dd}";
+            : $"{settings.BaseUrl.TrimEnd('/')}/api/v2/stocks/historical?symbols={Uri.EscapeDataString(ticker)}&range=3mo&interval=1d";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrWhiteSpace(settings.Token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
         using var response = await http.SendAsync(request, cancellationToken);
