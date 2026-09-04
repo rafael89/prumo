@@ -32,6 +32,18 @@ public sealed class MarketDataProviderTests
     }
 
     [Fact]
+    public async Task Brapi_uses_basic_quote_endpoint_for_fiis()
+    {
+        var handler = new StubHandler("""{"results":[{"historicalDataPrice":[{"date":1788476400,"close":31.42}]}]}""");
+        var provider = new BrapiMarketDataProvider(new HttpClient(handler), Options.Create(new BrapiOptions { Token = "test" }), new BrapiMonthlyQuota());
+
+        await provider.GetHistoryAsync("GGRC11", new(2026, 1, 1), new(2026, 9, 4), Prumo.Domain.Enums.AssetType.Fii);
+
+        Assert.Contains("/api/quote/GGRC11", handler.RequestUri!.AbsolutePath);
+        Assert.Contains("range=1y", handler.RequestUri.Query);
+    }
+
+    [Fact]
     public async Task Brapi_stops_before_http_when_monthly_quota_is_exhausted()
     {
         var provider = new BrapiMarketDataProvider(new HttpClient(new StubHandler("{}")), Options.Create(new BrapiOptions { Token = "test", MonthlyRequestLimit = 0 }), new BrapiMonthlyQuota());

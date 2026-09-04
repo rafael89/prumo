@@ -15,15 +15,16 @@ public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptio
     public async Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, AssetType assetType = AssetType.Stock, CancellationToken cancellationToken = default)
     {
         if (!quota.TryAcquire(settings.MonthlyRequestLimit)) throw new HttpRequestException("Limite mensal do Brapi atingido; usando fallback.");
-        var endpoint = assetType == AssetType.Fii ? "fii" : "stocks";
-        var url = $"{settings.BaseUrl.TrimEnd('/')}/api/v2/{endpoint}/historical?symbols={Uri.EscapeDataString(ticker)}&startDate={from:yyyy-MM-dd}&endDate={to:yyyy-MM-dd}";
+        var url = assetType == AssetType.Fii
+            ? $"{settings.BaseUrl.TrimEnd('/')}/api/quote/{Uri.EscapeDataString(ticker)}?range={RangeFor(from, to)}&interval=1d"
+            : $"{settings.BaseUrl.TrimEnd('/')}/api/v2/stocks/historical?symbols={Uri.EscapeDataString(ticker)}&startDate={from:yyyy-MM-dd}&endDate={to:yyyy-MM-dd}";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrWhiteSpace(settings.Token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
         using var response = await http.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
         var root = document.RootElement;
-        var result = root.GetProperty(assetType == AssetType.Fii ? "fiis" : "results").EnumerateArray().FirstOrDefault();
+        var result = root.GetProperty("results").EnumerateArray().FirstOrDefault();
         if (result.ValueKind == JsonValueKind.Undefined) return [];
         var data = result.TryGetProperty("data", out var nestedData) ? nestedData : result;
         if (!data.TryGetProperty("historicalDataPrice", out var history)) return [];
@@ -37,6 +38,12 @@ public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptio
             if (priceDate >= from && priceDate <= to) points.Add(new(priceDate, value, currency, Name));
         }
         return points;
+    }
+
+    private static string RangeFor(DateOnly from, DateOnly to)
+    {
+        var years = Math.Max(1, (to.DayNumber - from.DayNumber) / 365 + 1);
+        return years <= 1 ? "1y" : years <= 5 ? "5y" : "max";
     }
 
     private static bool TryReadDecimal(JsonElement value, out decimal result)
