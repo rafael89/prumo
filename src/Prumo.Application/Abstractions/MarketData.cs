@@ -1,4 +1,5 @@
 using Prumo.Domain.Entities;
+using Prumo.Domain.Enums;
 
 namespace Prumo.Application.Abstractions;
 
@@ -6,7 +7,7 @@ public sealed record MarketPricePoint(DateOnly PriceDate, decimal Close, string 
 public interface IMarketDataProvider
 {
     string Name { get; }
-    Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, AssetType assetType = AssetType.Stock, CancellationToken cancellationToken = default);
 }
 public sealed record AssetPriceLookup(DateOnly RequestedDate, AssetPrice? Price)
 {

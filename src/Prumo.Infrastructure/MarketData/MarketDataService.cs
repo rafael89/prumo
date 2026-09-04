@@ -25,7 +25,7 @@ public sealed class MarketDataService(PrumoDbContext db, IMarketDataProvider pro
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         var firstTransaction = await db.PortfolioTransactionItems.Where(x => x.AssetId == asset.Id).Select(x => (DateTimeOffset?)x.PortfolioTransaction!.OccurredAt).MinAsync(ct);
         var from = firstTransaction.HasValue ? DateOnly.FromDateTime(firstTransaction.Value.UtcDateTime.Date) : today.AddMonths(-12);
-        var points = await provider.GetHistoryAsync(asset.Ticker, from, today, ct);
+        var points = await provider.GetHistoryAsync(asset.Ticker, from, today, asset.AssetType, ct);
         var existing = await db.AssetPrices.Where(x => x.AssetId == asset.Id && x.PriceDate >= from && x.PriceDate <= today).ToDictionaryAsync(x => (x.PriceDate, x.Source), ct);
         foreach (var point in points.Where(x => x.Close > 0))
         {

@@ -19,14 +19,16 @@ public sealed class MarketDataProviderTests
     }
 
     [Fact]
-    public async Task Brapi_uses_supported_range_for_multi_year_history()
+    public async Task Brapi_uses_current_historical_endpoint_and_authentication()
     {
-        var handler = new StubHandler("""{"results":[{"currency":"BRL","historicalDataPrice":[{"date":"1788476400","close":"31.42"}]}]}""");
+        var handler = new StubHandler("""{"results":[{"currency":"BRL","data":{"historicalDataPrice":[{"date":1788476400,"close":31.42}]}}]}""");
         var provider = new BrapiMarketDataProvider(new HttpClient(handler), Options.Create(new BrapiOptions { Token = "test" }), new BrapiMonthlyQuota());
 
         await provider.GetHistoryAsync("HGLG11", new(2024, 9, 4), new(2026, 9, 4));
 
-        Assert.Contains("range=5y", handler.RequestUri!.Query);
+        Assert.Contains("/api/v2/stocks/historical", handler.RequestUri!.AbsolutePath);
+        Assert.Contains("symbols=HGLG11", handler.RequestUri.Query);
+        Assert.Equal("Bearer test", handler.Authorization);
     }
 
     [Fact]
@@ -40,10 +42,12 @@ public sealed class MarketDataProviderTests
     private sealed class StubHandler(string body) : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }
+        public string? Authorization { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUri = request.RequestUri;
+            Authorization = request.Headers.Authorization?.ToString();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") });
         }
     }

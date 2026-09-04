@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Prumo.Application.Abstractions;
+using Prumo.Domain.Enums;
 
 namespace Prumo.Infrastructure.MarketData;
 
@@ -11,18 +12,18 @@ public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptio
     private readonly BrapiOptions settings = options.Value;
     public string Name => "Brapi";
 
-    public async Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, AssetType assetType = AssetType.Stock, CancellationToken cancellationToken = default)
     {
         if (!quota.TryAcquire(settings.MonthlyRequestLimit)) throw new HttpRequestException("Limite mensal do Brapi atingido; usando fallback.");
-        var years = Math.Max(1, (to.DayNumber - from.DayNumber) / 365 + 1);
-        var range = years <= 1 ? "1y" : years <= 5 ? "5y" : "max";
-        var url = $"{settings.BaseUrl.TrimEnd('/')}/api/quote/{Uri.EscapeDataString(ticker)}?range={range}&interval=1d";
+        var endpoint = assetType == AssetType.Fii ? "fii" : "stocks";
+        var url = $"{settings.BaseUrl.TrimEnd('/')}/api/v2/{endpoint}/historical?symbols={Uri.EscapeDataString(ticker)}&startDate={from:yyyy-MM-dd}&endDate={to:yyyy-MM-dd}";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrWhiteSpace(settings.Token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
         using var response = await http.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
-        var result = document.RootElement.GetProperty("results").EnumerateArray().FirstOrDefault();
+        var root = document.RootElement;
+        var result = root.GetProperty(assetType == AssetType.Fii ? "fiis" : "results").EnumerateArray().FirstOrDefault();
         if (result.ValueKind == JsonValueKind.Undefined) return [];
         var data = result.TryGetProperty("data", out var nestedData) ? nestedData : result;
         if (!data.TryGetProperty("historicalDataPrice", out var history)) return [];

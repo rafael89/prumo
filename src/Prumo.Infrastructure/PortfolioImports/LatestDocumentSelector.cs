@@ -5,7 +5,20 @@ namespace Prumo.Infrastructure.PortfolioImports;
 
 public static class LatestDocumentSelector
 {
-    public static IEnumerable<DocumentCandidate> SelectIncremental(IEnumerable<DocumentCandidate> candidates) => candidates;
+    public static IEnumerable<DocumentCandidate> SelectIncremental(IEnumerable<DocumentCandidate> candidates)
+    {
+        foreach (var group in candidates.GroupBy(candidate => candidate.Ticker, StringComparer.OrdinalIgnoreCase))
+        {
+            var latest = group.OrderByDescending(candidate => candidate.PublishedAt)
+                .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal).First();
+            yield return latest;
+
+            var managementReport = group.Where(candidate => candidate.DocumentType == DocumentType.ManagementReport)
+                .OrderByDescending(candidate => candidate.PublishedAt)
+                .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal).FirstOrDefault();
+            if (managementReport is not null && !SameIdentity(latest, managementReport)) yield return managementReport;
+        }
+    }
 
     public static IEnumerable<DocumentCandidate> SelectPerTicker(IEnumerable<DocumentCandidate> candidates) =>
         candidates.GroupBy(candidate => candidate.Ticker, StringComparer.OrdinalIgnoreCase)

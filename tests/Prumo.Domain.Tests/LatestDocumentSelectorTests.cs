@@ -7,18 +7,20 @@ namespace Prumo.Domain.Tests;
 public sealed class LatestDocumentSelectorTests
 {
     [Fact]
-    public void Incremental_preserves_all_candidates_for_database_deduplication()
+    public void Incremental_keeps_latest_and_latest_management_report_per_ticker()
     {
         var candidates = new[]
         {
             Candidate("AAA3", "A", 10),
             Candidate("AAA3", "B", 11),
-            Candidate("AAA3", "C", 12)
+            Candidate("AAA3", "C", 12),
+            Candidate("AAA3", "D", 9, DocumentType.ManagementReport),
+            Candidate("AAA3", "E", 8, DocumentType.ManagementReport)
         };
 
         var selected = LatestDocumentSelector.SelectIncremental(candidates).ToArray();
 
-        Assert.Equal(new[] { "A", "B", "C" }, selected.Select(x => x.SourceIdentifier));
+        Assert.Equal(new[] { "C", "D" }, selected.Select(x => x.SourceIdentifier));
     }
 
     [Fact]

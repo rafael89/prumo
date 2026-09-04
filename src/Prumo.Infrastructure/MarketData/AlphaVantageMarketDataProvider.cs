@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Prumo.Application.Abstractions;
+using Prumo.Domain.Enums;
 
 namespace Prumo.Infrastructure.MarketData;
 
@@ -10,7 +11,7 @@ public sealed class AlphaVantageMarketDataProvider(HttpClient http, IOptions<Alp
     private readonly AlphaVantageOptions settings = options.Value;
     public string Name => "AlphaVantage";
 
-    public async Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, AssetType assetType = AssetType.Stock, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(settings.ApiKey)) throw new InvalidOperationException("MarketData:AlphaVantage:ApiKey não configurada.");
         var symbol = $"{ticker.Trim().ToUpperInvariant()}{settings.SymbolSuffix}";
