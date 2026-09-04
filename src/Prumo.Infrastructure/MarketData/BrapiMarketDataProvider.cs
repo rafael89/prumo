@@ -27,11 +27,14 @@ public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptio
         var points = new List<MarketPricePoint>();
         foreach (var item in history.EnumerateArray())
         {
-            if (!item.TryGetProperty("date", out var timestamp) || !item.TryGetProperty("close", out var close) || !close.TryGetDecimal(out var value) || value <= 0) continue;
-            var date = DateTimeOffset.FromUnixTimeSeconds(timestamp.GetInt64()).UtcDateTime.Date;
+            if (!item.TryGetProperty("date", out var timestamp) || !item.TryGetProperty("close", out var close) || !TryReadDecimal(close, out var value) || value <= 0) continue;
+            var date = DateTimeOffset.FromUnixTimeSeconds(timestamp.ValueKind == JsonValueKind.Number ? timestamp.GetInt64() : long.Parse(timestamp.GetString()!, CultureInfo.InvariantCulture)).UtcDateTime.Date;
             var priceDate = DateOnly.FromDateTime(date);
             if (priceDate >= from && priceDate <= to) points.Add(new(priceDate, value, currency, Name));
         }
         return points;
     }
+
+    private static bool TryReadDecimal(JsonElement value, out decimal result)
+        => value.ValueKind == JsonValueKind.Number ? value.TryGetDecimal(out result) : decimal.TryParse(value.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out result);
 }

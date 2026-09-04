@@ -21,6 +21,9 @@ public sealed class AlphaVantageMarketDataProvider(HttpClient http, IOptions<Alp
         if (document.RootElement.TryGetProperty("Note", out var note)) throw new InvalidOperationException(note.GetString() ?? "Alpha Vantage rate limit atingido.");
         if (document.RootElement.TryGetProperty("Error Message", out var error)) throw new InvalidOperationException(error.GetString() ?? "Alpha Vantage rejeitou o ativo.");
         if (!document.RootElement.TryGetProperty("Time Series (Daily)", out var series)) return [];
-        return series.EnumerateObject().Select(item => DateOnly.TryParseExact(item.Name, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) && date >= from && date <= to && item.Value.TryGetProperty("4. close", out var close) && close.TryGetDecimal(out var value) && value > 0 ? new MarketPricePoint(date, value, "BRL", Name) : null).Where(x => x is not null).Select(x => x!).ToList();
+        return series.EnumerateObject().Select(item => DateOnly.TryParseExact(item.Name, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) && date >= from && date <= to && item.Value.TryGetProperty("4. close", out var close) && TryReadDecimal(close, out var value) && value > 0 ? new MarketPricePoint(date, value, "BRL", Name) : null).Where(x => x is not null).Select(x => x!).ToList();
     }
+
+    private static bool TryReadDecimal(JsonElement value, out decimal result)
+        => value.ValueKind == JsonValueKind.Number ? value.TryGetDecimal(out result) : decimal.TryParse(value.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out result);
 }

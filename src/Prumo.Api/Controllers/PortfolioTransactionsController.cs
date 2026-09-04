@@ -52,7 +52,7 @@ public sealed class FinancialLedgerController(PrumoDbContext db) : ControllerBas
     public async Task<ActionResult<IReadOnlyList<LedgerItemDto>>> Get(Guid portfolioId, CancellationToken ct)
     {
         if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return NotFound();
-        var buysAndSells = await db.PortfolioTransactions.AsNoTracking().Include(x => x.Items).ThenInclude(x => x.PortfolioTransaction).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
+        var buysAndSells = await db.PortfolioTransactions.AsNoTracking().Include(x => x.Items).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var flows = await db.PortfolioCashFlows.AsNoTracking().Include(x => x.Asset).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var assets = await db.Assets.AsNoTracking().ToDictionaryAsync(x => x.Id, ct);
         var items = buysAndSells.SelectMany(t => t.Items.Select(i => new LedgerItemDto(t.OccurredAt, t.Type.ToString(), assets.GetValueOrDefault(i.AssetId)?.Ticker, i.Quantity, i.UnitPrice, i.Quantity * i.UnitPrice, t.Source.ToString(), t.DatePrecision.ToString())))
