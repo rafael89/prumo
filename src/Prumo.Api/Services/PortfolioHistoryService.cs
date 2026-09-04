@@ -78,6 +78,8 @@ public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconc
             .Where(x => x.PortfolioId == portfolioId && (!assetId.HasValue || x.Allocations.Any(item => item.AssetId == assetId.Value)))
             .Where(x => !before.HasValue || x.GeneratedAt < before.Value)
             .OrderByDescending(x => x.GeneratedAt).ThenByDescending(x => x.Id).Take(take).ToListAsync(ct);
+        var guidanceAssetIds = guidances.SelectMany(x => x.Allocations).Where(x => x.AssetId.HasValue).Select(x => x.AssetId!.Value).ToHashSet();
+        assets = await db.Assets.AsNoTracking().Where(x => assetIds.Contains(x.Id) || guidanceAssetIds.Contains(x.Id)).ToListAsync(ct);
 
         var items = new List<PortfolioTimelineItem>();
         foreach (var transaction in transactions)
@@ -92,7 +94,7 @@ public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconc
         }
         items.AddRange(documents.Select(document => new PortfolioTimelineItem(document.PublishedAt, "Document", document.AssetId, document.Asset?.Ticker, "Documento publicado", document.SourceType ?? document.SourceCategory ?? document.SourceName, "Document", document.Id, document.Id, null, null)));
         items.AddRange(events.Select(item => new PortfolioTimelineItem(item.OccurredAt, "InvestmentEvent", item.AffectedAssets.FirstOrDefault(asset => assetIds.Contains(asset.Id))?.Id, item.AffectedAssets.FirstOrDefault(asset => assetIds.Contains(asset.Id))?.Ticker, "Evento identificado", item.Summary, "InvestmentEvent", item.Id, item.Evidence.FirstOrDefault()?.DocumentId, null, null)));
-        foreach (var guidance in guidances)
+        foreach (var guidance in Array.Empty<PersistedContributionGuidance>())
         {
             foreach (var allocation in guidance.Allocations.Where(x => x.AssetId.HasValue && assetIds.Contains(x.AssetId.Value)))
             {
@@ -102,6 +104,16 @@ public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconc
         }
         items.AddRange(BuildTransitions(assessments, assetId).Select(x => new PortfolioTimelineItem(x.OccurredAt, x.PreviousAssessment is null ? "AssessmentInitial" : "AssessmentChange", x.AssetId, x.Ticker, x.PreviousAssessment is null ? "Avaliação inicial" : "Avaliação alterada", x.Reason, "PortfolioAssessment", x.AssessmentId, x.DocumentId, x.PreviousAssessment, x.CurrentAssessment)));
 
+        var guidanceIds = guidances.Select(x => x.Id).ToHashSet();
+        var executions = await db.PortfolioTransactions.AsNoTracking().Where(x => x.ContributionGuidanceId.HasValue && guidanceIds.Contains(x.ContributionGuidanceId.Value)).ToDictionaryAsync(x => x.ContributionGuidanceId!.Value, ct);
+        items.AddRange(guidances.Select(guidance =>
+        {
+            var allocation = guidance.Allocations.FirstOrDefault(x => !assetId.HasValue || x.AssetId == assetId);
+            var asset = allocation?.AssetId is Guid id ? assets.FirstOrDefault(x => x.Id == id) : null;
+            var type = DecisionType(guidance.MetadataJson, guidance.Allocations.Count);
+            var execution = executions.GetValueOrDefault(guidance.Id);
+            return new PortfolioTimelineItem(guidance.GeneratedAt, "DecisionMemory", asset?.Id, allocation?.Ticker ?? asset?.Ticker ?? guidance.Allocations.FirstOrDefault()?.Ticker, "Decisão de aporte", guidance.RequestedAmount.ToString("C") + " · " + DecisionLabel(type), "ContributionGuidance", guidance.Id, null, null, null, type, execution is null ? "Recommended" : "Confirmed", execution?.Id, guidance.RequestedAmount, guidance.Allocations.Select(x => x.Ticker ?? (x.AssetId is Guid id ? assets.FirstOrDefault(a => a.Id == id)?.Ticker : null) ?? x.Name ?? "Ativo").ToArray(), guidance.Allocations.Select(x => x.Amount).ToArray(), Evidence(guidance.MetadataJson));
+        }));
         return new HistoryData(assetIds, assets, transactions, assessments, items.OrderByDescending(x => x.OccurredAt.HasValue).ThenByDescending(x => x.OccurredAt).ThenByDescending(x => x.RelatedEntityId).ToList());
     }
 
@@ -129,10 +141,23 @@ public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconc
     }
 
     private sealed record HistoryData(HashSet<Guid> AssetIds, IReadOnlyList<Asset> Assets, IReadOnlyList<CanonicalTransactionDto> Transactions, IReadOnlyList<PortfolioAssessment> Assessments, IReadOnlyList<PortfolioTimelineItem> Items);
+    private static string DecisionType(string json, int allocations)
+    {
+        try { var root = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json); if (root.TryGetProperty("decisionType", out var value)) return value.GetString() ?? "NoAction"; }
+        catch (System.Text.Json.JsonException) { }
+        return allocations == 0 ? "NoAction" : allocations > 1 ? "SplitContribution" : "ReinforceExisting";
+    }
+    private static string DecisionLabel(string type) => type switch { "ReinforceExisting" => "Reforçar posição", "AddNewAsset" => "Adicionar novo ativo", "SplitContribution" => "Dividir aporte", _ => "Não aportar agora" };
+    private static string[] Evidence(string json)
+    {
+        try { var root = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json); if (root.TryGetProperty("decisionEvidence", out var value) && value.TryGetProperty("decisiveFactor", out var factor)) return new[] { factor.GetString() is "StableTieBreaker" ? "As alternativas ficaram equivalentes pelos critérios disponíveis." : factor.GetString() ?? string.Empty }; }
+        catch (System.Text.Json.JsonException) { }
+        return Array.Empty<string>();
+    }
 }
 
 public sealed record PortfolioTimelineResponse(IReadOnlyList<PortfolioTimelineItem> Items, bool HasMore);
-public sealed record PortfolioTimelineItem(DateTimeOffset? OccurredAt, string Type, Guid? AssetId, string? Ticker, string Title, string Summary, string Source, Guid? RelatedEntityId, Guid? RelatedDocumentId, string? PreviousAssessment, string? CurrentAssessment);
+public sealed record PortfolioTimelineItem(DateTimeOffset? OccurredAt, string Type, Guid? AssetId, string? Ticker, string Title, string Summary, string Source, Guid? RelatedEntityId, Guid? RelatedDocumentId, string? PreviousAssessment, string? CurrentAssessment, string? DecisionType = null, string? ConfirmationStatus = null, Guid? TransactionId = null, decimal? ContributionAmount = null, IReadOnlyList<string>? AllocationTickers = null, IReadOnlyList<decimal>? AllocationAmounts = null, IReadOnlyList<string>? Evidence = null);
 public sealed record AssessmentTransition(DateTimeOffset OccurredAt, Guid AssetId, string Ticker, string? PreviousAssessment, string CurrentAssessment, Guid InvestmentEventId, Guid AssessmentId, Guid? DocumentId, string Reason);
 public sealed record AssetHistoryResponse(Guid PortfolioId, Guid AssetId, string Ticker, string Name, IReadOnlyList<PortfolioTimelineItem> Items, IReadOnlyList<AssessmentTransition> AssessmentEvolution, SinceLastPurchaseResponse SinceLastPurchase);
 public sealed record SinceLastPurchaseResponse(string Status, DateTimeOffset? LastPurchaseAt, int DocumentsCount, int EventsCount, int AssessmentChanges, string? CurrentAssessment, IReadOnlyList<PortfolioTimelineItem> Items);

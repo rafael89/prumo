@@ -40,7 +40,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         var candidate = workItem.Candidates.Single(x => x.CandidateKey == allocation.Key);
                         return new ContributionAllocation(candidate.Identity.AssetId, candidate.Ticker, candidate.AssetClass, allocation.Amount, deterministicDecision.DecisionEvidence?.DecisiveFactor ?? "PrimaryStructuralImprovement", Array.Empty<string>(), candidate.Identity);
                     }).ToArray() ?? Array.Empty<ContributionAllocation>();
-                    guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R16.6.2", deterministicDecision.DecisionEvidence }));
+                    guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R16.6.2", decisionType = deterministicDecision.DecisionType.ToString(), primaryNeed = deterministicDecision.PrimaryNeed, decisionEvidence = deterministicDecision.DecisionEvidence }));
                     guidance.ReplaceAllocations(deterministicAllocations.Select(a => PersistedAllocation(guidance.Id, new CandidateAllocation(a.Identity, a.Amount), workItem.Candidates.Single(x => x.CandidateKey == a.Identity.Key), 1)).ToArray());
                     AppendProjectedPortfolioReason(guidance, workItem);
                     var publication = ContributionGuidancePublication.From(guidance);
@@ -277,4 +277,3 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         decimal Confidence,
         string EvidenceJson);
 }
-

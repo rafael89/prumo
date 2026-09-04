@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircleCheck, faCircleInfo, faSpinner, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
@@ -21,7 +21,7 @@ const classLabels: Record<number, string> = { 0: 'Ações brasileiras', 1: 'FIIs
 
 async function api<T>(path: string, body?: unknown) {
   const response = await fetch(apiBaseUrl + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined)
-  if (!response.ok) throw new Error(await response.text() || 'Não foi possível concluir a operação.')
+  if (!response.ok) { const message = await response.text(); if (message.includes('GuidanceAlreadyConfirmed')) throw new Error('Este aporte já foi confirmado. Consulte o histórico.'); throw new Error(message || 'Não foi possível concluir a operação.') }
   return response.json() as Promise<T>
 }
 
@@ -33,9 +33,11 @@ async function apiOptional<T>(path: string) {
 }
 
 export function ContributionSectionModern({ portfolioId, positions }: { portfolioId: string; positions: Position[] }) {
+  const queryClient = useQueryClient()
   const [amount, setAmount] = useState('')
   const [guidance, setGuidance] = useState<Guidance | null>(null)
   const [selected, setSelected] = useState<Allocation | null>(null)
+  const [confirmedGuidanceId, setConfirmedGuidanceId] = useState<string | null>(null)
   const generate = useMutation({
     mutationFn: () => api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance`, { amount: parse(amount) }),
     onMutate: () => setGuidance(null),
@@ -54,13 +56,13 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
   })
   const current = polling.data ?? activeGuidance
   const pending = generate.isPending || Boolean(current?.jobStatus && !['Completed', 'Failed'].includes(current.jobStatus))
-  const completed = current?.jobStatus === 'Completed' ? current : null
+  const completed = current?.jobStatus === 'Completed' && current.guidanceId !== confirmedGuidanceId ? current : null
   const isFallback = completed?.intelligenceAvailability === 'InsufficientIntelligence'
   const failed = current?.jobStatus === 'Failed'
 
   const confirm = useMutation({
-    mutationFn: (value: { quantity: number; unitPrice: number }) => api(`/api/portfolios/${portfolioId}/contributions`, { guidanceId: completed?.guidanceId, items: [{ assetId: selected?.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: selected?.candidateKey, ...value }] }),
-    onSuccess: () => { setSelected(null); setGuidance(null) }
+    mutationFn: (value: { quantity: number; unitPrice: number }) => api(`/api/portfolios/${portfolioId}/contributions`, { guidanceId: completed?.guidanceId, items: completed?.decision?.decisionType === 'SplitContribution' ? completed.allocations.map(allocation => ({ assetId: allocation.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: allocation.candidateKey, quantity: allocation.amount / value.unitPrice, unitPrice: value.unitPrice })) : [{ assetId: selected?.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: selected?.candidateKey, ...value }] }),
+    onSuccess: async () => { setConfirmedGuidanceId(current?.guidanceId ?? null); setSelected(null); setGuidance(null); await queryClient.invalidateQueries({ queryKey: ['history-timeline', portfolioId] }); await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); await queryClient.invalidateQueries({ queryKey: ['latest-contribution', portfolioId] }) }
   })
 
   return <section className="mx-auto max-w-358 px-6 pb-24 pt-3">

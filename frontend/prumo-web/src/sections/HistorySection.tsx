@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { getJson } from '../api/client'
 
 type Position = { assetId: string; ticker: string; name: string }
-type TimelineItem = { occurredAt: string | null; type: string; assetId: string | null; ticker: string | null; title: string; summary: string; previousAssessment: string | null; currentAssessment: string | null }
+type TimelineItem = { occurredAt: string | null; type: string; assetId: string | null; ticker: string | null; title: string; summary: string; previousAssessment: string | null; currentAssessment: string | null; decisionType?: string | null; confirmationStatus?: string | null; transactionId?: string | null; contributionAmount?: number | null; allocationTickers?: string[] | null; allocationAmounts?: number[] | null; evidence?: string[] | null }
 type TimelineResponse = { items: TimelineItem[]; hasMore: boolean }
 type Transition = { occurredAt: string; ticker: string; previousAssessment: string | null; currentAssessment: string; reason: string }
 type AssetHistory = { ticker: string; name: string; items: TimelineItem[]; assessmentEvolution: Transition[]; sinceLastPurchase: { status: string; lastPurchaseAt: string | null; documentsCount: number; eventsCount: number; assessmentChanges: number; currentAssessment: string | null } }
@@ -12,6 +12,8 @@ const labels: Record<string, string> = { Transaction: 'Compra', ContributionExec
 const date = (value: string | null) => value ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' }).format(new Date(value)) : 'Data não informada'
 
 function TimelineList({ items }: { items: TimelineItem[] }) {
+  items = items.map(item => item.decisionType === 'SplitContribution' && item.allocationTickers?.length === item.allocationAmounts?.length ? { ...item, summary: `${item.summary} · ${item.allocationTickers!.map((ticker, index) => `${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.allocationAmounts![index])} → ${ticker}`).join(' · ')}` } : item)
+  items = items.filter(item => item.type !== 'ContributionGuidance' || item.decisionType).map(item => item.type === 'DecisionMemory' ? { ...item, type: 'ContributionGuidance', title: 'Decisão de aporte', summary: `${item.summary}${item.evidence?.[0] ? ` · Critério: ${item.evidence[0]}` : ''}` } : item)
   if (!items.length) return <p className="text-sm text-slate-500">Nenhum registro histórico encontrado.</p>
   return <div className="divide-y divide-slate-200">{items.map((item, index) => <article key={`${item.type}-${item.occurredAt}-${item.assetId}-${index}`} className="py-4 first:pt-0 last:pb-0"><div className="flex flex-wrap gap-2 text-xs text-slate-500"><span className="font-semibold text-amber-700">{labels[item.type] ?? item.type}</span><span>·</span><span>{date(item.occurredAt)}</span>{item.ticker && <><span>·</span><span className="font-semibold text-slate-700">{item.ticker}</span></>}</div><h3 className="mt-1 font-semibold text-slate-950">{item.title}</h3><p className="mt-1 text-sm leading-6 text-slate-600">{item.summary}</p>{item.previousAssessment && <p className="mt-2 text-sm font-semibold">{item.previousAssessment} → {item.currentAssessment}</p>}</article>)}</div>
 }

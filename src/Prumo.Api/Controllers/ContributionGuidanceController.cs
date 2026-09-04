@@ -18,6 +18,7 @@ namespace Prumo.Api.Controllers;
 [Route("api/portfolios/{portfolioId:guid}/contribution-guidance")]
 public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioAssessmentCurrentService current, TransactionReconciliationService? canonical = null) : ControllerBase
 {
+    private static readonly JsonSerializerOptions PersistedJson = new() { PropertyNameCaseInsensitive = true };
     private const string ContributionEngineVersion = "R4-9.0";
     private static readonly TimeSpan RecentContributionWindow = TimeSpan.FromDays(90);
 
@@ -254,15 +255,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 })
                 .ToArray() ?? Array.Empty<object>();
         }
-        var decision = workItem is null ? null : new PortfolioDecisionService().DecideDeterministically(item.RequestedAmount, workItem.Candidates);
-        object ExposureDimension(PortfolioExposureDimensionSummary value) => new
-        {
-            dimension = value.Dimension,
-            knownPortfolioPercentage = value.KnownPortfolioPercentage,
-            unknownPortfolioPercentage = value.UnknownPortfolioPercentage,
-            coverage = value.Coverage.ToString(),
-            buckets = value.Buckets
-        };
+        var decision = DeserializeDecision(item.MetadataJson);
         var allocated = allocations.Sum(x => x.Amount) + classAllocations.Sum(x => x.Amount);
         return new
         {
@@ -278,47 +271,20 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             avoidedCandidates,
             decision = decision is null ? null : new
             {
-                decisionType = decision.DecisionType.ToString(),
-                contributionAmount = decision.ContributionAmount,
+                decisionType = decision.DecisionType,
+                contributionAmount = item.RequestedAmount,
                 primaryNeed = decision.PrimaryNeed is null ? null : new
                 {
-                    assetClass = decision.PrimaryNeed.AssetClass.ToString(),
+                    assetClass = decision.PrimaryNeed.AssetClass,
                     currentPercentage = decision.PrimaryNeed.CurrentPercentage,
                     targetPercentage = decision.PrimaryNeed.TargetPercentage,
                     gapPercentagePoints = decision.PrimaryNeed.GapPercentagePoints
                 },
-                recommendedScenario = decision.RecommendedScenario is null ? null : new
-                {
-                    deviationBefore = decision.RecommendedScenario.DeviationBefore,
-                    deviationAfter = decision.RecommendedScenario.DeviationAfter,
-                    improvement = decision.RecommendedScenario.Improvement,
-                    exposureAfter = decision.RecommendedScenario.ExposureAfter,
-                    exposureImpacts = decision.RecommendedScenario.ExposureImpacts,
-                    allocations = decision.RecommendedScenario.Allocations.Select(x => new { assetId = x.AssetId, amount = x.Amount }).ToArray()
-                },
-                alternativeScenarios = decision.AlternativeScenarios.Select(s => new
-                {
-                    deviationBefore = s.DeviationBefore,
-                    deviationAfter = s.DeviationAfter,
-                    improvement = s.Improvement,
-                    exposureAfter = s.ExposureAfter,
-                    exposureImpacts = s.ExposureImpacts,
-                    allocations = s.Allocations.Select(x => new { assetId = x.AssetId, amount = x.Amount }).ToArray()
-                }).ToArray(),
-                reasons = decision.Reasons,
                 decisionEvidence = decision.DecisionEvidence,
-                missingData = decision.MissingData,
-                secondaryNeeds = decision.SecondaryNeeds,
-                financialEvaluations = decision.FinancialEvaluations,
-                exposureSummary = decision.ExposureSummary is null ? null : new
-                {
-                    investedPortfolioValue = decision.ExposureSummary.InvestedPortfolioValue,
-                    sector = ExposureDimension(decision.ExposureSummary.Sector),
-                    geography = ExposureDimension(decision.ExposureSummary.Geography),
-                    currency = ExposureDimension(decision.ExposureSummary.Currency)
-                }
+                reasons = Array.Empty<string>(),
+                missingData = Array.Empty<string>()
             },
-            reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { ContributionText.NormalizeAssetClassNames(item.Reasoning) },
+            reasons = new[] { DecisionReason(decision?.DecisionEvidence), string.IsNullOrWhiteSpace(item.Reasoning) ? null : ContributionText.NormalizeAssetClassNames(item.Reasoning) }.Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToArray(),
             evidence = allocations.SelectMany(x => x.evidence).Distinct().ToArray(),
             analysis = new
             {
@@ -384,6 +350,37 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     {
         try { return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>(); }
         catch (JsonException) { return Array.Empty<string>(); }
+    }
+
+    private static string? DecisionReason(IntegratedDecisionEvidence? evidence) => evidence?.DecisiveFactor switch
+    {
+        "PrimaryStructuralImprovement" => "Este cenário corrige melhor a principal defasagem da carteira.",
+        "Concentration" or "LowerResultingConcentration" => "Entre alternativas equivalentes, esta reduz a concentração da carteira.",
+        "SecondaryExposure" => "Entre alternativas equivalentes, esta melhora a diversificação da carteira.",
+        "FinancialQuality" => "Entre alternativas estruturalmente equivalentes, esta apresentou melhor qualidade financeira.",
+        "RecentContribution" => "Entre alternativas equivalentes, esta evita repetir um aporte recente.",
+        "StableTieBreaker" => "As alternativas avaliadas ficaram equivalentes pelos critérios disponíveis.",
+        _ => null
+    };
+
+    private sealed record PersistedDecision(string DecisionType, PersistedNeed? PrimaryNeed, IntegratedDecisionEvidence? DecisionEvidence);
+    private sealed record PersistedNeed(string AssetClass, decimal CurrentPercentage, decimal TargetPercentage, decimal GapPercentagePoints);
+
+    private static PersistedDecision? DeserializeDecision(string json)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            if (!TryGet(root, "decisionType", "DecisionType", out var type)) return null;
+            PersistedNeed? need = null;
+            if (TryGet(root, "primaryNeed", "PrimaryNeed", out var value) && value.ValueKind != JsonValueKind.Null)
+                need = JsonSerializer.Deserialize<PersistedNeed>(value.GetRawText(), PersistedJson);
+            IntegratedDecisionEvidence? evidence = null;
+            if (TryGet(root, "decisionEvidence", "DecisionEvidence", out value) && value.ValueKind != JsonValueKind.Null)
+                evidence = JsonSerializer.Deserialize<IntegratedDecisionEvidence>(value.GetRawText(), PersistedJson);
+            return new(type.GetString() ?? "NoAction", need, evidence);
+        }
+        catch (JsonException) { return null; }
     }
 
     private static ContributionClassAllocation[] ExtractClassAllocations(string json)
