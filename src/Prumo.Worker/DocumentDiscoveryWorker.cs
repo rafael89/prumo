@@ -100,11 +100,11 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         }
         if (reclassifiedDocuments > 0) await dbContext.SaveChangesAsync(cancellationToken);
 
-        var incrementalCandidates = LatestDocumentSelector.SelectIncremental(candidates).ToList();
-        logger.LogInformation("Fonte {SourceName} retornou {DocumentCount} candidato(s); todos os candidatos elegíveis serão verificados contra a deduplicação", source.Name, candidates.Count);
+        var latestCandidates = LatestDocumentSelector.SelectPerTicker(candidates).ToList();
+        logger.LogInformation("Fonte {SourceName} retornou {DocumentCount} candidato(s); {LatestDocumentCount} documento(s) mais recente(s) selecionado(s) para processamento", source.Name, candidates.Count, latestCandidates.Count);
         var newDocuments = 0;
         var duplicatedDocuments = 0;
-        foreach (var candidate in incrementalCandidates)
+        foreach (var candidate in latestCandidates)
         {
             logger.LogInformation("Processando documento candidato do ticker {Ticker}: tipo={DocumentType}, identificador={SourceIdentifier}, url={SourceUrl}", candidate.Ticker, candidate.DocumentType, candidate.SourceIdentifier, candidate.SourceUrl);
             var asset = await dbContext.Assets.SingleOrDefaultAsync(item => item.Ticker == candidate.Ticker.ToUpper(), cancellationToken);
