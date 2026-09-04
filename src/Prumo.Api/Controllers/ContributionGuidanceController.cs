@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Prumo.Application.Abstractions;
 using Prumo.Application.Contributions;
 using Prumo.Application.Explainability;
 using Prumo.Application.Portfolio;
@@ -25,7 +26,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     {
         if (request.Amount <= 0) return BadRequest("O valor do aporte deve ser positivo.");
 
-        var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset)
+        var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.GeographicExposures)
+            .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.CurrencyExposures)
+            .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.FundamentalSnapshots)
+            .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.ValuationSnapshots)
             .SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
 
@@ -80,7 +84,12 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 return new GuidancePosition(x.AssetId, asset.Ticker, asset.AssetClass, x.CurrentValue!.Value,
                     total == 0 ? 0 : x.CurrentValue.Value / total * 100m, asset.AssetType, asset.Sector,
                     recent?.Amount ?? 0, recent?.Count ?? 0, recent?.LastOccurredAt, sectorWeight, true,
-                    allocationNeedScore, diversificationScore, underweightScore, recentPenalty);
+                    allocationNeedScore, diversificationScore, underweightScore, recentPenalty,
+                    asset.SectorCategory, asset.GeographicExposureCoverage,
+                    asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
+                    asset.EconomicCurrencyExposureCoverage,
+                    asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
+                    asset.ListingCountryCode, asset.TradingCurrency, LatestFinancialSnapshot(asset));
             }).ToList();
         var positionAssetIds = existingPositions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
@@ -94,7 +103,12 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             var assetClass = asset.AssetType == AssetType.Etf ? AssetClass.International : asset.AssetClass;
             return new GuidancePosition(asset.Id, asset.Ticker, assetClass, 0, 0, asset.AssetType, asset.Sector,
                 HasPosition: false, AllocationNeedScore: ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0),
-                UnderweightScore: 100);
+                UnderweightScore: 100, SectorCategory: asset.SectorCategory,
+                GeographicExposureCoverage: asset.GeographicExposureCoverage,
+                GeographicExposures: asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
+                EconomicCurrencyExposureCoverage: asset.EconomicCurrencyExposureCoverage,
+                CurrencyExposures: asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
+                ListingCountryCode: asset.ListingCountryCode, TradingCurrency: asset.TradingCurrency, FinancialSnapshot: LatestFinancialSnapshot(asset));
         })).ToList();
         var ids = positions.Select(x => x.AssetId).ToHashSet();
         var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery()
@@ -138,13 +152,15 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 x.SuggestedBehavior, x.Confidence,
                 new[] { new EvidenceReference("assessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) })).ToArray();
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
-            return new ContributionCandidate(position.AssetId, position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
+            return new ContributionCandidate(CandidateIdentity.Known(position.AssetId), position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
                 deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, classBudgets.GetValueOrDefault(position.AssetClass),
                 inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts,
                 position.AssetType, position.Sector, position.RecentContributionAmount, position.RecentContributionCount,
                 position.LastContributionAt, position.SectorWeightWithinClass, position.HasPosition,
                 position.AllocationNeedScore, position.DiversificationScore, position.UnderweightScore,
-                position.RecentContributionPenalty);
+                position.RecentContributionPenalty, position.SectorCategory, position.GeographicExposureCoverage,
+                position.GeographicExposures, position.EconomicCurrencyExposureCoverage, position.CurrencyExposures,
+                position.ListingCountryCode, position.TradingCurrency, position.FinancialSnapshot);
         }).ToArray();
 
         var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, intelligenceContextKey, ContributionEngineVersion, "pending-ai", "pending", "Pending", "Análise em andamento: o Prumo está avaliando os candidatos e os limites da carteira.", "{}");
@@ -199,8 +215,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var allocations = item.Allocations.Select(x => new
         {
             x.AssetId,
-            ticker = assets.GetValueOrDefault(x.AssetId)?.Ticker ?? positions.GetValueOrDefault(x.AssetId)?.Asset?.Ticker ?? string.Empty,
-            assetClass = (int)(assets.GetValueOrDefault(x.AssetId)?.AssetClass ?? positions.GetValueOrDefault(x.AssetId)?.Asset?.AssetClass ?? AssetClass.Other),
+            x.Origin,
+            x.CandidateKey,
+            ticker = x.Ticker ?? (x.AssetId.HasValue ? assets.GetValueOrDefault(x.AssetId.Value)?.Ticker ?? positions.GetValueOrDefault(x.AssetId.Value)?.Asset?.Ticker : null) ?? string.Empty,
+            assetClass = (int)(x.AssetClass ?? (x.AssetId.HasValue ? assets.GetValueOrDefault(x.AssetId.Value)?.AssetClass ?? positions.GetValueOrDefault(x.AssetId.Value)?.Asset?.AssetClass : null) ?? AssetClass.Other),
             x.Amount,
             reason = ContributionText.NormalizeAssetClassNames(x.Reason),
             evidence = DeserializeEvidence(x.EvidenceJson)
@@ -211,7 +229,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             x.Amount,
             reason = ContributionText.NormalizeAssetClassNames(x.Reason)
         }).ToArray();
-        var selectedAssetIds = allocations.Select(x => x.AssetId).ToHashSet();
+        var selectedAssetIds = allocations.Where(x => x.AssetId is not null).Select(x => x.AssetId!.Value).ToHashSet();
         var jobCandidates = await db.ContributionGuidanceJobs.AsNoTracking()
             .Where(x => x.ContributionGuidanceId == item.Id)
             .OrderByDescending(x => x.CreatedAt)
@@ -236,7 +254,15 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 })
                 .ToArray() ?? Array.Empty<object>();
         }
-        var decision = workItem is null ? null : new PortfolioDecisionService().Decide(item.RequestedAmount, workItem.Candidates, allocations.Select(x => (x.AssetId, x.Amount)).ToArray());
+        var decision = workItem is null ? null : new PortfolioDecisionService().DecideDeterministically(item.RequestedAmount, workItem.Candidates);
+        object ExposureDimension(PortfolioExposureDimensionSummary value) => new
+        {
+            dimension = value.Dimension,
+            knownPortfolioPercentage = value.KnownPortfolioPercentage,
+            unknownPortfolioPercentage = value.UnknownPortfolioPercentage,
+            coverage = value.Coverage.ToString(),
+            buckets = value.Buckets
+        };
         var allocated = allocations.Sum(x => x.Amount) + classAllocations.Sum(x => x.Amount);
         return new
         {
@@ -266,6 +292,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     deviationBefore = decision.RecommendedScenario.DeviationBefore,
                     deviationAfter = decision.RecommendedScenario.DeviationAfter,
                     improvement = decision.RecommendedScenario.Improvement,
+                    exposureAfter = decision.RecommendedScenario.ExposureAfter,
+                    exposureImpacts = decision.RecommendedScenario.ExposureImpacts,
                     allocations = decision.RecommendedScenario.Allocations.Select(x => new { assetId = x.AssetId, amount = x.Amount }).ToArray()
                 },
                 alternativeScenarios = decision.AlternativeScenarios.Select(s => new
@@ -273,10 +301,22 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     deviationBefore = s.DeviationBefore,
                     deviationAfter = s.DeviationAfter,
                     improvement = s.Improvement,
+                    exposureAfter = s.ExposureAfter,
+                    exposureImpacts = s.ExposureImpacts,
                     allocations = s.Allocations.Select(x => new { assetId = x.AssetId, amount = x.Amount }).ToArray()
                 }).ToArray(),
                 reasons = decision.Reasons,
-                missingData = decision.MissingData
+                decisionEvidence = decision.DecisionEvidence,
+                missingData = decision.MissingData,
+                secondaryNeeds = decision.SecondaryNeeds,
+                financialEvaluations = decision.FinancialEvaluations,
+                exposureSummary = decision.ExposureSummary is null ? null : new
+                {
+                    investedPortfolioValue = decision.ExposureSummary.InvestedPortfolioValue,
+                    sector = ExposureDimension(decision.ExposureSummary.Sector),
+                    geography = ExposureDimension(decision.ExposureSummary.Geography),
+                    currency = ExposureDimension(decision.ExposureSummary.Currency)
+                }
             },
             reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { ContributionText.NormalizeAssetClassNames(item.Reasoning) },
             evidence = allocations.SelectMany(x => x.evidence).Distinct().ToArray(),
@@ -323,6 +363,20 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     };
 
     private static string NormalizeSector(string? sector) => string.IsNullOrWhiteSpace(sector) ? string.Empty : sector.Trim().ToUpperInvariant();
+
+    private static CandidateFinancialSnapshot? LatestFinancialSnapshot(Asset asset)
+    {
+        var fundamentals = asset.FundamentalSnapshots.OrderByDescending(x => x.ReferenceDate).ThenByDescending(x => x.ObservedAt).FirstOrDefault();
+        var valuation = asset.ValuationSnapshots.OrderByDescending(x => x.ReferenceDate).ThenByDescending(x => x.ObservedAt).FirstOrDefault();
+        if (fundamentals is null && valuation is null) return null;
+        return new(fundamentals?.ReferenceDate ?? valuation!.ReferenceDate,
+            fundamentals?.PeriodType ?? FinancialPeriodType.PointInTime,
+            fundamentals?.ObservedAt ?? valuation!.ObservedAt,
+            fundamentals?.Source ?? valuation!.Source,
+            fundamentals?.NetIncome, fundamentals?.Equity, fundamentals?.TotalDebt, fundamentals?.Cash, fundamentals?.Roe,
+            valuation?.PriceEarnings, valuation?.PriceBook, valuation?.EvEbitda, valuation?.DividendYield,
+            fundamentals?.SourceReference ?? valuation?.SourceReference);
+    }
 
     private static decimal ScoreNeed(decimal target, decimal current) => Math.Clamp((target - current) * 5m, 0, 100);
 

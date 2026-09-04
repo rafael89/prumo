@@ -246,6 +246,10 @@ public sealed class PortfoliosController : ControllerBase
         return await dbContext.Portfolios
             .Include(portfolio => portfolio.Positions)
             .ThenInclude(position => position.Asset)
+            .ThenInclude(asset => asset!.GeographicExposures)
+            .Include(portfolio => portfolio.Positions)
+            .ThenInclude(position => position.Asset)
+            .ThenInclude(asset => asset!.CurrencyExposures)
             .SingleOrDefaultAsync(portfolio => portfolio.Id == portfolioId, cancellationToken);
     }
 
@@ -286,7 +290,15 @@ public sealed class PortfoliosController : ControllerBase
             position.AveragePrice,
             position.CurrentPrice,
             position.CurrentValue,
-            position.PortfolioWeight);
+            position.PortfolioWeight,
+            position.Asset is null ? null : new ExposureMetadataResponse(
+                position.Asset.SectorCategory?.ToString(),
+                position.Asset.ListingCountryCode,
+                position.Asset.TradingCurrency,
+                position.Asset.GeographicExposureCoverage.ToString(),
+                position.Asset.GeographicExposures.Select(x => new GeographicExposureResponse(x.CountryCode, x.Percentage, x.Source.ToString(), x.SourceReference, x.ObservedAt, x.IsDerived)).ToArray(),
+                position.Asset.EconomicCurrencyExposureCoverage.ToString(),
+                position.Asset.CurrencyExposures.Select(x => new CurrencyExposureResponse(x.CurrencyCode, x.Percentage, x.Source.ToString(), x.SourceReference, x.ObservedAt, x.IsDerived)).ToArray()));
     }
 }
 
@@ -303,4 +315,7 @@ public sealed record ContributionPreview(ContributionPreviewStatus Status, Asset
 public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact);
 public sealed record PortfolioHealthSummary(string Status, string Summary, IReadOnlyList<AllocationDeviation> AllocationDeviations, MainDeviation? MainDeviation);
 public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0, DashboardState State = DashboardState.Ready, PortfolioOverview? PortfolioOverview = null, IReadOnlyList<DashboardAssessment>? AttentionNow = null, ContributionPreview? ContributionPreview = null, PortfolioHealthSummary? PortfolioHealthSummary = null, IReadOnlyList<DashboardAssessment>? RecentUpdates = null, DateTimeOffset? GeneratedAt = null);
-public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight);
+public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight, ExposureMetadataResponse? Exposure = null);
+public sealed record ExposureMetadataResponse(string? SectorCategory, string? ListingCountryCode, string? TradingCurrency, string GeographicCoverage, IReadOnlyList<GeographicExposureResponse> GeographicExposures, string EconomicCurrencyCoverage, IReadOnlyList<CurrencyExposureResponse> CurrencyExposures);
+public sealed record GeographicExposureResponse(string CountryCode, decimal? Percentage, string Source, string? SourceReference, DateTimeOffset? ObservedAt, bool IsDerived);
+public sealed record CurrencyExposureResponse(string CurrencyCode, decimal? Percentage, string Source, string? SourceReference, DateTimeOffset? ObservedAt, bool IsDerived);

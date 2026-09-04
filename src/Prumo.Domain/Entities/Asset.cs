@@ -23,10 +23,24 @@ public sealed class Asset
     public AssetType AssetType { get; private set; }
     public AssetClass AssetClass { get; private set; }
     public string? Sector { get; private set; }
+    public EconomicSector? SectorCategory { get; private set; }
+    public string? ListingCountryCode { get; private set; }
+    public string? TradingCurrency { get; private set; }
+    public ExposureCoverage GeographicExposureCoverage { get; private set; } = ExposureCoverage.Unavailable;
+    public ExposureCoverage EconomicCurrencyExposureCoverage { get; private set; } = ExposureCoverage.Unavailable;
     public string? Cnpj { get; private set; }
     public bool IsActive { get; private set; }
+    public ICollection<AssetGeographicExposure> GeographicExposures { get; private set; } = new List<AssetGeographicExposure>();
+    public ICollection<AssetCurrencyExposure> CurrencyExposures { get; private set; } = new List<AssetCurrencyExposure>();
+    public ICollection<AssetFundamentalSnapshot> FundamentalSnapshots { get; private set; } = new List<AssetFundamentalSnapshot>();
+    public ICollection<AssetValuationSnapshot> ValuationSnapshots { get; private set; } = new List<AssetValuationSnapshot>();
 
     public void SetCnpj(string? cnpj) => Cnpj = NormalizeCnpj(cnpj);
+    public void SetListingMetadata(string? countryCode, string? currency)
+    {
+        ListingCountryCode = string.IsNullOrWhiteSpace(countryCode) ? null : countryCode.Trim().ToUpperInvariant();
+        TradingCurrency = string.IsNullOrWhiteSpace(currency) ? null : currency.Trim().ToUpperInvariant();
+    }
 
     public void Update(string ticker, string name, AssetType assetType, string? sector)
     {

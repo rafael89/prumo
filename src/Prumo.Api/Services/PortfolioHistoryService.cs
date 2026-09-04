@@ -94,9 +94,9 @@ public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconc
         items.AddRange(events.Select(item => new PortfolioTimelineItem(item.OccurredAt, "InvestmentEvent", item.AffectedAssets.FirstOrDefault(asset => assetIds.Contains(asset.Id))?.Id, item.AffectedAssets.FirstOrDefault(asset => assetIds.Contains(asset.Id))?.Ticker, "Evento identificado", item.Summary, "InvestmentEvent", item.Id, item.Evidence.FirstOrDefault()?.DocumentId, null, null)));
         foreach (var guidance in guidances)
         {
-            foreach (var allocation in guidance.Allocations.Where(x => assetIds.Contains(x.AssetId)))
+            foreach (var allocation in guidance.Allocations.Where(x => x.AssetId.HasValue && assetIds.Contains(x.AssetId.Value)))
             {
-                var asset = assets.FirstOrDefault(x => x.Id == allocation.AssetId);
+                var asset = assets.FirstOrDefault(x => x.Id == allocation.AssetId!.Value);
                 items.Add(new(guidance.GeneratedAt, "ContributionGuidance", asset?.Id, asset?.Ticker, "Orientação de aporte", allocation.Reason, "ContributionGuidance", guidance.Id, null, null, null));
             }
         }

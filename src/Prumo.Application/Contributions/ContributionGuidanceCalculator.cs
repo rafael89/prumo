@@ -1,4 +1,5 @@
 using Prumo.Application.Portfolio;
+using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 
@@ -20,7 +21,15 @@ public sealed record GuidancePosition(
     decimal AllocationNeedScore = 0,
     decimal DiversificationScore = 0,
     decimal UnderweightScore = 0,
-    decimal RecentContributionPenalty = 0)
+    decimal RecentContributionPenalty = 0,
+    EconomicSector? SectorCategory = null,
+    ExposureCoverage GeographicExposureCoverage = ExposureCoverage.Unavailable,
+    IReadOnlyList<KnownGeographicExposure>? GeographicExposures = null,
+    ExposureCoverage EconomicCurrencyExposureCoverage = ExposureCoverage.Unavailable,
+    IReadOnlyList<KnownCurrencyExposure>? CurrencyExposures = null,
+    string? ListingCountryCode = null,
+    string? TradingCurrency = null,
+    CandidateFinancialSnapshot? FinancialSnapshot = null)
 {
     public decimal DecisionScore => AllocationNeedScore * 0.25m
         + (DiversificationScore > 0 ? DiversificationScore : Math.Clamp(100m - SectorWeightWithinClass, 0, 100)) * 0.20m
@@ -29,7 +38,10 @@ public sealed record GuidancePosition(
 }
 public sealed record GuidanceAssessment(Guid AssetId, CapitalDecisionImpact Impact, AssessmentStatus Status, string? Evidence, string AssessmentVersion, AttentionPriority AttentionPriority = AttentionPriority.Low, ActionRequirement ActionRequirement = ActionRequirement.None, string Summary = "", string WhyItMatters = "", string SuggestedBehavior = "", decimal Confidence = 0, Guid AssessmentId = default);
 public sealed record ContributionGuidanceInput(Guid PortfolioId, decimal ContributionAmount, PortfolioHealthResult Health, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<GuidanceAssessment> Assessments);
-public sealed record ContributionAllocation(Guid AssetId, string Ticker, AssetClass AssetClass, decimal Amount, string Reason, IReadOnlyList<string> Evidence);
+public sealed record ContributionAllocation(Guid? AssetId, string Ticker, AssetClass AssetClass, decimal Amount, string Reason, IReadOnlyList<string> Evidence, CandidateIdentity? CandidateIdentity = null)
+{
+    public CandidateIdentity Identity => CandidateIdentity ?? Prumo.Application.Abstractions.CandidateIdentity.Known(AssetId!.Value);
+}
 public sealed record AvoidedCandidate(Guid AssetId, string Ticker, AssetClass AssetClass, ContributionAvoidanceReasonType ReasonType, string Reason, IReadOnlyList<string> Evidence);
 public sealed record ContributionGuidance(ContributionGuidanceStatus Status, Guid PortfolioId, decimal ContributionAmount, IReadOnlyList<ContributionAllocation> Allocations, IReadOnlyList<AvoidedCandidate> AvoidedCandidates, decimal UnallocatedAmount, ContributionAllocationStyle AllocationStyle, IReadOnlyList<string> Reasons, IReadOnlyList<string> Evidence, string PortfolioHealthPolicyVersion, IReadOnlyList<string> AssessmentVersions, DateTimeOffset GeneratedAt)
 {

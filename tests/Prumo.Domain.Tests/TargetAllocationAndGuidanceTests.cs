@@ -50,7 +50,7 @@ public sealed class TargetAllocationAndGuidanceTests
     public void Intelligence_validation_rejects_unknown_blocked_and_over_budget_candidates()
     {
         var allowed = Guid.NewGuid(); var blocked = Guid.NewGuid();
-        var candidates = new[] { new ContributionCandidate(allowed, "AAA", AssetClass.Fii, 100, 10, 50, 50, 1000, false, Array.Empty<ContributionAssessmentContext>()), new ContributionCandidate(blocked, "BBB", AssetClass.Fii, 100, 10, 50, 50, 1000, true, Array.Empty<ContributionAssessmentContext>()) };
+        var candidates = new[] { new ContributionCandidate(CandidateIdentity.Known(allowed), "AAA", AssetClass.Fii, 100, 10, 50, 50, 1000, false, Array.Empty<ContributionAssessmentContext>()), new ContributionCandidate(CandidateIdentity.Known(blocked), "BBB", AssetClass.Fii, 100, 10, 50, 50, 1000, true, Array.Empty<ContributionAssessmentContext>()) };
         var result = new ContributionIntelligenceResult(new[] { new ContributionCandidateEvaluation(blocked, 1, 100, "x", 1, Array.Empty<EvidenceReference>()) }, "x", ContributionIntelligenceAvailability.IntelligenceAvailable, new("e", "p", "pr", "x", "m", DateTimeOffset.UtcNow));
         Assert.False(ContributionIntelligenceValidator.IsValid(result, 1000, candidates));
     }
@@ -61,8 +61,8 @@ public sealed class TargetAllocationAndGuidanceTests
         var first = Guid.NewGuid(); var second = Guid.NewGuid();
         var candidates = new[]
         {
-            new ContributionCandidate(first, "AAA", AssetClass.Fii, 100, 50, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>()),
-            new ContributionCandidate(second, "BBB", AssetClass.Fii, 100, 50, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>())
+            new ContributionCandidate(CandidateIdentity.Known(first), "AAA", AssetClass.Fii, 100, 50, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>()),
+            new ContributionCandidate(CandidateIdentity.Known(second), "BBB", AssetClass.Fii, 100, 50, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>())
         };
         var result = new ContributionIntelligenceResult(new[]
         {
@@ -80,7 +80,7 @@ public sealed class TargetAllocationAndGuidanceTests
         var positions = new[] { new GuidancePosition(assetId, "AAA", AssetClass.BrazilianStock, 1000, 100) };
         var baseline = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(
             Guid.NewGuid(), 100, CreateHealth((AssetClass.BrazilianStock, 1000, 100)), positions, Array.Empty<GuidanceAssessment>()));
-        var candidates = new[] { new ContributionCandidate(assetId, "AAA", AssetClass.BrazilianStock, 1000, 100, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>()) };
+        var candidates = new[] { new ContributionCandidate(CandidateIdentity.Known(assetId), "AAA", AssetClass.BrazilianStock, 1000, 100, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>()) };
 
         var json = JsonSerializer.Serialize(new ContributionGuidanceWorkItem(baseline, positions, candidates));
         var restored = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(json);
@@ -94,7 +94,7 @@ public sealed class TargetAllocationAndGuidanceTests
     public void Contribution_prompt_v2_includes_guardrails_and_readable_context()
     {
         var candidate = new ContributionCandidate(
-            Guid.NewGuid(), "FII11", AssetClass.Fii, 1000, 25, 40, 50, 300, true,
+            CandidateIdentity.Known(Guid.NewGuid()), "FII11", AssetClass.Fii, 1000, 25, 40, 50, 300, true,
             Array.Empty<ContributionAssessmentContext>());
 
         var prompt = ContributionIntelligencePrompt.Build(Guid.NewGuid(), 1234.56m, new[] { candidate });
@@ -268,8 +268,8 @@ public sealed class TargetAllocationAndGuidanceTests
     {
         var candidates = new[]
         {
-            new ContributionCandidate(Guid.NewGuid(), "AAA", AssetClass.BrazilianStock, 100, 50, 100, 100, 1000, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 90),
-            new ContributionCandidate(Guid.NewGuid(), "BBB", AssetClass.BrazilianStock, 100, 50, 100, 100, 1000, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 80)
+            new ContributionCandidate(CandidateIdentity.Known(Guid.NewGuid()), "AAA", AssetClass.BrazilianStock, 100, 50, 100, 100, 1000, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 90),
+            new ContributionCandidate(CandidateIdentity.Known(Guid.NewGuid()), "BBB", AssetClass.BrazilianStock, 100, 50, 100, 100, 1000, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 80)
         };
 
         var prompt = ContributionIntelligencePrompt.Build(Guid.NewGuid(), 1000, candidates);
@@ -289,8 +289,8 @@ public sealed class TargetAllocationAndGuidanceTests
         var fii = Guid.NewGuid();
         var candidates = new[]
         {
-            new ContributionCandidate(stock, "AAA", AssetClass.BrazilianStock, 800, 80, 80, 50, 0, false, Array.Empty<ContributionAssessmentContext>()),
-            new ContributionCandidate(fii, "BBB", AssetClass.Fii, 200, 20, 20, 50, 0, false, Array.Empty<ContributionAssessmentContext>())
+            new ContributionCandidate(CandidateIdentity.Known(stock), "AAA", AssetClass.BrazilianStock, 800, 80, 80, 50, 0, false, Array.Empty<ContributionAssessmentContext>()),
+            new ContributionCandidate(CandidateIdentity.Known(fii), "BBB", AssetClass.Fii, 200, 20, 20, 50, 0, false, Array.Empty<ContributionAssessmentContext>())
         };
 
         var rebalance = ContributionProjectionEvaluator.AggregateClassDeviation(candidates, new[] { (fii, 300m) });

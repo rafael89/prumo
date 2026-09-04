@@ -5,11 +5,13 @@ import { faCircleCheck, faCircleInfo, faSpinner, faTriangleExclamation, faWandMa
 import { AppDialog } from '../components/AppDialog'
 import { apiBaseUrl } from '../api/client'
 
-type Allocation = { assetId: string; ticker: string; assetClass: number; amount: number; reason: string }
+type Allocation = { assetId?: string | null; origin?: string; candidateKey?: string | null; ticker: string; assetClass: number; amount: number; reason: string }
 type AvoidedCandidate = { assetId: string; ticker: string; assetClass: number; reason: string }
 type AnalysisTrace = { generatedAt?: string; engineVersion?: string; provider?: string; model?: string; policyVersion?: string; assessmentVersions?: string[]; evidenceCount?: number }
 type ClassAllocation = { assetClass: number; amount: number; reason: string }
-type Decision = { decisionType: 'ReinforceExisting' | 'AddNewAsset' | 'SplitContribution' | 'NoAction'; primaryNeed?: { assetClass: string; gapPercentagePoints: number } | null; recommendedScenario?: { deviationBefore: number; deviationAfter: number } | null; reasons: string[] }
+type DecisionNeed = { type: string; dimension: string; key?: string | null; severity: number; confidence: string; coverage: string; reasons: string[] }
+type FinancialEvaluation = { assetId: string; quality: { category: string; freshness: string; signals: string[]; concerns: string[] }; valuation: { assessment: string; metrics: { metric: string; value: number }[] } }
+type Decision = { decisionType: 'ReinforceExisting' | 'AddNewAsset' | 'SplitContribution' | 'NoAction'; primaryNeed?: { assetClass: string; gapPercentagePoints: number } | null; recommendedScenario?: { deviationBefore: number; deviationAfter: number; allocations?: { assetId: string }[] } | null; decisionEvidence?: { primaryNeed: string; decisiveFactor: string; concentrationEffect: string; qualityContext: string; valuationContext: string } | null; secondaryNeeds?: DecisionNeed[]; financialEvaluations?: FinancialEvaluation[]; missingData: string[]; reasons: string[] }
 type Guidance = { guidanceId: string; requestedAmount: number; allocations: Allocation[]; classAllocations?: ClassAllocation[]; avoidedCandidates?: AvoidedCandidate[]; allocatedAmount: number; unallocatedAmount: number; reasons: string[]; evidence?: string[]; analysis?: AnalysisTrace; intelligenceAvailability?: string; jobStatus?: string; decision?: Decision | null }
 type Position = { id: string }
 
@@ -57,7 +59,7 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
   const failed = current?.jobStatus === 'Failed'
 
   const confirm = useMutation({
-    mutationFn: (value: { quantity: number; unitPrice: number }) => api(`/api/portfolios/${portfolioId}/contributions`, { guidanceId: completed?.guidanceId, items: [{ assetId: selected?.assetId, ...value }] }),
+    mutationFn: (value: { quantity: number; unitPrice: number }) => api(`/api/portfolios/${portfolioId}/contributions`, { guidanceId: completed?.guidanceId, items: [{ assetId: selected?.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: selected?.candidateKey, ...value }] }),
     onSuccess: () => { setSelected(null); setGuidance(null) }
   })
 
@@ -83,13 +85,13 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
         </div>
 
         <div>{completed ? <>
-          {completed.decision && <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-[.14em] text-amber-700">Recomendação</p><h2 className="mt-1 text-lg font-semibold">{{ ReinforceExisting: 'Reforçar posição existente', AddNewAsset: 'Abrir nova posição', SplitContribution: 'Dividir o aporte', NoAction: 'Nenhuma ação recomendada' }[completed.decision.decisionType]}</h2>{completed.decision.primaryNeed && <p className="mt-2 text-sm text-amber-950">A classe {completed.decision.primaryNeed.assetClass} está {completed.decision.primaryNeed.gapPercentagePoints.toFixed(1)} p.p. abaixo do target.</p>}{completed.decision.recommendedScenario && <p className="mt-2 text-xs text-amber-900">Desvio da carteira: {completed.decision.recommendedScenario.deviationBefore.toFixed(1)} → {completed.decision.recommendedScenario.deviationAfter.toFixed(1)} p.p.</p>}{completed.decision.reasons.slice(0, 1).map(reason => <p key={reason} className="mt-2 text-xs text-slate-600">{reason}</p>)}</div>}
+          {completed.decision && <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-bold uppercase tracking-[.14em] text-amber-700">Recomendação</p><h2 className="mt-1 text-lg font-semibold">{{ ReinforceExisting: 'Reforçar posição existente', AddNewAsset: 'Abrir nova posição', SplitContribution: 'Dividir o aporte', NoAction: 'Nenhuma ação recomendada' }[completed.decision.decisionType]}</h2>{completed.decision.primaryNeed && <p className="mt-2 text-sm text-amber-950">A classe {completed.decision.primaryNeed.assetClass} está {completed.decision.primaryNeed.gapPercentagePoints.toFixed(1)} p.p. abaixo do target.</p>}{completed.decision.recommendedScenario && <p className="mt-2 text-xs text-amber-900">Desvio da carteira: {completed.decision.recommendedScenario.deviationBefore.toFixed(1)} → {completed.decision.recommendedScenario.deviationAfter.toFixed(1)} p.p.</p>}{completed.decision.secondaryNeeds?.slice(0, 2).map(need => <p key={`${need.type}-${need.key}`} className="mt-2 text-xs text-amber-900">Sinal estrutural: {need.reasons[0]}</p>)}{completed.decision.financialEvaluations?.find(item => completed.decision?.recommendedScenario?.allocations?.some(allocation => allocation.assetId === item.assetId) && (item.quality.signals.length || item.quality.concerns.length)) && <p className="mt-2 text-xs text-amber-900">Evidência financeira disponível para o cenário recomendado.</p>}{completed.decision.missingData.slice(0, 1).map(reason => <p key={reason} className="mt-2 text-xs text-slate-600">{reason}</p>)}{completed.decision.reasons.slice(0, 1).map(reason => <p key={reason} className="mt-2 text-xs text-slate-600">{reason}</p>)}</div>}
           <div className="flex justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Alocação calculada</p><h2 className="mt-1 text-lg font-semibold">Cenário de distribuição</h2><p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">O cálculo considera necessidade da classe, peso atual, diversificação, concentração e aportes recentes. Altere o valor acima para simular outro cenário.</p></div><strong>{money(completed.allocatedAmount, false)}</strong></div>
           <div className="mt-4 space-y-4">{completed.classAllocations?.map(item => <div key={`class-${item.assetClass}`} className="rounded-xl border border-dashed border-amber-300 p-3">
             <div className="flex justify-between text-sm"><strong>{classLabels[item.assetClass] ?? 'Classe de ativos'}</strong><span>{money(item.amount, false)}</span></div>
             <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.min(item.amount / completed.requestedAmount * 100, 100)}%` }} /></div>
             <p className="mt-1 text-xs text-slate-500">{item.reason} Escolha um ativo dessa classe antes de realizar o aporte.</p>
-          </div>)}{completed.allocations.map(item => <div key={item.assetId}>
+          </div>)}{completed.allocations.map(item => <div key={item.candidateKey ?? item.assetId ?? item.ticker}>
             <div className="flex justify-between text-sm"><strong>{item.ticker}</strong><span>{money(item.amount, false)}</span></div>
             <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(item.amount / completed.requestedAmount * 100, 100)}%` }} /></div>
             <p className="mt-1 text-xs text-slate-500">{item.reason}</p>

@@ -1,4 +1,5 @@
 using Prumo.Application.Explainability;
+using Prumo.Application.Abstractions;
 using Prumo.Domain.Enums;
 
 namespace Prumo.Application.Contributions;
@@ -6,7 +7,7 @@ namespace Prumo.Application.Contributions;
 public enum ContributionIntelligenceAvailability { IntelligenceAvailable, PartialIntelligence, InsufficientIntelligence }
 
 public sealed record ContributionCandidate(
-    Guid AssetId,
+    CandidateIdentity Identity,
     string Ticker,
     AssetClass AssetClass,
     decimal CurrentValue,
@@ -26,15 +27,34 @@ public sealed record ContributionCandidate(
     decimal AllocationNeedScore = 0,
     decimal DiversificationScore = 0,
     decimal UnderweightScore = 0,
-    decimal RecentContributionPenalty = 0)
+    decimal RecentContributionPenalty = 0,
+    EconomicSector? SectorCategory = null,
+    ExposureCoverage GeographicExposureCoverage = ExposureCoverage.Unavailable,
+    IReadOnlyList<KnownGeographicExposure>? GeographicExposures = null,
+    ExposureCoverage EconomicCurrencyExposureCoverage = ExposureCoverage.Unavailable,
+    IReadOnlyList<KnownCurrencyExposure>? CurrencyExposures = null,
+    string? ListingCountryCode = null,
+    string? TradingCurrency = null,
+    CandidateFinancialSnapshot? FinancialSnapshot = null)
 {
+    public string? ExternalName { get; init; }
+    public string? ExternalSourceReference { get; init; }
+    public Guid AssetId => Identity.AssetId ?? throw new InvalidOperationException("Este candidato não possui AssetId persistido.");
+    public CandidateKey CandidateKey => Identity.Key;
     public decimal DecisionScore => AllocationNeedScore * 0.25m
         + (DiversificationScore > 0 ? DiversificationScore : Math.Clamp(100m - SectorWeightWithinClass, 0, 100)) * 0.20m
         + UnderweightScore * 0.15m
         + (100m - (RecentContributionPenalty > 0 ? RecentContributionPenalty : RecentContributionCount > 0 ? 25m : 0m)) * 0.15m;
 }
+public sealed record KnownGeographicExposure(string CountryCode, decimal? Percentage);
+public sealed record KnownCurrencyExposure(string CurrencyCode, decimal? Percentage);
 public sealed record ContributionAssessmentContext(string AttentionPriority, string ActionRequirement, string CapitalDecisionImpact, string Summary, string WhyItMatters, string SuggestedBehavior, decimal Confidence, IReadOnlyList<EvidenceReference> EvidenceReferences);
-public sealed record ContributionCandidateEvaluation(Guid AssetId, int Rank, decimal SuggestedAmount, string Reason, decimal Confidence, IReadOnlyList<EvidenceReference> Evidence);
+public sealed record ContributionCandidateEvaluation(CandidateKey CandidateKey, int Rank, decimal SuggestedAmount, string Reason, decimal Confidence, IReadOnlyList<EvidenceReference> Evidence)
+{
+    public Guid? AssetId => CandidateKey.Value.StartsWith("KnownCatalog:", StringComparison.Ordinal) && Guid.TryParse(CandidateKey.Value["KnownCatalog:".Length..], out var id) ? id : null;
+    public ContributionCandidateEvaluation(Guid assetId, int rank, decimal amount, string reason, decimal confidence, IReadOnlyList<EvidenceReference> evidence)
+        : this(CandidateIdentity.Known(assetId).Key, rank, amount, reason, confidence, evidence) { }
+}
 public sealed record ContributionIntelligenceMetadata(string EngineVersion, string PolicyVersion, string PromptVersion, string Provider, string Model, DateTimeOffset GeneratedAt);
 public sealed record ContributionIntelligenceResult(IReadOnlyList<ContributionCandidateEvaluation> CandidateEvaluations, string OverallReasoning, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
 public sealed record ContributionGuidanceWorkItem(ContributionGuidance Baseline, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<ContributionCandidate> Candidates);
@@ -49,12 +69,12 @@ public static class ContributionIntelligenceValidator
     public static bool IsValid(ContributionIntelligenceResult result, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates)
     {
         if (result is null || result.CandidateEvaluations.Any(x => x.Rank <= 0 || x.SuggestedAmount < 0 || x.Confidence is < 0 or > 1)
-            || result.CandidateEvaluations.GroupBy(x => x.AssetId).Any(x => x.Count() > 1)
+            || result.CandidateEvaluations.GroupBy(x => x.CandidateKey).Any(x => x.Count() > 1)
             || result.CandidateEvaluations.GroupBy(x => x.Rank).Any(x => x.Count() > 1)) return false;
-        var byId = candidates.ToDictionary(x => x.AssetId);
-        if (result.CandidateEvaluations.Any(x => !byId.TryGetValue(x.AssetId, out var candidate) || candidate.HasBlock || Money(x.SuggestedAmount) > candidate.ClassBudget)) return false;
+        var byKey = candidates.ToDictionary(x => x.CandidateKey);
+        if (result.CandidateEvaluations.Any(x => !byKey.TryGetValue(x.CandidateKey, out var candidate) || candidate.HasBlock || Money(x.SuggestedAmount) > candidate.ClassBudget)) return false;
         if (result.CandidateEvaluations
-            .GroupBy(x => byId[x.AssetId].AssetClass)
+            .GroupBy(x => byKey[x.CandidateKey].AssetClass)
             .Any(group => group.Sum(x => Money(x.SuggestedAmount)) > candidates.First(x => x.AssetClass == group.Key).ClassBudget)) return false;
         return result.CandidateEvaluations.Sum(x => Money(x.SuggestedAmount)) <= Money(contributionAmount);
     }
@@ -65,16 +85,19 @@ public static class ContributionIntelligenceValidator
 public static class ContributionIntelligenceApplier
 {
     public static ContributionGuidance Apply(ContributionGuidance fallback, ContributionIntelligenceResult result, IReadOnlyList<GuidancePosition> positions)
+        => Apply(fallback, result, positions.Select(x => new ContributionCandidate(CandidateIdentity.Known(x.AssetId), x.Ticker, x.AssetClass, x.CurrentValue, x.CurrentWeight, 0, 0, 0, false, Array.Empty<ContributionAssessmentContext>(), x.AssetType)).ToArray(), positions);
+
+    public static ContributionGuidance Apply(ContributionGuidance fallback, ContributionIntelligenceResult result, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<GuidancePosition> positions)
     {
-        var byId = positions.ToDictionary(x => x.AssetId);
-        var allocations = result.CandidateEvaluations.Where(x => x.SuggestedAmount > 0 && byId.ContainsKey(x.AssetId)).OrderBy(x => x.Rank).Select(x =>
+        var byKey = candidates.ToDictionary(x => x.CandidateKey);
+        var allocations = result.CandidateEvaluations.Where(x => x.SuggestedAmount > 0 && byKey.ContainsKey(x.CandidateKey)).OrderBy(x => x.Rank).Select(x =>
         {
-            var position = byId[x.AssetId];
-            return new ContributionAllocation(x.AssetId, position.Ticker, position.AssetClass, decimal.Round(x.SuggestedAmount, 2), ContributionText.NormalizeAssetClassNames(x.Reason), x.Evidence.Select(e => e.Label).Where(e => !string.IsNullOrWhiteSpace(e)).ToArray());
+            var candidate = byKey[x.CandidateKey];
+            return new ContributionAllocation(candidate.Identity.AssetId, candidate.Ticker, candidate.AssetClass, decimal.Round(x.SuggestedAmount, 2), ContributionText.NormalizeAssetClassNames(x.Reason), x.Evidence.Select(e => e.Label).Where(e => !string.IsNullOrWhiteSpace(e)).ToArray(), candidate.Identity);
         }).ToArray();
         var reasons = new List<string>();
         if (!string.IsNullOrWhiteSpace(result.OverallReasoning)) reasons.Add(ContributionText.NormalizeAssetClassNames(result.OverallReasoning));
-        var deferred = candidatesForExplanation(positions, allocations.Select(x => x.AssetId).ToHashSet());
+        var deferred = candidatesForExplanation(positions, allocations.Where(x => x.AssetId is not null).Select(x => x.AssetId!.Value).ToHashSet());
         if (deferred.Count > 0) reasons.Add($"Alternativas adiadas: {string.Join(" ", deferred)}");
         return fallback with { Allocations = allocations, UnallocatedAmount = decimal.Round(fallback.ContributionAmount - allocations.Sum(x => x.Amount), 2), Reasons = reasons, Evidence = allocations.SelectMany(x => x.Evidence).Distinct().ToArray(), AllocationStyle = allocations.Length switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed } };
     }

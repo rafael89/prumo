@@ -28,6 +28,10 @@ public sealed class PrumoDbContext : DbContext
     public DbSet<PortfolioTransactionItem> PortfolioTransactionItems => Set<PortfolioTransactionItem>();
     public DbSet<PortfolioCashFlow> PortfolioCashFlows => Set<PortfolioCashFlow>();
     public DbSet<AssetPrice> AssetPrices => Set<AssetPrice>();
+    public DbSet<AssetGeographicExposure> AssetGeographicExposures => Set<AssetGeographicExposure>();
+    public DbSet<AssetCurrencyExposure> AssetCurrencyExposures => Set<AssetCurrencyExposure>();
+    public DbSet<AssetFundamentalSnapshot> AssetFundamentalSnapshots => Set<AssetFundamentalSnapshot>();
+    public DbSet<AssetValuationSnapshot> AssetValuationSnapshots => Set<AssetValuationSnapshot>();
     public DbSet<ContributionGuidanceJob> ContributionGuidanceJobs => Set<ContributionGuidanceJob>();
     public DbSet<PortfolioHistoricalAnchor> PortfolioHistoricalAnchors => Set<PortfolioHistoricalAnchor>();
     public DbSet<PortfolioHistoricalAnchorItem> PortfolioHistoricalAnchorItems => Set<PortfolioHistoricalAnchorItem>();

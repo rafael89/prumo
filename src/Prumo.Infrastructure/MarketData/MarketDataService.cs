@@ -6,7 +6,7 @@ using Prumo.Infrastructure.Persistence;
 
 namespace Prumo.Infrastructure.MarketData;
 
-public sealed class MarketDataService(PrumoDbContext db, IMarketDataProvider provider, ILogger<MarketDataService> logger)
+public sealed class MarketDataService(PrumoDbContext db, IMarketDataProvider provider, FinancialDataRefreshService financialData, ILogger<MarketDataService> logger)
 {
     public async Task<IReadOnlyList<AssetPrice>> RefreshAsync(CancellationToken ct = default)
     {
@@ -17,6 +17,7 @@ public sealed class MarketDataService(PrumoDbContext db, IMarketDataProvider pro
             try { refreshed.AddRange(await RefreshAsync(asset, ct)); }
             catch (Exception exception) when (!ct.IsCancellationRequested) { logger.LogWarning(exception, "Falha ao atualizar market data de {Ticker}; dados persistidos foram preservados.", asset.Ticker); }
         }
+        await financialData.RefreshAsync(ct);
         return refreshed;
     }
 

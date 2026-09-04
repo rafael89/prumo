@@ -4,17 +4,16 @@ using Microsoft.EntityFrameworkCore;
 using Prumo.Application.Contributions;
 using Prumo.Domain.Entities;
 using Prumo.Infrastructure.Persistence;
-using Prumo.Infrastructure.Ai;
+using Prumo.Application.Abstractions;
+using Prumo.Infrastructure.MarketData;
 using Prumo.Domain.Enums;
-using Microsoft.Extensions.Options;
 
 namespace Prumo.Worker;
 
-public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILogger<ContributionGuidanceWorker> logger, WorkerMetrics metrics, IOptions<AiProviderOptions> aiOptions) : BackgroundService
+public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILogger<ContributionGuidanceWorker> logger, WorkerMetrics metrics) : BackgroundService
 {
     private const int MaxAttempts = 3;
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(30);
-    private readonly TimeSpan aiTimeout = TimeSpan.FromSeconds(Math.Max(1, aiOptions.Value.TimeoutSeconds));
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -33,64 +32,16 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var guidance = await db.ContributionGuidances.Include(x => x.Allocations).SingleAsync(x => x.Id == job.ContributionGuidanceId, stoppingToken);
                     var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson)
                         ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
-                    var provider = scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>();
+                    workItem = await AddExternalCandidatesAsync(scope.ServiceProvider, workItem, stoppingToken);
+                    var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates);
                     var usedFallback = false;
-                    try
+                    var deterministicAllocations = deterministicDecision.RecommendedScenario?.Allocations.Select(allocation =>
                     {
-                        var result = await provider
-                            .EvaluateAsync(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, stoppingToken)
-                            .WaitAsync(aiTimeout, stoppingToken);
-                        if (result.Availability == ContributionIntelligenceAvailability.InsufficientIntelligence)
-                        {
-                            ApplyFallback(guidance, workItem.Baseline, "A IA não encontrou inteligência suficiente; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "insufficient-intelligence");
-                            usedFallback = true;
-                        }
-                        else if (!ContributionIntelligenceValidator.IsValid(result, guidance.RequestedAmount, workItem.Candidates))
-                        {
-                            ApplyFallback(guidance, workItem.Baseline, "A resposta da IA não respeitou os limites da carteira; a distribuição segura foi calculada pelas regras anteriores.", "invalid-ai-response");
-                            usedFallback = true;
-                        }
-                        else
-                        {
-                            var applied = ContributionIntelligenceApplier.Apply(workItem.Baseline, result, workItem.Positions);
-                            var aiDeviation = ContributionProjectionEvaluator.AggregateClassDeviation(workItem.Candidates, applied.Allocations.Select(x => (x.AssetId, x.Amount)));
-                            var fallbackDeviation = ContributionProjectionEvaluator.AggregateClassDeviation(workItem.Candidates, workItem.Baseline.Allocations.Select(x => (x.AssetId, x.Amount)));
-                            if (aiDeviation > fallbackDeviation)
-                            {
-                                ApplyFallback(guidance, workItem.Baseline, "A combinação da IA piorou o alinhamento projetado; a combinação determinística mais segura foi aplicada.", "ai-projection-worse");
-                                usedFallback = true;
-                            }
-                            else
-                            {
-                                guidance.UpdateIntelligence(result.Metadata.Provider, result.Metadata.Model, result.Availability.ToString(), string.Join("\n", applied.Reasons), JsonSerializer.Serialize(new
-                                {
-                                    engineVersion = result.Metadata.EngineVersion,
-                                    policyVersion = result.Metadata.PolicyVersion,
-                                    promptVersion = result.Metadata.PromptVersion,
-                                    provider = result.Metadata.Provider,
-                                    model = result.Metadata.Model,
-                                    generatedAt = result.Metadata.GeneratedAt,
-                                    assessmentVersions = workItem.Baseline.AssessmentVersions,
-                                    classAllocations = applied.ClassAllocations
-                                }));
-                                var evaluations = result.CandidateEvaluations.ToDictionary(x => x.AssetId);
-                                guidance.ReplaceAllocations(applied.Allocations.Select(a => new PersistedContributionGuidanceAllocation(
-                                    guidance.Id, a.AssetId, a.Amount, a.Reason, evaluations[a.AssetId].Confidence, JsonSerializer.Serialize(a.Evidence))));
-                            }
-                        }
-                    }
-                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        var (reason, code) = FallbackReason(ex);
-                        ApplyFallback(guidance, workItem.Baseline, reason, code);
-                        usedFallback = true;
-                        logger.LogWarning(ex, "IA indisponível para o job de guidance {JobId}; fallback determinístico aplicado; reason={FallbackReason}", job.Id, code);
-                    }
-
+                        var candidate = workItem.Candidates.Single(x => x.CandidateKey == allocation.Key);
+                        return new ContributionAllocation(candidate.Identity.AssetId, candidate.Ticker, candidate.AssetClass, allocation.Amount, deterministicDecision.DecisionEvidence?.DecisiveFactor ?? "PrimaryStructuralImprovement", Array.Empty<string>(), candidate.Identity);
+                    }).ToArray() ?? Array.Empty<ContributionAllocation>();
+                    guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R16.6.2", deterministicDecision.DecisionEvidence }));
+                    guidance.ReplaceAllocations(deterministicAllocations.Select(a => PersistedAllocation(guidance.Id, new CandidateAllocation(a.Identity, a.Amount), workItem.Candidates.Single(x => x.CandidateKey == a.Identity.Key), 1)).ToArray());
                     AppendProjectedPortfolioReason(guidance, workItem);
                     var publication = ContributionGuidancePublication.From(guidance);
                     var published = await PublishAsync(job.Id, publication, stoppingToken);
@@ -135,7 +86,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             applied.Reasons.FirstOrDefault() ?? reason,
             JsonSerializer.Serialize(new { engineVersion = "R4-9.0", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
-            guidance.Id, allocation.AssetId, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
+            guidance.Id, allocation.AssetId!.Value, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }
 
     private static (string Reason, string Code) FallbackReason(Exception exception) => exception switch
@@ -147,15 +98,15 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
 
     private static void AppendProjectedPortfolioReason(PersistedContributionGuidance guidance, ContributionGuidanceWorkItem workItem)
     {
-        var candidatesById = workItem.Candidates.ToDictionary(x => x.AssetId);
+        var candidatesByKey = workItem.Candidates.ToDictionary(x => x.CandidateKey);
         var classCandidates = workItem.Candidates.GroupBy(x => x.AssetClass).ToArray();
         var currentTotal = workItem.Candidates.Sum(x => x.CurrentValue);
         var allocatedTotal = guidance.Allocations.Sum(x => x.Amount);
         if (classCandidates.Length == 0 || currentTotal + allocatedTotal <= 0) return;
 
         var allocatedByClass = guidance.Allocations
-            .Where(x => candidatesById.ContainsKey(x.AssetId))
-            .GroupBy(x => candidatesById[x.AssetId].AssetClass)
+            .Where(x => x.AssetId is not null && candidatesByKey.ContainsKey(CandidateIdentity.Known(x.AssetId.Value).Key))
+            .GroupBy(x => candidatesByKey[CandidateIdentity.Known(x.AssetId!.Value).Key].AssetClass)
             .ToDictionary(x => x.Key, x => x.Sum(item => item.Amount));
         var before = classCandidates.Sum(group => Math.Abs(group.First().CurrentClassWeight - group.First().TargetClassWeight));
         var after = classCandidates.Sum(group =>
@@ -169,6 +120,28 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         var projection = $"Simulação pós-aporte: o desvio agregado das classes {direction} de {before:0.##} para {after:0.##} p.p. considerando {allocatedTotal:0.##} alocados.";
         guidance.UpdateIntelligence(guidance.Provider, guidance.Model, guidance.IntelligenceAvailability,
             string.IsNullOrWhiteSpace(guidance.Reasoning) ? projection : $"{guidance.Reasoning}\n{projection}", guidance.MetadataJson);
+    }
+
+    private static PersistedContributionGuidanceAllocation PersistedAllocation(Guid guidanceId, CandidateAllocation allocation, ContributionCandidate candidate, decimal confidence)
+    {
+        var identity = allocation.Identity;
+        if (identity.AssetId is Guid assetId) return new(guidanceId, assetId, allocation.Amount, candidate.Ticker, confidence, "[]");
+        var external = identity.External!;
+        return new(guidanceId, identity.Key.Value, external.Provider, candidate.Ticker, candidate.ExternalName ?? candidate.Ticker, candidate.AssetClass, candidate.AssetType, external.Exchange, candidate.TradingCurrency, candidate.Sector, candidate.ExternalSourceReference, allocation.Amount, candidate.Ticker, confidence, "[]");
+    }
+
+    private static async Task<ContributionGuidanceWorkItem> AddExternalCandidatesAsync(IServiceProvider services, ContributionGuidanceWorkItem item, CancellationToken ct)
+    {
+        var target = item.Baseline.ClassAllocations.OrderByDescending(x => x.Amount).FirstOrDefault()?.AssetClass;
+        if (target is null) return item;
+        try
+        {
+            var discovered = await services.GetRequiredService<ExternalAssetDiscoveryService>().DiscoverAsync(target.Value, item.Candidates.Select(x => x.Ticker), ct);
+            var deviation = item.Candidates.FirstOrDefault(x => x.AssetClass == target.Value);
+            var external = discovered.Select(x => new ContributionCandidate(CandidateIdentity.FromExternal(x.Identity), x.Ticker, target.Value, 0, 0, deviation?.CurrentClassWeight ?? 0, deviation?.TargetClassWeight ?? 100, item.Baseline.ClassAllocations.FirstOrDefault(a => a.AssetClass == target.Value)?.Amount ?? 0, false, Array.Empty<ContributionAssessmentContext>(), x.AssetType, x.Sector, HasPosition: false, AllocationNeedScore: 100, UnderweightScore: 100) { ExternalName = x.Name, ExternalSourceReference = x.SourceReference }).ToArray();
+            return item with { Candidates = item.Candidates.Concat(external).ToArray() };
+        }
+        catch { return item; }
     }
 
     private static async Task<ContributionGuidanceJob?> ClaimNextAsync(PrumoDbContext db, CancellationToken ct)
@@ -247,8 +220,9 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             .Where(x => x.ContributionGuidanceId == guidance.Id)
             .ExecuteDeleteAsync(ct);
         db.ContributionGuidanceAllocations.AddRange(publication.Allocations.Select(x =>
-            new PersistedContributionGuidanceAllocation(
-                guidance.Id, x.AssetId, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)));
+            x.Origin == "KnownCatalog"
+                ? new PersistedContributionGuidanceAllocation(guidance.Id, x.AssetId!.Value, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)
+                : new PersistedContributionGuidanceAllocation(guidance.Id, x.CandidateKey!, x.Provider!, x.Ticker!, x.Name!, x.AssetClass!.Value, x.AssetType!.Value, x.Exchange, x.Currency, x.Sector, x.SourceReference, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)));
         job.Complete();
         try
         {
@@ -282,13 +256,25 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             guidance.Reasoning,
             guidance.MetadataJson,
             guidance.Allocations.Select(x => new ContributionGuidanceAllocationPublication(
-                x.AssetId, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)).ToArray());
+                x.Origin, x.AssetId, x.CandidateKey, x.Provider, x.Ticker, x.Name, x.AssetClass, x.AssetType, x.Exchange, x.Currency, x.Sector, x.SourceReference, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)).ToArray());
     }
 
     private sealed record ContributionGuidanceAllocationPublication(
-        Guid AssetId,
+        string Origin,
+        Guid? AssetId,
+        string? CandidateKey,
+        string? Provider,
+        string? Ticker,
+        string? Name,
+        AssetClass? AssetClass,
+        AssetType? AssetType,
+        string? Exchange,
+        string? Currency,
+        string? Sector,
+        string? SourceReference,
         decimal Amount,
         string Reason,
         decimal Confidence,
         string EvidenceJson);
 }
+
