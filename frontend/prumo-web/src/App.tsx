@@ -22,6 +22,7 @@ import { DashboardOverview, type Dashboard } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUp, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
 import { apiBaseUrl } from './api/client'
+import { Pagination } from './components/Pagination'
 
 const apiUrl = apiBaseUrl
 
@@ -372,9 +373,9 @@ function App() {
         </nav>
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}
-        {route === '/history' && activePortfolio && <HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} />}
+        {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} /><div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={dashboard.data?.page ?? 1} totalPages={dashboard.data?.totalPages ?? 0} onPageChange={setPositionPage} /></div></>}
         {route === '/ledger' && activePortfolio && <LedgerSection portfolioId={activePortfolio.id} />}
-        {route === '/market-data' && activePortfolio && <MarketDataSection positions={dashboard.data?.positions ?? []} />}
+        {route === '/market-data' && activePortfolio && <MarketDataSection positions={dashboard.data?.positions ?? []} page={dashboard.data?.page ?? 1} totalPages={dashboard.data?.totalPages ?? 0} onPageChange={setPositionPage} />}
         {route === '/performance' && activePortfolio && <><PerformanceSection portfolioId={activePortfolio.id} /><HistoricalPerformanceSection portfolioId={activePortfolio.id} /></>}
         {route === '/intelligence' && activePortfolio && <IntelligenceSection portfolioId={activePortfolio.id} />}
         {route === '/financial-history' && activePortfolio && <><FinancialHistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} /><CashHistorySection portfolioId={activePortfolio.id} /><HistoricalStateSection portfolioId={activePortfolio.id} /><HistoricalCompletenessSection portfolioId={activePortfolio.id} /><div className="mx-auto max-w-6xl px-6 pb-24"><TransactionReconciliationSection portfolioId={activePortfolio.id} /></div></>}
