@@ -218,9 +218,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             .Select(x => x.CandidatesJson)
             .FirstOrDefaultAsync(ct);
         var avoidedCandidates = Array.Empty<object>();
+        ContributionGuidanceWorkItem? workItem = null;
         if (!string.IsNullOrWhiteSpace(jobCandidates))
         {
-            var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(jobCandidates);
+            workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(jobCandidates);
             avoidedCandidates = workItem?.Baseline?.AvoidedCandidates
                 .Where(x => !selectedAssetIds.Contains(x.AssetId))
                 .GroupBy(x => x.AssetId)
@@ -235,6 +236,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 })
                 .ToArray() ?? Array.Empty<object>();
         }
+        var decision = workItem is null ? null : new PortfolioDecisionService().Decide(item.RequestedAmount, workItem.Candidates, allocations.Select(x => (x.AssetId, x.Amount)).ToArray());
         var allocated = allocations.Sum(x => x.Amount) + classAllocations.Sum(x => x.Amount);
         return new
         {
@@ -248,6 +250,34 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             allocations,
             classAllocations,
             avoidedCandidates,
+            decision = decision is null ? null : new
+            {
+                decisionType = decision.DecisionType.ToString(),
+                contributionAmount = decision.ContributionAmount,
+                primaryNeed = decision.PrimaryNeed is null ? null : new
+                {
+                    assetClass = decision.PrimaryNeed.AssetClass.ToString(),
+                    currentPercentage = decision.PrimaryNeed.CurrentPercentage,
+                    targetPercentage = decision.PrimaryNeed.TargetPercentage,
+                    gapPercentagePoints = decision.PrimaryNeed.GapPercentagePoints
+                },
+                recommendedScenario = decision.RecommendedScenario is null ? null : new
+                {
+                    deviationBefore = decision.RecommendedScenario.DeviationBefore,
+                    deviationAfter = decision.RecommendedScenario.DeviationAfter,
+                    improvement = decision.RecommendedScenario.Improvement,
+                    allocations = decision.RecommendedScenario.Allocations.Select(x => new { assetId = x.AssetId, amount = x.Amount }).ToArray()
+                },
+                alternativeScenarios = decision.AlternativeScenarios.Select(s => new
+                {
+                    deviationBefore = s.DeviationBefore,
+                    deviationAfter = s.DeviationAfter,
+                    improvement = s.Improvement,
+                    allocations = s.Allocations.Select(x => new { assetId = x.AssetId, amount = x.Amount }).ToArray()
+                }).ToArray(),
+                reasons = decision.Reasons,
+                missingData = decision.MissingData
+            },
             reasons = string.IsNullOrWhiteSpace(item.Reasoning) ? Array.Empty<string>() : new[] { ContributionText.NormalizeAssetClassNames(item.Reasoning) },
             evidence = allocations.SelectMany(x => x.evidence).Distinct().ToArray(),
             analysis = new

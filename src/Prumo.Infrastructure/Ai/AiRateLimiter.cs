@@ -9,6 +9,9 @@ namespace Prumo.Infrastructure.Ai;
 public interface IAiRequestRateLimiter
 {
     Task<IDisposable> AcquireAsync(CancellationToken cancellationToken = default);
+
+    Task<IDisposable> AcquireAsync(int estimatedTokens, CancellationToken cancellationToken = default)
+        => AcquireAsync(cancellationToken);
 }
 
 public sealed class AiRequestRateLimiter : IAiRequestRateLimiter, IDisposable
@@ -16,6 +19,11 @@ public sealed class AiRequestRateLimiter : IAiRequestRateLimiter, IDisposable
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly long intervalTicks;
     private readonly bool enabled;
+    private readonly int maxTokensPerMinute;
+    private readonly int maxRequestsPerDay;
+    private readonly Queue<(long Timestamp, int Tokens)> tokenReservations = new();
+    private DateOnly requestDate = DateOnly.FromDateTime(DateTime.UtcNow);
+    private int requestsToday;
     private long nextPermitTimestamp;
 
     public AiRequestRateLimiter(IOptions<AiProviderOptions> options)
@@ -23,19 +31,48 @@ public sealed class AiRequestRateLimiter : IAiRequestRateLimiter, IDisposable
         var rateLimit = options.Value.RateLimit;
         if (!rateLimit.Enabled) return;
         if (rateLimit.MaxRequestsPerMinute <= 0) throw new InvalidOperationException("AI:RateLimit:MaxRequestsPerMinute deve ser positivo quando o rate limit está habilitado.");
+        if (rateLimit.MaxTokensPerMinute < 0 || rateLimit.MaxRequestsPerDay < 0) throw new InvalidOperationException("AI:RateLimit: TPM e RPD não podem ser negativos.");
         enabled = true;
+        maxTokensPerMinute = rateLimit.MaxTokensPerMinute;
+        maxRequestsPerDay = rateLimit.MaxRequestsPerDay;
         intervalTicks = (long)(Stopwatch.Frequency * (60d / rateLimit.MaxRequestsPerMinute));
     }
 
-    public async Task<IDisposable> AcquireAsync(CancellationToken cancellationToken = default)
+    public Task<IDisposable> AcquireAsync(CancellationToken cancellationToken = default)
+        => AcquireAsync(0, cancellationToken);
+
+    public async Task<IDisposable> AcquireAsync(int estimatedTokens, CancellationToken cancellationToken = default)
     {
         if (!enabled) return NoopPermit.Instance;
+        if (estimatedTokens < 0) throw new ArgumentOutOfRangeException(nameof(estimatedTokens));
+        if (maxTokensPerMinute > 0 && estimatedTokens > maxTokensPerMinute) throw new InvalidOperationException("A requisição Gemini excede o TPM configurado.");
         await gate.WaitAsync(cancellationToken);
         try
         {
-            var waitTicks = nextPermitTimestamp - Stopwatch.GetTimestamp();
-            if (waitTicks > 0) await Task.Delay(TimeSpan.FromSeconds((double)waitTicks / Stopwatch.Frequency), cancellationToken);
-            if (intervalTicks > 0) nextPermitTimestamp = Stopwatch.GetTimestamp() + intervalTicks;
+            while (true)
+            {
+                var now = Stopwatch.GetTimestamp();
+                ResetDailyCounterIfNeeded();
+                while (tokenReservations.TryPeek(out var reservation) && now - reservation.Timestamp >= Stopwatch.Frequency * 60) tokenReservations.Dequeue();
+
+                var waitTicks = nextPermitTimestamp - now;
+                if (maxRequestsPerDay > 0 && requestsToday >= maxRequestsPerDay)
+                {
+                    var untilReset = DateTime.UtcNow.Date.AddDays(1) - DateTime.UtcNow;
+                    waitTicks = Math.Max(waitTicks, (long)(untilReset.TotalSeconds * Stopwatch.Frequency));
+                }
+                if (maxTokensPerMinute > 0 && tokenReservations.Sum(x => x.Tokens) + estimatedTokens > maxTokensPerMinute && tokenReservations.TryPeek(out var oldest))
+                {
+                    waitTicks = Math.Max(waitTicks, oldest.Timestamp + Stopwatch.Frequency * 60 - now);
+                }
+                if (waitTicks <= 0) break;
+                await Task.Delay(TimeSpan.FromSeconds((double)waitTicks / Stopwatch.Frequency), cancellationToken);
+            }
+
+            var grantedAt = Stopwatch.GetTimestamp();
+            requestsToday++;
+            if (intervalTicks > 0) nextPermitTimestamp = grantedAt + intervalTicks;
+            if (maxTokensPerMinute > 0 && estimatedTokens > 0) tokenReservations.Enqueue((grantedAt, estimatedTokens));
             return new Permit(gate);
         }
         catch
@@ -43,6 +80,16 @@ public sealed class AiRequestRateLimiter : IAiRequestRateLimiter, IDisposable
             gate.Release();
             throw;
         }
+    }
+
+    public static int EstimateTokens(string text) => Math.Max(1, (text.Length + 3) / 4);
+
+    private void ResetDailyCounterIfNeeded()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (today == requestDate) return;
+        requestDate = today;
+        requestsToday = 0;
     }
 
     public void Dispose() => gate.Dispose();
@@ -76,7 +123,8 @@ public sealed class RateLimitedAiAnalysisService : IAiAnalysisService
     public async Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default)
     {
         logger.LogDebug("AI request waiting for rate-limit permit; provider={Provider}; model={Model}", inner.GetType().Name, Model);
-        using var permit = await limiter.AcquireAsync(cancellationToken);
+        // ponytail: 2k tokens cover the structured prompt/context; use a provider tokenizer if TPM precision becomes critical.
+        using var permit = await limiter.AcquireAsync(AiRequestRateLimiter.EstimateTokens(documentText) + 2000, cancellationToken);
         logger.LogInformation("AI request started; provider={Provider}; model={Model}; operation={Operation}", inner.GetType().Name, Model, "DocumentAnalysis");
         var started = Stopwatch.GetTimestamp();
         try

@@ -14,4 +14,6 @@ public sealed class AiRateLimitOptions
 {
     public bool Enabled { get; set; }
     public int MaxRequestsPerMinute { get; set; } = 60;
+    public int MaxTokensPerMinute { get; set; }
+    public int MaxRequestsPerDay { get; set; }
 }
