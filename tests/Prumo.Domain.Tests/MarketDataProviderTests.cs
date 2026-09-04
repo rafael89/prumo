@@ -18,9 +18,33 @@ public sealed class MarketDataProviderTests
         Assert.Equal(31.42m, Assert.Single(result).Close);
     }
 
+    [Fact]
+    public async Task Brapi_uses_supported_range_for_multi_year_history()
+    {
+        var handler = new StubHandler("""{"results":[{"currency":"BRL","historicalDataPrice":[{"date":"1788476400","close":"31.42"}]}]}""");
+        var provider = new BrapiMarketDataProvider(new HttpClient(handler), Options.Create(new BrapiOptions { Token = "test" }), new BrapiMonthlyQuota());
+
+        await provider.GetHistoryAsync("HGLG11", new(2024, 9, 4), new(2026, 9, 4));
+
+        Assert.Contains("range=5y", handler.RequestUri!.Query);
+    }
+
+    [Fact]
+    public async Task Brapi_stops_before_http_when_monthly_quota_is_exhausted()
+    {
+        var provider = new BrapiMarketDataProvider(new HttpClient(new StubHandler("{}")), Options.Create(new BrapiOptions { Token = "test", MonthlyRequestLimit = 0 }), new BrapiMonthlyQuota());
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => provider.GetHistoryAsync("HGLG11", new(2026, 9, 4), new(2026, 9, 4)));
+    }
+
     private sealed class StubHandler(string body) : HttpMessageHandler
     {
+        public Uri? RequestUri { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") });
+        {
+            RequestUri = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") });
+        }
     }
 }

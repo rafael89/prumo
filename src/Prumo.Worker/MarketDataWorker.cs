@@ -14,7 +14,7 @@ public sealed class MarketDataWorker(IServiceScopeFactory scopeFactory, ILogger<
                 using var scope = scopeFactory.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<MarketDataService>();
                 await service.RefreshAsync(stoppingToken);
-                await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+                await Task.Delay(TimeSpan.FromDays(3), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception exception)

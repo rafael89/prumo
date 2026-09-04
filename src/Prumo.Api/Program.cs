@@ -26,6 +26,7 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<PortfolioHistoryService>();
 builder.Services.Configure<BrapiOptions>(builder.Configuration.GetSection("MarketData:Brapi"));
 builder.Services.AddHttpClient<BrapiMarketDataProvider>();
+builder.Services.AddSingleton<BrapiMonthlyQuota>();
 builder.Services.Configure<AlphaVantageOptions>(builder.Configuration.GetSection("MarketData:AlphaVantage"));
 builder.Services.AddHttpClient<AlphaVantageMarketDataProvider>();
 builder.Services.AddScoped<IMarketDataProvider>(sp => string.Equals(sp.GetRequiredService<IConfiguration>()["MarketData:Provider"], "Brapi", StringComparison.OrdinalIgnoreCase) ? (!string.IsNullOrWhiteSpace(sp.GetRequiredService<IConfiguration>()["MarketData:AlphaVantage:ApiKey"]) ? new FallbackMarketDataProvider(sp.GetRequiredService<BrapiMarketDataProvider>(), sp.GetRequiredService<AlphaVantageMarketDataProvider>(), sp.GetRequiredService<ILogger<FallbackMarketDataProvider>>()) : sp.GetRequiredService<BrapiMarketDataProvider>()) : sp.GetRequiredService<AlphaVantageMarketDataProvider>());

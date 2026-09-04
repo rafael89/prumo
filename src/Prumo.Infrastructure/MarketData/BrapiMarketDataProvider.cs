@@ -6,14 +6,17 @@ using Prumo.Application.Abstractions;
 
 namespace Prumo.Infrastructure.MarketData;
 
-public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptions> options) : IMarketDataProvider
+public sealed class BrapiMarketDataProvider(HttpClient http, IOptions<BrapiOptions> options, BrapiMonthlyQuota quota) : IMarketDataProvider
 {
     private readonly BrapiOptions settings = options.Value;
     public string Name => "Brapi";
 
     public async Task<IReadOnlyList<MarketPricePoint>> GetHistoryAsync(string ticker, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
     {
-        var url = $"{settings.BaseUrl.TrimEnd('/')}/api/quote/{Uri.EscapeDataString(ticker)}?range={Math.Max(1, (to.DayNumber - from.DayNumber) / 365 + 1)}y&interval=1d";
+        if (!quota.TryAcquire(settings.MonthlyRequestLimit)) throw new HttpRequestException("Limite mensal do Brapi atingido; usando fallback.");
+        var years = Math.Max(1, (to.DayNumber - from.DayNumber) / 365 + 1);
+        var range = years <= 1 ? "1y" : years <= 5 ? "5y" : "max";
+        var url = $"{settings.BaseUrl.TrimEnd('/')}/api/quote/{Uri.EscapeDataString(ticker)}?range={range}&interval=1d";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrWhiteSpace(settings.Token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
         using var response = await http.SendAsync(request, cancellationToken);
