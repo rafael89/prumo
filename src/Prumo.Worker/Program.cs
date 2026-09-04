@@ -63,12 +63,12 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<DiscordLogNotificationService>();
         services.AddSingleton<IDiscordLogNotifier>(sp => sp.GetRequiredService<DiscordLogNotificationService>());
         services.AddHostedService(sp => sp.GetRequiredService<DiscordLogNotificationService>());
-        services.AddDbContext<PrumoDbContext>(options => options.UseNpgsql(context.Configuration.GetConnectionString("Postgres")));
+        services.AddDbContext<PrumoDbContext>(options => options.UseNpgsql(context.Configuration.GetConnectionString("Postgres"), npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
         services.Configure<BrapiOptions>(context.Configuration.GetSection("MarketData:Brapi"));
         services.AddHttpClient<BrapiMarketDataProvider>();
         services.Configure<AlphaVantageOptions>(context.Configuration.GetSection("MarketData:AlphaVantage"));
         services.AddHttpClient<AlphaVantageMarketDataProvider>();
-        services.AddScoped<IMarketDataProvider>(sp => string.Equals(context.Configuration["MarketData:Provider"], "AlphaVantage", StringComparison.OrdinalIgnoreCase) ? new FallbackMarketDataProvider(sp.GetRequiredService<AlphaVantageMarketDataProvider>(), sp.GetRequiredService<BrapiMarketDataProvider>(), sp.GetRequiredService<ILogger<FallbackMarketDataProvider>>()) : sp.GetRequiredService<BrapiMarketDataProvider>());
+        services.AddScoped<IMarketDataProvider>(sp => string.Equals(context.Configuration["MarketData:Provider"], "Brapi", StringComparison.OrdinalIgnoreCase) ? (!string.IsNullOrWhiteSpace(context.Configuration["MarketData:AlphaVantage:ApiKey"]) ? new FallbackMarketDataProvider(sp.GetRequiredService<BrapiMarketDataProvider>(), sp.GetRequiredService<AlphaVantageMarketDataProvider>(), sp.GetRequiredService<ILogger<FallbackMarketDataProvider>>()) : sp.GetRequiredService<BrapiMarketDataProvider>()) : sp.GetRequiredService<AlphaVantageMarketDataProvider>());
         services.AddScoped<MarketDataService>();
         services.AddScoped<IProcessingJobQueue, PostgresProcessingJobQueue>();
         services.Configure<CvmFnetOptions>(context.Configuration.GetSection("Documents"));

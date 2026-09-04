@@ -28,7 +28,7 @@ builder.Services.Configure<BrapiOptions>(builder.Configuration.GetSection("Marke
 builder.Services.AddHttpClient<BrapiMarketDataProvider>();
 builder.Services.Configure<AlphaVantageOptions>(builder.Configuration.GetSection("MarketData:AlphaVantage"));
 builder.Services.AddHttpClient<AlphaVantageMarketDataProvider>();
-builder.Services.AddScoped<IMarketDataProvider>(sp => string.Equals(sp.GetRequiredService<IConfiguration>()["MarketData:Provider"], "AlphaVantage", StringComparison.OrdinalIgnoreCase) ? new FallbackMarketDataProvider(sp.GetRequiredService<AlphaVantageMarketDataProvider>(), sp.GetRequiredService<BrapiMarketDataProvider>(), sp.GetRequiredService<ILogger<FallbackMarketDataProvider>>()) : sp.GetRequiredService<BrapiMarketDataProvider>());
+builder.Services.AddScoped<IMarketDataProvider>(sp => string.Equals(sp.GetRequiredService<IConfiguration>()["MarketData:Provider"], "Brapi", StringComparison.OrdinalIgnoreCase) ? (!string.IsNullOrWhiteSpace(sp.GetRequiredService<IConfiguration>()["MarketData:AlphaVantage:ApiKey"]) ? new FallbackMarketDataProvider(sp.GetRequiredService<BrapiMarketDataProvider>(), sp.GetRequiredService<AlphaVantageMarketDataProvider>(), sp.GetRequiredService<ILogger<FallbackMarketDataProvider>>()) : sp.GetRequiredService<BrapiMarketDataProvider>()) : sp.GetRequiredService<AlphaVantageMarketDataProvider>());
 builder.Services.AddScoped<MarketDataService>();
 builder.Services.AddScoped<PortfolioPerformanceService>();
 builder.Services.AddScoped<PortfolioIntelligenceService>();
@@ -44,8 +44,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddCors(options => options.AddPolicy("frontend", policy =>
     policy.WithOrigins("http://localhost:5273").AllowAnyHeader().AllowAnyMethod()));
-builder.Services.AddDbContext<PrumoDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+ builder.Services.AddDbContext<PrumoDbContext>(options =>
+     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres"), npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection("Discord"));
 builder.Services.AddHttpClient("DiscordWebhook");
 builder.Services.AddSingleton<DiscordLogNotificationService>();

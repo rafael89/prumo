@@ -159,11 +159,15 @@ public sealed class DocumentsController : ControllerBase
 
         var statuses = await dbContext.Documents
             .Where(document => dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == document.AssetId))
-            .Select(document => document.ProcessingStatus)
+            .Select(document => new
+            {
+                document.ProcessingStatus,
+                HasActiveJob = dbContext.ProcessingJobs.Any(job => job.DocumentId == document.Id && (job.Status == ProcessingJobStatus.Queued || job.Status == ProcessingJobStatus.Processing))
+            })
             .ToListAsync(cancellationToken);
-        var processing = statuses.Count(status => status == DocumentProcessingStatus.Processing);
-        var pending = statuses.Count(status => status is DocumentProcessingStatus.Discovered or DocumentProcessingStatus.Downloaded or DocumentProcessingStatus.WaitingProcessing);
-        var failed = statuses.Count(status => status == DocumentProcessingStatus.Error);
+        var processing = statuses.Count(item => item.ProcessingStatus == DocumentProcessingStatus.Processing && item.HasActiveJob);
+        var pending = statuses.Count(item => item.HasActiveJob && item.ProcessingStatus is (DocumentProcessingStatus.Discovered or DocumentProcessingStatus.Downloaded or DocumentProcessingStatus.WaitingProcessing));
+        var failed = statuses.Count(item => item.ProcessingStatus == DocumentProcessingStatus.Error);
         var state = processing > 0 ? "Processing" : pending > 0 ? "Pending" : failed > 0 ? "Failed" : "Completed";
         var message = state switch
         {
