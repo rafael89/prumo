@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Prumo.Worker-a4ce9be6-6b6b-4d53-868e-d2c1c533edd0</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
