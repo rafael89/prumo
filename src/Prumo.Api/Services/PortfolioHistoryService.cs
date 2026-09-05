@@ -143,14 +143,28 @@ public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconc
     private sealed record HistoryData(HashSet<Guid> AssetIds, IReadOnlyList<Asset> Assets, IReadOnlyList<CanonicalTransactionDto> Transactions, IReadOnlyList<PortfolioAssessment> Assessments, IReadOnlyList<PortfolioTimelineItem> Items);
     private static string DecisionType(string json, int allocations)
     {
-        try { var root = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json); if (root.TryGetProperty("decisionType", out var value)) return value.GetString() ?? "NoAction"; }
+        try
+        {
+            var root = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json);
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("decisionType", out var value))
+                return value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() ?? "NoAction" : "NoAction";
+        }
         catch (System.Text.Json.JsonException) { }
         return allocations == 0 ? "NoAction" : allocations > 1 ? "SplitContribution" : "ReinforceExisting";
     }
     private static string DecisionLabel(string type) => type switch { "ReinforceExisting" => "Reforçar posição", "AddNewAsset" => "Adicionar novo ativo", "SplitContribution" => "Dividir aporte", _ => "Não aportar agora" };
     private static string[] Evidence(string json)
     {
-        try { var root = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json); if (root.TryGetProperty("decisionEvidence", out var value) && value.TryGetProperty("decisiveFactor", out var factor)) return new[] { factor.GetString() is "StableTieBreaker" ? "As alternativas ficaram equivalentes pelos critérios disponíveis." : factor.GetString() ?? string.Empty }; }
+        try
+        {
+            var root = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json);
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object
+                && root.TryGetProperty("decisionEvidence", out var value)
+                && value.ValueKind == System.Text.Json.JsonValueKind.Object
+                && value.TryGetProperty("decisiveFactor", out var factor)
+                && factor.ValueKind == System.Text.Json.JsonValueKind.String)
+                return new[] { factor.GetString() is "StableTieBreaker" ? "As alternativas ficaram equivalentes pelos critérios disponíveis." : factor.GetString() ?? string.Empty };
+        }
         catch (System.Text.Json.JsonException) { }
         return Array.Empty<string>();
     }

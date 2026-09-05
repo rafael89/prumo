@@ -38,8 +38,12 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision);
                     if (deterministicOptions.Length == 0)
                     {
-                        guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R17.8", decisionType = deterministicDecision.DecisionType.ToString(), primaryNeed = deterministicDecision.PrimaryNeed, structuralNeeds = deterministicDecision.StructuralNeeds, decisionEvidence = deterministicDecision.DecisionEvidence }));
-                        guidance.ReplaceAllocations(Array.Empty<PersistedContributionGuidanceAllocation>());
+                        usedFallback = true;
+                        ApplyFallback(
+                            guidance,
+                            workItem.Baseline,
+                            deterministicDecision.Reasons.FirstOrDefault() ?? "Não há um cenário completo que respeite os limites atuais; a distribuição parcial segura foi preservada.",
+                            "deterministic-partial-allocation");
                     }
                     else
                     {

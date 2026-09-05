@@ -47,8 +47,10 @@ public sealed class PortfolioDecisionService
         // class-gap baseline while allowing the best proportion to emerge
         // from the projected portfolio instead of assuming 50/50.
         scenarios = scenarios.Concat(GenerateSplitScenarios(amount, candidates, needs)).ToArray();
-        var ordered = scenarios.Where(x => x.Allocations.Sum(a => a.Amount) == amount)
+        var ordered = scenarios.Where(x => x.Allocations.Sum(a => a.Amount) == amount && IsWithinClassBudgets(x, candidates))
             .OrderBy(x => x, ScenarioComparer(candidates, financial)).ToArray();
+        if (ordered.Length == 0)
+            return NoAction(amount, "Nenhum cenário respeita o orçamento disponível para as classes atuais.", secondary, exposure, MissingData(exposure), financial) with { StructuralNeeds = structuralNeeds };
         var winner = ordered[0];
         var candidate = candidates.Single(x => x.CandidateKey == winner.Allocations[0].Key);
         var runner = ordered.Skip(1).FirstOrDefault();
@@ -61,6 +63,15 @@ public sealed class PortfolioDecisionService
             runner is null ? null : $"{candidates.Single(x => x.CandidateKey == runner.Allocations[0].Key).Ticker} perdeu em {factor}.");
         var type = winner.Allocations.Count > 1 ? PortfolioDecisionType.SplitContribution : candidate.HasPosition ? PortfolioDecisionType.ReinforceExisting : PortfolioDecisionType.AddNewAsset;
         return new PortfolioDecision(type, amount, needs[0], winner, runner is null ? Array.Empty<ContributionScenario>() : new[] { runner }, new[] { "O cenário foi selecionado por comparação determinística pós-aporte." }, MissingData(exposure), secondary, exposure, financial, evidence) with { StructuralNeeds = structuralNeeds };
+    }
+
+    private static bool IsWithinClassBudgets(ContributionScenario scenario, IReadOnlyList<ContributionCandidate> candidates)
+    {
+        var byKey = candidates.ToDictionary(x => x.CandidateKey);
+        if (scenario.Allocations.Any(allocation => !byKey.ContainsKey(allocation.Key))) return false;
+        return scenario.Allocations
+            .GroupBy(allocation => byKey[allocation.Key].AssetClass)
+            .All(group => group.Sum(allocation => allocation.Amount) <= byKey[group.First().Key].ClassBudget);
     }
 
     private static int SecondaryImprovement(ContributionScenario scenario) => scenario.ExposureImpacts?.Count(x => x.AfterPercentage < x.BeforePercentage) ?? 0;
