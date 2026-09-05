@@ -57,11 +57,31 @@ public sealed record ContributionCandidateEvaluation(CandidateKey CandidateKey, 
 }
 public sealed record ContributionIntelligenceMetadata(string EngineVersion, string PolicyVersion, string PromptVersion, string Provider, string Model, DateTimeOffset GeneratedAt);
 public sealed record ContributionIntelligenceResult(IReadOnlyList<ContributionCandidateEvaluation> CandidateEvaluations, string OverallReasoning, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
+public sealed record ContributionScenarioOption(string ScenarioKey, IReadOnlyList<CandidateAllocation> Allocations, decimal Improvement, string Summary);
+public sealed record ContributionScenarioSelection(string SelectedScenarioKey, string Reason, IReadOnlyList<string> Considerations, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
 public sealed record ContributionGuidanceWorkItem(ContributionGuidance Baseline, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<ContributionCandidate> Candidates);
+
+public static class ContributionScenarioValidator
+{
+    public static ContributionScenarioOption Select(ContributionScenarioSelection selection, IReadOnlyList<ContributionScenarioOption> scenarios, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates)
+    {
+        var scenario = scenarios.SingleOrDefault(x => x.ScenarioKey == selection.SelectedScenarioKey)
+            ?? throw new InvalidOperationException("A IA selecionou um cenário fora do conjunto seguro.");
+        var byKey = candidates.ToDictionary(x => x.CandidateKey);
+        if (scenario.Allocations.Count == 0 || scenario.Allocations.Any(x => !byKey.TryGetValue(x.Identity.Key, out var candidate) || candidate.HasBlock || x.Amount < 0 || decimal.Round(x.Amount, 2) != x.Amount)
+            || scenario.Allocations.Select(x => x.Identity.Key).Distinct().Count() != scenario.Allocations.Count
+            || scenario.Allocations.GroupBy(x => byKey[x.Identity.Key].AssetClass).Any(group => group.Sum(x => x.Amount) > byKey[group.First().Identity.Key].ClassBudget)
+            || decimal.Round(scenario.Allocations.Sum(x => x.Amount), 2) != decimal.Round(contributionAmount, 2))
+            throw new InvalidOperationException("A IA retornou um cenário inválido.");
+        return scenario;
+    }
+}
 
 public interface IContributionIntelligenceProvider
 {
     Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default);
+    Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Este provider não oferece seleção de cenários.");
 }
 
 public static class ContributionIntelligenceValidator
@@ -121,6 +141,9 @@ public static class ContributionIntelligenceApplier
 
 public sealed class DeterministicContributionIntelligenceProvider : IContributionIntelligenceProvider
 {
+    public Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)
+        => Task.FromResult(new ContributionScenarioSelection(string.Empty, "A IA não está configurada; foi aplicado o fallback determinístico.", Array.Empty<string>(), ContributionIntelligenceAvailability.InsufficientIntelligence, new("R17.8", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
+
     public Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)
         => Task.FromResult(new ContributionIntelligenceResult(Array.Empty<ContributionCandidateEvaluation>(), "Não há inteligência suficiente para diferenciar candidatos com segurança; foi aplicado o fallback determinístico.", ContributionIntelligenceAvailability.InsufficientIntelligence, new("R4-2.0", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
 }

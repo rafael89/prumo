@@ -32,15 +32,48 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var guidance = await db.ContributionGuidances.Include(x => x.Allocations).SingleAsync(x => x.Id == job.ContributionGuidanceId, stoppingToken);
                     var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson)
                         ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
+                    var intelligenceProvider = scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>();
                     var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates);
                     var usedFallback = false;
-                    var deterministicAllocations = deterministicDecision.RecommendedScenario?.Allocations.Select(allocation =>
+                    var deterministicOptions = BuildScenarioOptions(deterministicDecision);
+                    if (deterministicOptions.Length == 0)
                     {
-                        var candidate = workItem.Candidates.Single(x => x.CandidateKey == allocation.Key);
-                        return new ContributionAllocation(candidate.Identity.AssetId, candidate.Ticker, candidate.AssetClass, allocation.Amount, deterministicDecision.DecisionEvidence?.DecisiveFactor ?? "PrimaryStructuralImprovement", Array.Empty<string>(), candidate.Identity);
-                    }).ToArray() ?? Array.Empty<ContributionAllocation>();
-                    guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R16.6.2", decisionType = deterministicDecision.DecisionType.ToString(), primaryNeed = deterministicDecision.PrimaryNeed, decisionEvidence = deterministicDecision.DecisionEvidence }));
-                    guidance.ReplaceAllocations(deterministicAllocations.Select(a => PersistedAllocation(guidance.Id, new CandidateAllocation(a.Identity, a.Amount), workItem.Candidates.Single(x => x.CandidateKey == a.Identity.Key), 1)).ToArray());
+                        guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R17.8", decisionType = deterministicDecision.DecisionType.ToString(), primaryNeed = deterministicDecision.PrimaryNeed, decisionEvidence = deterministicDecision.DecisionEvidence }));
+                        guidance.ReplaceAllocations(Array.Empty<PersistedContributionGuidanceAllocation>());
+                    }
+                    else
+                    {
+                        try
+                        {
+                            var selection = await intelligenceProvider.SelectScenarioAsync(job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, stoppingToken);
+                            var selected = ContributionScenarioValidator.Select(selection, deterministicOptions, guidance.RequestedAmount, workItem.Candidates);
+                            guidance.UpdateIntelligence(selection.Metadata.Provider, selection.Metadata.Model, selection.Availability.ToString(), selection.Reason, JsonSerializer.Serialize(new
+                            {
+                                engineVersion = selection.Metadata.EngineVersion,
+                                policyVersion = selection.Metadata.PolicyVersion,
+                                promptVersion = selection.Metadata.PromptVersion,
+                                generatedAt = selection.Metadata.GeneratedAt,
+                                selectedScenarioKey = selected.ScenarioKey,
+                                deterministicBaselineScenarioKey = deterministicOptions[0].ScenarioKey,
+                                usedFallback = false,
+                                decisionType = deterministicDecision.DecisionType.ToString(),
+                                primaryNeed = deterministicDecision.PrimaryNeed,
+                                decisionEvidence = deterministicDecision.DecisionEvidence,
+                                considerations = selection.Considerations
+                            }));
+                            guidance.ReplaceAllocations(ToPersistedAllocations(guidance.Id, selected, workItem.Candidates));
+                        }
+                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            usedFallback = true;
+                            ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code);
+                            logger.LogWarning(ex, "IA indisponível para o job de guidance {JobId}; fallback determinístico aplicado", job.Id);
+                        }
+                    }
                     AppendProjectedPortfolioReason(guidance, workItem);
                     var publication = ContributionGuidancePublication.From(guidance);
                     var published = await PublishAsync(job.Id, publication, stoppingToken);
@@ -83,7 +116,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R4-9.0", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, fallbackReason = code, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
+            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId!.Value, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }
@@ -128,6 +161,25 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         var external = identity.External!;
         return new(guidanceId, identity.Key.Value, external.Provider, candidate.Ticker, candidate.ExternalName ?? candidate.Ticker, candidate.AssetClass, candidate.AssetType, external.Exchange, candidate.TradingCurrency, candidate.Sector, candidate.ExternalSourceReference, allocation.Amount, candidate.Ticker, confidence, "[]");
     }
+
+    private static ContributionScenarioOption[] BuildScenarioOptions(PortfolioDecision decision)
+    {
+        if (decision.RecommendedScenario is null) return Array.Empty<ContributionScenarioOption>();
+        var options = new List<ContributionScenarioOption>
+        {
+            new("scenario:deterministic", decision.RecommendedScenario.Allocations, decision.RecommendedScenario.Improvement, "Cenário determinístico de referência.")
+        };
+        options.AddRange(decision.AlternativeScenarios.Select((scenario, index) => new ContributionScenarioOption(
+            $"scenario:alternative:{index + 1}", scenario.Allocations, scenario.Improvement, "Alternativa determinística válida.")));
+        return options.ToArray();
+    }
+
+    private static PersistedContributionGuidanceAllocation[] ToPersistedAllocations(Guid guidanceId, ContributionScenarioOption scenario, IReadOnlyList<ContributionCandidate> candidates)
+        => scenario.Allocations.Select(allocation => PersistedAllocation(
+            guidanceId,
+            allocation,
+            candidates.Single(candidate => candidate.CandidateKey == allocation.Key),
+            1)).ToArray();
 
     private static async Task<ContributionGuidanceJob?> ClaimNextAsync(PrumoDbContext db, CancellationToken ct)
     {

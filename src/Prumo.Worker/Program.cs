@@ -79,7 +79,11 @@ IHost host = Host.CreateDefaultBuilder(args)
             services.AddHttpClient<GeminiContributionIntelligenceProvider>();
             services.AddScoped<IContributionIntelligenceProvider>(provider => provider.GetRequiredService<GeminiContributionIntelligenceProvider>());
         }
-        else services.AddSingleton<IContributionIntelligenceProvider, DeterministicContributionIntelligenceProvider>();
+        else
+        {
+            services.AddHttpClient<HttpContributionIntelligenceProvider>();
+            services.AddScoped<IContributionIntelligenceProvider>(provider => provider.GetRequiredService<HttpContributionIntelligenceProvider>());
+        }
         services.AddSingleton<IAiRequestRateLimiter, AiRequestRateLimiter>();
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));
         services.AddScoped<DocumentAnalysisProcessor>();

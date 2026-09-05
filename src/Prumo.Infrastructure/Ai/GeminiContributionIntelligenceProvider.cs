@@ -34,6 +34,23 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
         return Parse(raw, settings.Model);
     }
 
+    public async Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
+        using var permit = await limiter.AcquireAsync(timeout.Token);
+        var prompt = ContributionIntelligencePrompt.BuildScenarioSelection(portfolioId, contributionAmount, scenarios, candidates);
+        var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = ScenarioSchema } };
+        var raw = await SendAsync(settings.Model, request, timeout.Token);
+        using var document = JsonDocument.Parse(raw);
+        var text = document.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
+        if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Resposta Gemini vazia.");
+        var payload = JsonSerializer.Deserialize<ScenarioPayload>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidOperationException("Resposta Gemini inválida.");
+        if (string.IsNullOrWhiteSpace(payload.SelectedScenarioKey)) throw new InvalidOperationException("Resposta Gemini sem scenarioKey.");
+        return new(payload.SelectedScenarioKey, payload.Reason ?? string.Empty, payload.Considerations?.ToArray() ?? Array.Empty<string>(), ContributionIntelligenceAvailability.IntelligenceAvailable, new("R17.8", "contribution-scenario", ContributionIntelligencePrompt.Version, "Gemini", settings.Model, DateTimeOffset.UtcNow));
+    }
+
     private async Task<string> SendAsync(string model, object body, CancellationToken ct)
     {
         using var message = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model)}:generateContent") { Content = JsonContent.Create(body) };
@@ -58,6 +75,8 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
     private static string TrimError(string value) => string.IsNullOrWhiteSpace(value) ? "resposta vazia" : value.Length <= 500 ? value : value[..500];
 
     private sealed record Payload(List<Evaluation>? CandidateEvaluations, string? OverallReasoning, string? IntelligenceAvailability);
+    private sealed record ScenarioPayload(string? SelectedScenarioKey, string? Reason, List<string>? Considerations);
+    private static readonly object ScenarioSchema = new { type = "object", properties = new { selectedScenarioKey = new { type = "string" }, reason = new { type = "string" }, considerations = new { type = "array", items = new { type = "string" } } }, required = new[] { "selectedScenarioKey", "reason", "considerations" } };
     private sealed record Evaluation(string? CandidateKey, Guid? AssetId, int Rank, decimal SuggestedAmount, string? Reason, decimal Confidence, List<Evidence>? EvidenceReferences);
     private sealed record Evidence(string? Type, string? ReferenceId, string? Label, string? Summary);
     private static readonly object Schema = new { type = "object", properties = new { candidateEvaluations = new { type = "array", items = new { type = "object", properties = new { candidateKey = new { type = "string" }, rank = new { type = "integer" }, suggestedAmount = new { type = "number", minimum = 0 }, reason = new { type = "string" }, confidence = new { type = "number", minimum = 0, maximum = 1 }, evidenceReferences = new { type = "array", items = new { type = "object", properties = new { type = "string", referenceId = new { type = "string" }, label = new { type = "string" }, summary = new { type = "string" } }, required = new[] { "type", "referenceId", "label" } } } }, required = new[] { "candidateKey", "rank", "suggestedAmount", "reason", "confidence", "evidenceReferences" } } }, overallReasoning = new { type = "string" }, intelligenceAvailability = new { type = "string", @enum = new[] { "IntelligenceAvailable", "PartialIntelligence", "InsufficientIntelligence" } } }, required = new[] { "candidateEvaluations", "overallReasoning", "intelligenceAvailability" } };
