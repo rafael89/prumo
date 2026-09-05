@@ -38,7 +38,9 @@ public sealed class PortfolioPerformanceService(PrumoDbContext db, TransactionRe
         var basis = PerformanceCalculator.CalculateCostBasis(tx, position.Quantity, position.AveragePrice);
         var valuation = latest.TryGetValue(position.AssetId, out var price)
             ? new PerformanceMetric(position.Quantity * price.Close, PerformanceCoverage.Complete, [])
-            : position.Quantity == 0 ? new PerformanceMetric(0, PerformanceCoverage.Complete, []) : new PerformanceMetric(null, PerformanceCoverage.Unavailable, [PerformanceCoverageReason.MissingMarketPrice]);
+            : position.CurrentValue.HasValue
+                ? new PerformanceMetric(position.CurrentValue.Value, PerformanceCoverage.Complete, [])
+                : position.Quantity == 0 ? new PerformanceMetric(0, PerformanceCoverage.Complete, []) : new PerformanceMetric(null, PerformanceCoverage.Unavailable, [PerformanceCoverageReason.MissingMarketPrice]);
         var cost = basis.CostBasis.HasValue
             ? new PerformanceMetric(basis.CostBasis, basis.Coverage, basis.Reasons)
             : new PerformanceMetric(null, basis.Coverage, basis.Reasons);

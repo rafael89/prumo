@@ -64,20 +64,8 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IDiscordLogNotifier>(sp => sp.GetRequiredService<DiscordLogNotificationService>());
         services.AddHostedService(sp => sp.GetRequiredService<DiscordLogNotificationService>());
         services.AddDbContext<PrumoDbContext>(options => options.UseNpgsql(context.Configuration.GetConnectionString("Postgres"), npgsql => npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
-        services.Configure<BrapiOptions>(context.Configuration.GetSection("MarketData:Brapi"));
-        services.AddHttpClient<BrapiMarketDataProvider>();
-        services.AddHttpClient<BrapiFinancialDataProvider>();
-        services.AddHttpClient<BrapiAssetDiscoveryProvider>();
-        services.AddSingleton<BrapiMonthlyQuota>();
-        services.Configure<AlphaVantageOptions>(context.Configuration.GetSection("MarketData:AlphaVantage"));
-        services.AddHttpClient<AlphaVantageMarketDataProvider>();
-        services.AddScoped<IMarketDataProvider>(sp => string.Equals(context.Configuration["MarketData:Provider"], "Brapi", StringComparison.OrdinalIgnoreCase) ? (!string.IsNullOrWhiteSpace(context.Configuration["MarketData:AlphaVantage:ApiKey"]) ? new FallbackMarketDataProvider(sp.GetRequiredService<BrapiMarketDataProvider>(), sp.GetRequiredService<AlphaVantageMarketDataProvider>(), sp.GetRequiredService<ILogger<FallbackMarketDataProvider>>()) : sp.GetRequiredService<BrapiMarketDataProvider>()) : sp.GetRequiredService<AlphaVantageMarketDataProvider>());
         services.AddScoped<MarketDataService>();
-        services.AddScoped<IFinancialDataProvider>(sp => sp.GetRequiredService<BrapiFinancialDataProvider>());
-        services.AddScoped<IAssetDiscoveryProvider>(sp => sp.GetRequiredService<BrapiAssetDiscoveryProvider>());
-        services.AddScoped<ExternalAssetDiscoveryService>();
         services.AddScoped<ExternalAssetMaterializer>();
-        services.AddScoped<FinancialDataRefreshService>();
         services.AddScoped<IProcessingJobQueue, PostgresProcessingJobQueue>();
         services.Configure<CvmFnetOptions>(context.Configuration.GetSection("Documents"));
         services.Configure<DocumentBootstrapOptions>(context.Configuration.GetSection("DocumentBootstrap"));
@@ -109,7 +97,6 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddHostedService<DocumentDownloadWorker>();
         services.AddHostedService<DocumentAnalysisWorker>();
         services.AddHostedService<ContributionGuidanceWorker>();
-        services.AddHostedService<MarketDataWorker>();
     })
     .Build();
 

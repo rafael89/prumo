@@ -48,7 +48,7 @@ public sealed class PortfolioDecisionService
         var evidence = new IntegratedDecisionEvidence($"{needs[0].AssetClass} abaixo do target em {needs[0].GapPercentagePoints:0.##} p.p.", winner.Improvement,
             WorsensSevereConcentration(candidates, winner.Allocations) ? CandidateStructuralFit.AddressesPrimaryNeedButWorsensConcentration : CandidateStructuralFit.DirectlyAddressesPrimaryNeed,
             WorsensSevereConcentration(candidates, winner.Allocations) ? "Aumenta concentração severa." : "Não aumenta concentração severa.", SecondaryImprovement(winner) > 0 ? "Melhora exposição secundária conhecida." : "Sem melhoria secundária comprovada.",
-            financial.FirstOrDefault(x => x.AssetId == candidate.Identity.AssetId)?.Quality.Category ?? "InsufficientData", financial.FirstOrDefault(x => x.AssetId == candidate.Identity.AssetId)?.Valuation.Assessment ?? "InsufficientContext",
+            financial.FirstOrDefault(x => x.AssetId == candidate.Identity.AssetId)?.Quality.Category ?? "InsufficientData", "NotUsed",
             candidate.RecentContributionCount > 0 ? "Recebeu aporte recentemente; contexto considerado." : "Sem aporte recente relevante.", factor,
             runner is null ? null : $"{candidates.Single(x => x.CandidateKey == runner.Allocations[0].Key).Ticker} perdeu em {factor}.");
         var type = winner.Allocations.Count > 1 ? PortfolioDecisionType.SplitContribution : candidate.HasPosition ? PortfolioDecisionType.ReinforceExisting : PortfolioDecisionType.AddNewAsset;
@@ -70,8 +70,6 @@ public sealed class PortfolioDecisionService
         if (result != 0) return result;
         result = QualityRank(candidates, financial, right).CompareTo(QualityRank(candidates, financial, left));
         if (result != 0) return result;
-        result = ValuationRank(candidates, financial, right).CompareTo(ValuationRank(candidates, financial, left));
-        if (result != 0) return result;
         result = RecentCount(candidates, left).CompareTo(RecentCount(candidates, right));
         if (result != 0) return result;
         return string.Compare(string.Join("|", left.Allocations.Select(x => x.Key.Value).OrderBy(x => x, StringComparer.Ordinal)), string.Join("|", right.Allocations.Select(x => x.Key.Value).OrderBy(x => x, StringComparer.Ordinal)), StringComparison.Ordinal);
@@ -82,18 +80,12 @@ public sealed class PortfolioDecisionService
         .Where(x => x is not null && x.Category is "Acceptable" or "Weak" or "WeakEvidence")
         .Select(x => x!.Category == "Acceptable" ? 2 : 1).DefaultIfEmpty(0).Min();
 
-    private static int ValuationRank(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial, ContributionScenario scenario) => scenario.Allocations
-        .Select(a => candidates.Single(x => x.CandidateKey == a.Key)).Select(x => financial.FirstOrDefault(f => f.AssetId == x.Identity.AssetId)?.Valuation)
-        .Where(x => x is not null && x.Assessment is not "InsufficientContext" and not "NotApplicable")
-        .Select(x => x!.Assessment switch { "Favorable" => 2, "Neutral" => 1, "Unfavorable" => 0, _ => 0 }).DefaultIfEmpty(0).Max();
-
     private static string ComparisonFactor(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial, ContributionScenario winner, ContributionScenario runner)
     {
         if (winner.Improvement != runner.Improvement) return "PrimaryStructuralImprovement";
         if (WorsensSevereConcentration(candidates, winner.Allocations) != WorsensSevereConcentration(candidates, runner.Allocations)) return "Concentration";
         if (SecondaryImprovement(winner) != SecondaryImprovement(runner)) return "SecondaryExposure";
         if (QualityRank(candidates, financial, winner) != QualityRank(candidates, financial, runner)) return "FinancialQuality";
-        if (ValuationRank(candidates, financial, winner) != ValuationRank(candidates, financial, runner)) return "ValuationContext";
         if (RecentCount(candidates, winner) != RecentCount(candidates, runner)) return "RecentContribution";
         return "StableTieBreaker";
     }
@@ -131,7 +123,7 @@ public sealed class PortfolioDecisionService
         var quality = financial.FirstOrDefault(x => x.AssetId == winner.Identity.AssetId)?.Quality.Category ?? "InsufficientData";
         var evidence = new IntegratedDecisionEvidence($"{needs[0].AssetClass} abaixo do target em {needs[0].GapPercentagePoints:0.##} p.p.", scenario.Improvement,
             WorsensSevereConcentration(candidates, scenario.Allocations) ? CandidateStructuralFit.AddressesPrimaryNeedButWorsensConcentration : CandidateStructuralFit.DirectlyAddressesPrimaryNeed,
-            concentration, secondaryEffect, quality, financial.FirstOrDefault(x => x.AssetId == winner.Identity.AssetId)?.Valuation.Assessment ?? "InsufficientContext",
+            concentration, secondaryEffect, quality, "NotUsed",
             winner.RecentContributionCount > 0 ? "Recebeu aporte recentemente; contexto considerado." : "Sem aporte recente relevante.",
             safer is not null ? "LowerResultingConcentration" : "PrimaryNeedImprovement", alternatives.FirstOrDefault() is null ? null : "Alternativa estruturalmente comparável avaliada e não selecionada.");
         return new(type, amount, needs[0], scenario, alternatives, new[] { "O cenário recomendado produz a melhor melhora mensurável entre os candidatos avaliados." }, missing, secondary, exposure, financial, evidence);

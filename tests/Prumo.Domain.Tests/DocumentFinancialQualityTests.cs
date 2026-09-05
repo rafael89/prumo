@@ -1,0 +1,101 @@
+using Microsoft.EntityFrameworkCore;
+using Prumo.Application.Abstractions;
+using Prumo.Application.Contributions;
+using Prumo.Application.Documents;
+using Prumo.Domain.Entities;
+using Prumo.Domain.Enums;
+using Prumo.Infrastructure.Persistence;
+
+namespace Prumo.Domain.Tests;
+
+public sealed class DocumentFinancialQualityTests
+{
+    [Fact]
+    public void Structured_extraction_produces_normalized_financial_facts()
+    {
+        var result = new AiAnalysisValidator().Validate(new AiAnalysisPayload("Informative", "FinancialResult", false, "NoAction", "resultado", "fato", null, ["AAA3"], .9m, [ ], [new("NetMargin", 12.5m, "2025-12-31", "Annual", null, "percent", "margem líquida de 12,5%", .92m)]), "{}");
+        var fact = Assert.Single(result.FinancialFacts!);
+        Assert.Equal(FinancialFactMetric.NetMargin, fact.Metric);
+        Assert.Equal(.125m, fact.Value);
+        Assert.Equal("ratio", fact.Unit);
+    }
+
+    [Fact]
+    public void Document_financial_evidence_supports_quality_without_market_provider()
+    {
+        var asset = Asset("AAA3");
+        var document = new Document(asset.Id, DocumentType.QuarterlyReport, DateTimeOffset.UtcNow, "CVM", "doc-1", "https://example.test/doc-1", "fingerprint-1");
+        asset.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.NetIncome, new(2025, 12, 31), FinancialPeriodType.Annual, 100_000_000m, "BRL", "currency", "lucro líquido de R$ 100 milhões", .95m));
+        asset.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Equity, new(2025, 12, 31), FinancialPeriodType.Annual, 500_000_000m, "BRL", "currency", "patrimônio líquido de R$ 500 milhões", .95m));
+        asset.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "ROE de 18%", .95m));
+
+        var snapshot = DocumentFinancialQualityResolver.Resolve(asset);
+        var result = CandidateFinancialEvaluator.Evaluate(asset.Id, AssetType.Stock, snapshot);
+
+        Assert.Equal(100_000_000m, snapshot!.NetIncome);
+        Assert.Equal(.18m, snapshot.Roe);
+        Assert.Equal("Acceptable", result.Quality.Category);
+    }
+
+    [Fact]
+    public void Missing_metric_never_becomes_zero()
+    {
+        var payload = new AiFinancialFactPayload("Roe", null, "2025-12-31", "Annual", null, "percent", "", .9m);
+        Assert.Null(DocumentFinancialFactNormalizer.Normalize(payload));
+    }
+
+    [Fact]
+    public void Equivalent_percentage_representations_normalize_identically()
+    {
+        var percent = DocumentFinancialFactNormalizer.Normalize(new("Roe", 18, "2025-12-31", "Annual", null, "percent", "ROE", .9m));
+        var ratio = DocumentFinancialFactNormalizer.Normalize(new("Roe", .18m, "2025-12-31", "Annual", null, "ratio", "ROE", .9m));
+        Assert.Equal(percent!.Value, ratio!.Value);
+    }
+
+    [Fact]
+    public void Monetary_scale_normalizes_deterministically()
+    {
+        var fact = DocumentFinancialFactNormalizer.Normalize(new("Revenue", 2.4m, "2025-12-31", "Annual", "BRL", "currency_billion", "receita", .9m));
+        Assert.Equal(2_400_000_000m, fact!.Value);
+    }
+
+    [Fact]
+    public void Quarterly_fact_does_not_replace_annual_fact_in_same_period()
+    {
+        var asset = Asset("AAA3"); var document = Document(asset.Id, "q");
+        asset.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "annual", .9m));
+        asset.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Quarterly, .22m, null, "ratio", "quarterly", .9m));
+        Assert.Equal(.18m, DocumentFinancialQualityResolver.Resolve(asset)!.Roe);
+    }
+
+    [Fact]
+    public void Conflicting_facts_are_unavailable_not_averaged()
+    {
+        var asset = Asset("AAA3"); var first = Document(asset.Id, "a"); var second = Document(asset.Id, "b");
+        asset.DocumentFinancialFacts.Add(new DocumentFinancialFact(first.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "one", .9m));
+        asset.DocumentFinancialFacts.Add(new DocumentFinancialFact(second.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .22m, null, "ratio", "two", .9m));
+        Assert.Null(DocumentFinancialQualityResolver.Resolve(asset)!.Roe);
+    }
+
+    [Fact]
+    public async Task Reprocessing_same_document_does_not_duplicate_financial_facts()
+    {
+        await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var asset = Asset("AAA3"); var document = Document(asset.Id, "a"); db.AddRange(asset, document);
+        db.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "ROE", .9m)); await db.SaveChangesAsync();
+        if (!await db.DocumentFinancialFacts.AnyAsync(x => x.DocumentId == document.Id && x.Metric == FinancialFactMetric.Roe && x.ReferencePeriod == new DateOnly(2025, 12, 31) && x.PeriodType == FinancialPeriodType.Annual)) db.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "ROE", .9m));
+        await db.SaveChangesAsync();
+        Assert.Single(await db.DocumentFinancialFacts.ToListAsync());
+    }
+
+    [Fact]
+    public void Quality_source_is_neutral_for_equivalent_evidence()
+    {
+        var document = new CandidateFinancialSnapshot(new(2025, 12, 31), FinancialPeriodType.Annual, DateTimeOffset.UtcNow, FinancialDataSource.Derived, NetIncome: 100, Roe: .18m);
+        var provider = new CandidateFinancialSnapshot(new(2025, 12, 31), FinancialPeriodType.Annual, DateTimeOffset.UtcNow, FinancialDataSource.Provider, NetIncome: 100, Roe: .18m);
+        Assert.Equal(CandidateFinancialEvaluator.Evaluate(Guid.NewGuid(), AssetType.Stock, document).Quality.Category, CandidateFinancialEvaluator.Evaluate(Guid.NewGuid(), AssetType.Stock, provider).Quality.Category);
+    }
+
+    private static Asset Asset(string ticker) => new(ticker, ticker, AssetType.Stock, "Finance");
+    private static Document Document(Guid assetId, string id) => new(assetId, DocumentType.QuarterlyReport, DateTimeOffset.UtcNow, "CVM", id, $"https://example.test/{id}", $"fingerprint-{id}");
+}

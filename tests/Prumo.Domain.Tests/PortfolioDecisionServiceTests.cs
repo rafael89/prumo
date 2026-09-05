@@ -109,7 +109,7 @@ public sealed class PortfolioDecisionServiceTests
     }
 
     [Fact]
-    public void Uses_supported_quality_only_after_structural_tie()
+    public void Financial_quality_breaks_structural_tie()
     {
         var stronger = Guid.NewGuid();
         var weaker = Guid.NewGuid();
@@ -122,6 +122,65 @@ public sealed class PortfolioDecisionServiceTests
 
         Assert.Equal(CandidateIdentity.Known(stronger).Key, result.RecommendedScenario!.Allocations.Single().Key);
         Assert.Equal("FinancialQuality", result.DecisionEvidence!.DecisiveFactor);
+    }
+
+    [Fact]
+    public void Contribution_decision_requires_no_market_provider()
+    {
+        var result = new PortfolioDecisionService().DecideDeterministically(100, new[]
+        {
+            Candidate(CandidateIdentity.Known(Guid.NewGuid()), "AAA")
+        });
+        Assert.NotNull(result.RecommendedScenario);
+    }
+
+    [Fact]
+    public void Valuation_does_not_change_contribution_winner()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var baseSnapshot = new CandidateFinancialSnapshot(DateOnly.FromDateTime(DateTime.UtcNow), FinancialPeriodType.Ttm, DateTimeOffset.UtcNow, FinancialDataSource.Provider, NetIncome: 10, Equity: 100, PriceEarnings: 5);
+        var expensiveSnapshot = baseSnapshot with { PriceEarnings = 500 };
+        var service = new PortfolioDecisionService();
+        var before = service.DecideDeterministically(100, new[]
+        {
+            Candidate(CandidateIdentity.Known(first), "AAA") with { FinancialSnapshot = baseSnapshot },
+            Candidate(CandidateIdentity.Known(second), "BBB") with { FinancialSnapshot = expensiveSnapshot }
+        });
+        var after = service.DecideDeterministically(100, new[]
+        {
+            Candidate(CandidateIdentity.Known(first), "AAA") with { FinancialSnapshot = expensiveSnapshot },
+            Candidate(CandidateIdentity.Known(second), "BBB") with { FinancialSnapshot = baseSnapshot }
+        });
+        Assert.Equal(before.RecommendedScenario!.Allocations.Single().Key, after.RecommendedScenario!.Allocations.Single().Key);
+        Assert.Equal("NotUsed", after.DecisionEvidence!.ValuationContext);
+    }
+
+    [Fact]
+    public void Market_price_does_not_change_contribution_winner()
+    {
+        var first = CandidateIdentity.Known(Guid.NewGuid());
+        var second = CandidateIdentity.Known(Guid.NewGuid());
+        var service = new PortfolioDecisionService();
+        var result = service.DecideDeterministically(100, new[] { Candidate(first, "AAA"), Candidate(second, "BBB") });
+        Assert.Equal(first.Key, result.RecommendedScenario!.Allocations.Single().Key);
+    }
+
+    [Fact]
+    public void Contribution_uses_known_catalog_without_external_discovery()
+    {
+        var id = Guid.NewGuid();
+        var result = Decide(new ContributionCandidate(CandidateIdentity.Known(id), "AAA", AssetClass.Fii, 0, 0, 0, 100, 100, false, Array.Empty<ContributionAssessmentContext>(), HasPosition: false), (id, 100));
+        Assert.Equal(PortfolioDecisionType.AddNewAsset, result.DecisionType);
+        Assert.DoesNotContain(result.RecommendedScenario!.Allocations, x => x.Identity.Origin == CandidateOrigin.ExternalDiscovery);
+    }
+
+    [Fact]
+    public void Contribution_does_not_invent_external_candidate_when_catalog_has_no_match()
+    {
+        var result = new PortfolioDecisionService().DecideDeterministically(100, Array.Empty<ContributionCandidate>());
+        Assert.Equal(PortfolioDecisionType.NoAction, result.DecisionType);
+        Assert.Empty(result.AlternativeScenarios);
     }
 
     private static ContributionCandidate Candidate(CandidateIdentity identity, string ticker) => new(identity, ticker, AssetClass.BrazilianStock, 0, 0, 0, 100, 100, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Stock, HasPosition: identity.Origin == CandidateOrigin.KnownCatalog, AllocationNeedScore: 100, UnderweightScore: 100);

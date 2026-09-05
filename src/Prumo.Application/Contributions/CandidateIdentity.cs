@@ -1,15 +1,17 @@
-using Prumo.Domain.Enums;
 using System.Text.Json.Serialization;
+using Prumo.Domain.Enums;
 
 namespace Prumo.Application.Abstractions;
 
-public sealed record AssetDiscoveryRequest(AssetClass TargetClass, IReadOnlySet<string> KnownTickers, int MaxResults = 5);
 public enum CandidateOrigin { KnownCatalog, ExternalDiscovery }
+
 public sealed record ExternalCandidateIdentity(string Provider, string CanonicalTicker, string? Exchange, AssetType InstrumentType, string? Cnpj = null);
+
 public readonly record struct CandidateKey(string Value)
 {
     public override string ToString() => Value;
 }
+
 public sealed record CandidateIdentity
 {
     public CandidateOrigin Origin { get; }
@@ -29,13 +31,11 @@ public sealed record CandidateIdentity
     public static CandidateIdentity Known(Guid assetId) => new(CandidateOrigin.KnownCatalog, assetId, null);
     public static CandidateIdentity FromExternal(ExternalCandidateIdentity external) => new(CandidateOrigin.ExternalDiscovery, null, external);
 }
+
+// Kept as a transport shape so previously persisted external guidance can still
+// be materialized without retaining an outbound discovery provider.
 public sealed record DiscoveredAsset(string Provider, string Ticker, string Name, AssetType AssetType, AssetClass? AssetClass, string? Exchange, string? Currency, string? Sector, string? SourceReference)
 {
     public CandidateOrigin Origin => CandidateOrigin.ExternalDiscovery;
     public ExternalCandidateIdentity Identity => new(Provider, Ticker, Exchange, AssetType);
-}
-public interface IAssetDiscoveryProvider
-{
-    string Name { get; }
-    Task<IReadOnlyList<DiscoveredAsset>> DiscoverAsync(AssetDiscoveryRequest request, CancellationToken cancellationToken = default);
 }

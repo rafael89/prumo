@@ -48,7 +48,14 @@ public sealed class MarketDataController(PrumoDbContext db, MarketDataService pr
         var assetIds = positions.Select(x => x.AssetId).ToArray();
         var latest = await db.AssetPrices.AsNoTracking().Where(x => assetIds.Contains(x.AssetId)).OrderByDescending(x => x.PriceDate).ThenByDescending(x => x.FetchedAt).ToListAsync(ct);
         var byAsset = latest.GroupBy(x => x.AssetId).ToDictionary(x => x.Key, x => x.First());
-        var items = positions.Select(x => new MarketValuationItemDto(x.Asset?.Ticker ?? string.Empty, x.Quantity, byAsset.TryGetValue(x.AssetId, out var price) ? price.Close : null, price is null ? null : x.Quantity * price.Close, price is null ? null : ToDto(price))).ToList();
+        var items = positions.Select(x =>
+        {
+            var hasPrice = byAsset.TryGetValue(x.AssetId, out var price);
+            return new MarketValuationItemDto(x.Asset?.Ticker ?? string.Empty, x.Quantity,
+                hasPrice ? price!.Close : null,
+                hasPrice ? x.Quantity * price!.Close : x.CurrentValue,
+                hasPrice ? ToDto(price!) : null);
+        }).ToList();
         var priced = items.Count(x => x.Value.HasValue);
         return Ok(new MarketValuationDto(items.Sum(x => x.Value ?? 0), priced == items.Count ? "Complete" : priced == 0 ? "Unavailable" : "Partial", priced, items.Count, items));
     }

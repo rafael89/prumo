@@ -34,6 +34,7 @@ public sealed class Asset
     public ICollection<AssetCurrencyExposure> CurrencyExposures { get; private set; } = new List<AssetCurrencyExposure>();
     public ICollection<AssetFundamentalSnapshot> FundamentalSnapshots { get; private set; } = new List<AssetFundamentalSnapshot>();
     public ICollection<AssetValuationSnapshot> ValuationSnapshots { get; private set; } = new List<AssetValuationSnapshot>();
+    public ICollection<DocumentFinancialFact> DocumentFinancialFacts { get; private set; } = new List<DocumentFinancialFact>();
 
     public void SetCnpj(string? cnpj) => Cnpj = NormalizeCnpj(cnpj);
     public void SetListingMetadata(string? countryCode, string? currency)

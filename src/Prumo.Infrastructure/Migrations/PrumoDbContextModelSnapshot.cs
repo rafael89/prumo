@@ -584,6 +584,67 @@ namespace Prumo.Infrastructure.Migrations
                     b.ToTable("DocumentAnalyses");
                 });
 
+            modelBuilder.Entity("Prumo.Domain.Entities.DocumentFinancialFact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssetId1")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Confidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset>("ExtractedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Metric")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PeriodType")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("ReferencePeriod")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("AssetId1");
+
+                    b.HasIndex("DocumentId", "AssetId", "Metric", "ReferencePeriod", "PeriodType")
+                        .IsUnique();
+
+                    b.ToTable("DocumentFinancialFacts");
+                });
+
             modelBuilder.Entity("Prumo.Domain.Entities.FinancialHistoryCoverage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1550,6 +1611,29 @@ namespace Prumo.Infrastructure.Migrations
                     b.Navigation("Document");
                 });
 
+            modelBuilder.Entity("Prumo.Domain.Entities.DocumentFinancialFact", b =>
+                {
+                    b.HasOne("Prumo.Domain.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Prumo.Domain.Entities.Asset", null)
+                        .WithMany("DocumentFinancialFacts")
+                        .HasForeignKey("AssetId1");
+
+                    b.HasOne("Prumo.Domain.Entities.Document", "Document")
+                        .WithMany()
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+
+                    b.Navigation("Document");
+                });
+
             modelBuilder.Entity("Prumo.Domain.Entities.FinancialHistoryCoverage", b =>
                 {
                     b.HasOne("Prumo.Domain.Entities.Asset", "Asset")
@@ -1792,6 +1876,8 @@ namespace Prumo.Infrastructure.Migrations
             modelBuilder.Entity("Prumo.Domain.Entities.Asset", b =>
                 {
                     b.Navigation("CurrencyExposures");
+
+                    b.Navigation("DocumentFinancialFacts");
 
                     b.Navigation("FundamentalSnapshots");
 

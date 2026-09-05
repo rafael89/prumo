@@ -29,6 +29,7 @@ public sealed class AiAnalysisValidator
             if (string.IsNullOrWhiteSpace(eventPayload.Summary)) throw new InvalidOperationException("Resumo do evento ausente.");
             return new AiInvestmentEventResult(eventType, eventPayload.OccurredAt?.ToUniversalTime(), eventPayload.Summary.Trim(), (eventPayload.Facts ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToArray(), (eventPayload.AffectedAssets ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray());
         }).ToArray();
+        var financialFacts = (payload.FinancialFacts ?? Array.Empty<AiFinancialFactPayload>()).Select(DocumentFinancialFactNormalizer.Normalize).Where(x => x is not null).Select(x => x!).GroupBy(x => new { x.Metric, x.ReferencePeriod, x.PeriodType }).Select(x => x.OrderByDescending(f => f.Confidence).First()).ToArray();
 
         if (classification == AnalysisClassification.Distribution && IsRoutineDistribution(summary, impact, events))
         {
@@ -47,7 +48,7 @@ public sealed class AiAnalysisValidator
             portfolioImpact,
             payload.AffectedAssets.Where(asset => !string.IsNullOrWhiteSpace(asset)).Select(asset => asset.Trim().ToUpperInvariant()).Distinct().ToArray(),
             payload.Confidence.Value,
-            LimitRawResponse(rawResponse), events);
+            LimitRawResponse(rawResponse), events, null, financialFacts);
     }
 
     private static string LimitRawResponse(string rawResponse) => string.IsNullOrWhiteSpace(rawResponse)

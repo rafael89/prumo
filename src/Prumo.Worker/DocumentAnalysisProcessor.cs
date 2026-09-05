@@ -122,6 +122,11 @@ public sealed class DocumentAnalysisProcessor
             result.Confidence,
             result.RawResponse);
         dbContext.DocumentAnalyses.Add(analysis);
+        foreach (var fact in result.FinancialFacts ?? Array.Empty<AiFinancialFactResult>())
+        {
+            var exists = await dbContext.DocumentFinancialFacts.AnyAsync(x => x.DocumentId == document.Id && x.AssetId == document.AssetId && x.Metric == fact.Metric && x.ReferencePeriod == fact.ReferencePeriod && x.PeriodType == fact.PeriodType, cancellationToken);
+            if (!exists) dbContext.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, document.AssetId, fact.Metric, fact.ReferencePeriod, fact.PeriodType, fact.Value, fact.Currency, fact.Unit, fact.Evidence, fact.Confidence));
+        }
         await PersistEventsAndAssessmentsAsync(analysis, result.Events ?? Array.Empty<AiInvestmentEventResult>(), cancellationToken);
 
         document.MarkProcessed();

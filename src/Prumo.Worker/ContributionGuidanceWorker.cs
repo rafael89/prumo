@@ -32,7 +32,6 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var guidance = await db.ContributionGuidances.Include(x => x.Allocations).SingleAsync(x => x.Id == job.ContributionGuidanceId, stoppingToken);
                     var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson)
                         ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
-                    workItem = await AddExternalCandidatesAsync(scope.ServiceProvider, workItem, stoppingToken);
                     var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates);
                     var usedFallback = false;
                     var deterministicAllocations = deterministicDecision.RecommendedScenario?.Allocations.Select(allocation =>
@@ -128,20 +127,6 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         if (identity.AssetId is Guid assetId) return new(guidanceId, assetId, allocation.Amount, candidate.Ticker, confidence, "[]");
         var external = identity.External!;
         return new(guidanceId, identity.Key.Value, external.Provider, candidate.Ticker, candidate.ExternalName ?? candidate.Ticker, candidate.AssetClass, candidate.AssetType, external.Exchange, candidate.TradingCurrency, candidate.Sector, candidate.ExternalSourceReference, allocation.Amount, candidate.Ticker, confidence, "[]");
-    }
-
-    private static async Task<ContributionGuidanceWorkItem> AddExternalCandidatesAsync(IServiceProvider services, ContributionGuidanceWorkItem item, CancellationToken ct)
-    {
-        var target = item.Baseline.ClassAllocations.OrderByDescending(x => x.Amount).FirstOrDefault()?.AssetClass;
-        if (target is null) return item;
-        try
-        {
-            var discovered = await services.GetRequiredService<ExternalAssetDiscoveryService>().DiscoverAsync(target.Value, item.Candidates.Select(x => x.Ticker), ct);
-            var deviation = item.Candidates.FirstOrDefault(x => x.AssetClass == target.Value);
-            var external = discovered.Select(x => new ContributionCandidate(CandidateIdentity.FromExternal(x.Identity), x.Ticker, target.Value, 0, 0, deviation?.CurrentClassWeight ?? 0, deviation?.TargetClassWeight ?? 100, item.Baseline.ClassAllocations.FirstOrDefault(a => a.AssetClass == target.Value)?.Amount ?? 0, false, Array.Empty<ContributionAssessmentContext>(), x.AssetType, x.Sector, HasPosition: false, AllocationNeedScore: 100, UnderweightScore: 100) { ExternalName = x.Name, ExternalSourceReference = x.SourceReference }).ToArray();
-            return item with { Candidates = item.Candidates.Concat(external).ToArray() };
-        }
-        catch { return item; }
     }
 
     private static async Task<ContributionGuidanceJob?> ClaimNextAsync(PrumoDbContext db, CancellationToken ct)

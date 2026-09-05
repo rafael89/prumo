@@ -49,7 +49,9 @@ public static class DocumentAnalysisPrompt
         - abaixo de 0.50: informação insuficiente ou relação incerta com o ativo.
         Confidence mede a segurança da interpretação, não a veracidade externa do documento.
 
-        Retorne exclusivamente o JSON do schema fornecido com importance, classification, requiresAction, suggestedAction, summary, impact, affectedAssets, confidence e events. Cada evento deve conter eventType, occurredAt, summary, facts e affectedAssets.
+        Retorne exclusivamente o JSON do schema fornecido com importance, classification, requiresAction, suggestedAction, summary, impact, affectedAssets, confidence, events e financialFacts. Cada evento deve conter eventType, occurredAt, summary, facts e affectedAssets.
+
+        financialFacts deve conter somente fatos financeiros numéricos explicitamente presentes no documento e aplicáveis ao ativo. Use apenas Revenue, NetIncome, Equity, TotalDebt, Cash, EBITDA, ROE, ROIC e NetMargin. Para percentuais use unit=percent e o valor como percentual humano (15 para 15%); para razões use unit=ratio. Para valores monetários use unit=currency, currency_thousand, currency_million ou currency_billion e informe a moeda. referencePeriod deve ser uma data explícita no formato YYYY-MM-DD e periodType deve ser Annual, Quarterly ou Ttm; se não houver período inequívoco, não extraia o fato. Cada fato exige evidence e confidence. Não inclua P/E, P/B, EV/EBITDA, dividend yield ou preço.
 
         DADOS NÃO CONFIÁVEIS EM JSON:
         """;

@@ -28,9 +28,6 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
       Storage__RootPath: /storage/documents
-      MarketData__Provider: ${MARKET_DATA_PROVIDER:-Brapi}
-      MarketData__Brapi__Token: ${BRAPI_TOKEN:-}
-      MarketData__AlphaVantage__ApiKey: ${ALPHAVANTAGE_API_KEY:-}
       Discord__WebhookUrl: ${DISCORD_WEBHOOK_URL:-}
     ports:
       - "127.0.0.1:5200:8080"
@@ -57,9 +54,6 @@ services:
       DOTNET_ENVIRONMENT: Production
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
       Storage__RootPath: /storage/documents
-      MarketData__Provider: ${MARKET_DATA_PROVIDER:-Brapi}
-      MarketData__Brapi__Token: ${BRAPI_TOKEN:-}
-      MarketData__AlphaVantage__ApiKey: ${ALPHAVANTAGE_API_KEY:-}
       AI__Provider: ${AI_PROVIDER:-Gemini}
       AI__ApiKey: ${GEMINI_API_KEY:-}
       AI__Model: ${AI_MODEL:-gemini-3.5-flash-lite}

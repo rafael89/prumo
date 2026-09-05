@@ -20,7 +20,10 @@ public sealed record AiAnalysisPayload(
     string? PortfolioImpact,
     IReadOnlyList<string>? AffectedAssets,
     decimal? Confidence,
-    IReadOnlyList<AiInvestmentEventPayload>? Events = null);
+    IReadOnlyList<AiInvestmentEventPayload>? Events = null,
+    IReadOnlyList<AiFinancialFactPayload>? FinancialFacts = null);
+
+public sealed record AiFinancialFactPayload(string? Metric, decimal? Value, string? ReferencePeriod, string? PeriodType, string? Currency, string? Unit, string? Evidence, decimal? Confidence);
 
 public sealed record AiInvestmentEventPayload(string? EventType, DateTimeOffset? OccurredAt, string? Summary, IReadOnlyList<string>? Facts, IReadOnlyList<string>? AffectedAssets);
 public sealed record AiInvestmentEventResult(InvestmentEventType EventType, DateTimeOffset? OccurredAt, string Summary, IReadOnlyList<string> Facts, IReadOnlyList<string> AffectedAssets);
@@ -74,4 +77,7 @@ public sealed record AiAnalysisResult(
     decimal Confidence,
     string RawResponse,
     IReadOnlyList<AiInvestmentEventResult>? Events = null,
-    string? Model = null);
+    string? Model = null,
+    IReadOnlyList<AiFinancialFactResult>? FinancialFacts = null);
+
+public sealed record AiFinancialFactResult(FinancialFactMetric Metric, DateOnly ReferencePeriod, FinancialPeriodType PeriodType, decimal Value, string? Currency, string Unit, string Evidence, decimal Confidence);

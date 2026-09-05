@@ -30,7 +30,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.GeographicExposures)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.CurrencyExposures)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.FundamentalSnapshots)
-            .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.ValuationSnapshots)
+            .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.DocumentFinancialFacts)
             .SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
 
@@ -90,11 +90,12 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
                     asset.EconomicCurrencyExposureCoverage,
                     asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
-                    asset.ListingCountryCode, asset.TradingCurrency, LatestFinancialSnapshot(asset));
+                    asset.ListingCountryCode, asset.TradingCurrency, DocumentFinancialQualityResolver.Resolve(asset));
             }).ToList();
         var positionAssetIds = existingPositions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
         var catalogCandidates = await db.Assets.AsNoTracking()
+            .Include(x => x.FundamentalSnapshots).Include(x => x.DocumentFinancialFacts)
             .Where(x => x.IsActive && (targetClasses.Contains(x.AssetClass) || targetClasses.Contains(AssetClass.International) && x.AssetType == AssetType.Etf) && !positionAssetIds.Contains(x.Id))
             .OrderBy(x => x.Ticker)
             .ToListAsync(ct);
@@ -109,7 +110,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 GeographicExposures: asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
                 EconomicCurrencyExposureCoverage: asset.EconomicCurrencyExposureCoverage,
                 CurrencyExposures: asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
-                ListingCountryCode: asset.ListingCountryCode, TradingCurrency: asset.TradingCurrency, FinancialSnapshot: LatestFinancialSnapshot(asset));
+                ListingCountryCode: asset.ListingCountryCode, TradingCurrency: asset.TradingCurrency, FinancialSnapshot: DocumentFinancialQualityResolver.Resolve(asset));
         })).ToList();
         var ids = positions.Select(x => x.AssetId).ToHashSet();
         var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery()
@@ -329,20 +330,6 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     };
 
     private static string NormalizeSector(string? sector) => string.IsNullOrWhiteSpace(sector) ? string.Empty : sector.Trim().ToUpperInvariant();
-
-    private static CandidateFinancialSnapshot? LatestFinancialSnapshot(Asset asset)
-    {
-        var fundamentals = asset.FundamentalSnapshots.OrderByDescending(x => x.ReferenceDate).ThenByDescending(x => x.ObservedAt).FirstOrDefault();
-        var valuation = asset.ValuationSnapshots.OrderByDescending(x => x.ReferenceDate).ThenByDescending(x => x.ObservedAt).FirstOrDefault();
-        if (fundamentals is null && valuation is null) return null;
-        return new(fundamentals?.ReferenceDate ?? valuation!.ReferenceDate,
-            fundamentals?.PeriodType ?? FinancialPeriodType.PointInTime,
-            fundamentals?.ObservedAt ?? valuation!.ObservedAt,
-            fundamentals?.Source ?? valuation!.Source,
-            fundamentals?.NetIncome, fundamentals?.Equity, fundamentals?.TotalDebt, fundamentals?.Cash, fundamentals?.Roe,
-            valuation?.PriceEarnings, valuation?.PriceBook, valuation?.EvEbitda, valuation?.DividendYield,
-            fundamentals?.SourceReference ?? valuation?.SourceReference);
-    }
 
     private static decimal ScoreNeed(decimal target, decimal current) => Math.Clamp((target - current) * 5m, 0, 100);
 
