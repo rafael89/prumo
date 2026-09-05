@@ -1,4 +1,5 @@
 import { useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { Link } from 'react-router-dom'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -55,8 +56,8 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
         <section className="order-3 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-2">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Posi&ccedil;&otilde;es</h2>
-            <span className="text-xs text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span>
+            <div><h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Posi&ccedil;&otilde;es</h2><p className="mt-1 text-xs text-slate-500">A edi&ccedil;&atilde;o manual &eacute; uma op&ccedil;&atilde;o avan&ccedil;ada. Prefira atualizar pela importa&ccedil;&atilde;o da B3.</p></div>
+            <div className="flex items-center gap-3"><Link to="/performance" className="text-xs font-semibold text-sky-700 hover:text-sky-900">Ver performance</Link><span className="text-xs text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span></div>
           </div>
 
           {!activePortfolio && (

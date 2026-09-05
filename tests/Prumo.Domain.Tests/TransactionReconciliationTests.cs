@@ -45,6 +45,29 @@ public sealed class TransactionReconciliationTests
         var candidate = Assert.Single(await new TransactionReconciliationService(db).Candidates(portfolio.Id, default)); Assert.Equal("Possible", candidate.MatchStrength);
     }
 
+    [Fact]
+    public async Task Auto_reconciliation_resolves_only_an_exact_one_to_one_match()
+    {
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null); db.AddRange(portfolio, asset);
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync();
+        var service = new TransactionReconciliationService(db);
+        Assert.Equal(1, await service.AutoResolveDeterministic(portfolio.Id, default));
+        Assert.Empty(await service.Candidates(portfolio.Id, default));
+        Assert.Single(await service.Canonical(portfolio.Id, default));
+        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, default));
+    }
+
+    [Fact]
+    public async Task Ambiguous_reconciliation_remains_an_actionable_candidate()
+    {
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null); db.AddRange(portfolio, asset);
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync();
+        var service = new TransactionReconciliationService(db);
+        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, default));
+        Assert.Equal(2, (await service.Candidates(portfolio.Id, default)).Count);
+        Assert.Equal(3, (await service.Canonical(portfolio.Id, default)).Count);
+    }
+
     private static PortfolioTransaction AddTransaction(PrumoDbContext db, Portfolio portfolio, Asset asset, FinancialSource source, DateTimeOffset date, PortfolioTransactionType type = PortfolioTransactionType.Buy, FinancialDatePrecision datePrecision = FinancialDatePrecision.Exact)
     {
         var transaction = new PortfolioTransaction(portfolio.Id, type, date, null, 3200, source: source, datePrecision: datePrecision); transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, asset.Id, 100, 32)); db.PortfolioTransactions.Add(transaction); return transaction;

@@ -35,6 +35,27 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
         return groups.Select(x => Map(x, assets)).ToList();
     }
 
+    public async Task<int> AutoResolveDeterministic(Guid portfolioId, CancellationToken ct)
+    {
+        var candidates = await Candidates(portfolioId, ct);
+        var exact = candidates.Where(x => x.MatchStrength == "Exact")
+            .GroupBy(x => x.TransactionAId).Where(x => x.Count() == 1)
+            .SelectMany(x => x).GroupBy(x => x.TransactionBId).Where(x => x.Count() == 1)
+            .Select(x => x.Single()).ToList();
+        foreach (var candidate in exact)
+        {
+            var ids = new[] { candidate.TransactionAId, candidate.TransactionBId };
+            var alreadyResolved = await db.TransactionReconciliationMembers.AnyAsync(x => x.Reconciliation!.PortfolioId == portfolioId && ids.Contains(x.PortfolioTransactionId), ct);
+            if (alreadyResolved) continue;
+            var group = new TransactionReconciliation(portfolioId, TransactionReconciliationStatus.ConfirmedSameEconomicTransaction, "Deterministic exact match");
+            group.Members.Add(new TransactionReconciliationMember(group.Id, candidate.TransactionAId));
+            group.Members.Add(new TransactionReconciliationMember(group.Id, candidate.TransactionBId));
+            db.TransactionReconciliations.Add(group);
+        }
+        if (exact.Count > 0) await db.SaveChangesAsync(ct);
+        return exact.Count;
+    }
+
     public async Task<ReconciliationDto> Resolve(Guid portfolioId, ReconciliationRequest request, CancellationToken ct)
     {
         if (request.TransactionIds is null || request.TransactionIds.Distinct().Count() < 2) throw new ArgumentException("Informe ao menos duas transações diferentes.");

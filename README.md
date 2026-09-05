@@ -73,6 +73,10 @@ O frontend é organizado por fluxos:
 
 A orientação de aportes fica concentrada na tela `/contributions`; a visão geral não exibe mais o card de aportes.
 
+### Princípio de produto
+
+O Prumo segue um modelo de produto orientado à autonomia. Uma capacidade do backend não se torna automaticamente uma funcionalidade permanente voltada ao usuário. As responsabilidades normais devem permanecer limitadas a importar ou atualizar a carteira, definir alocações-alvo por classe de ativo, informar um valor para aporte e revisar ou confirmar a orientação do Prumo. O restante deve ser automatizado, derivado, contextual, acessível por drill-down ou acionado apenas em exceções, sempre que for seguro.
+
 ## Executar localmente
 
 ### Pré-requisitos

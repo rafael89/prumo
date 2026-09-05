@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircleCheck, faCircleInfo, faSpinner, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
+import { Link } from 'react-router-dom'
 import { apiBaseUrl } from '../api/client'
 
 type Allocation = { assetId?: string | null; origin?: string; candidateKey?: string | null; ticker: string; assetClass: number; amount: number; reason: string }
@@ -68,6 +69,7 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
   return <section className="mx-auto max-w-358 px-6 pb-24 pt-3">
     <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Próximo aporte</p>
+      <Link to="/history" className="mt-2 inline-flex text-xs font-semibold text-sky-700 hover:text-sky-900">Ver aportes anteriores</Link>
       <div className="mt-5 grid gap-6 lg:grid-cols-[.75fr_1.35fr_1fr] lg:gap-8">
         <div className="lg:border-r lg:border-slate-100 lg:pr-8">
           <p className="text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Simulação de aporte</p>

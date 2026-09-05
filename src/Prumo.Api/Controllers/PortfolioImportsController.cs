@@ -9,6 +9,7 @@ using Prumo.Domain.Enums;
 using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.PortfolioImports;
+using Prumo.Infrastructure.Reconciliation;
 using Prumo.Application.Portfolio;
 
 namespace Prumo.Api.Controllers;
@@ -23,7 +24,8 @@ public sealed class PortfolioImportsController : ControllerBase
     private readonly NewAssetBootstrapService bootstrap;
     private readonly ILogger<PortfolioImportsController> logger;
     private readonly IWebHostEnvironment environment;
-    public PortfolioImportsController(PrumoDbContext db, IEnumerable<IPortfolioImporter> importers, NewAssetBootstrapService bootstrap, ILogger<PortfolioImportsController> logger, IWebHostEnvironment environment) { this.db = db; this.importers = importers; this.bootstrap = bootstrap; this.logger = logger; this.environment = environment; }
+    public PortfolioImportsController(PrumoDbContext db, IEnumerable<IPortfolioImporter> importers, NewAssetBootstrapService bootstrap, TransactionReconciliationService reconciliation, ILogger<PortfolioImportsController> logger, IWebHostEnvironment environment) { this.db = db; this.importers = importers; this.bootstrap = bootstrap; this.reconciliation = reconciliation; this.logger = logger; this.environment = environment; }
+    private readonly TransactionReconciliationService reconciliation;
 
     [HttpPost("b3/preview")]
     [RequestSizeLimit(MaxUploadBytes)]
@@ -39,7 +41,12 @@ public sealed class PortfolioImportsController : ControllerBase
         stream.Position = 0;
         var normalized = await importer.ParseAsync(stream, ct);
         var hash = Convert.ToHexString(SHA256.HashData(await ReadAllAsync(file, ct))).ToLowerInvariant();
-        if (await db.PortfolioImportSessions.AnyAsync(s => s.PortfolioId == portfolioId && s.Source == PortfolioImportSource.B3File && s.FileHash == hash && s.Status == PortfolioImportStatus.Completed, ct)) return Conflict("AlreadyImported");
+        var completedImport = await db.PortfolioImportSessions.SingleOrDefaultAsync(s => s.PortfolioId == portfolioId && s.Source == PortfolioImportSource.B3File && s.FileHash == hash && s.Status == PortfolioImportStatus.Completed, ct);
+        if (completedImport is not null)
+        {
+            var completedNormalized = JsonSerializer.Deserialize<NormalizedPortfolioImport>(completedImport.NormalizedJson);
+            if (completedNormalized is not null) return Ok(await BuildPreview(completedImport, completedNormalized, portfolioId, ct));
+        }
         var session = new PortfolioImportSession(portfolioId, PortfolioImportSource.B3File, Path.GetFileName(file.FileName), hash, JsonSerializer.Serialize(normalized), normalized.ReferenceDate);
         db.PortfolioImportSessions.Add(session); await db.SaveChangesAsync(ct);
         return Ok(await BuildPreview(session, normalized, portfolioId, ct));
@@ -66,8 +73,10 @@ public sealed class PortfolioImportsController : ControllerBase
             if (position is null) { position = new PortfolioPosition(portfolio.Id, asset.Id, item.Quantity, item.AveragePrice ?? 0, item.CurrentPrice); db.PortfolioPositions.Add(position); portfolio.Positions.Add(position); addedToPortfolio++; addedAssetIds.Add(asset.Id); }
             else { position.Update(item.Quantity, item.AveragePrice ?? position.AveragePrice, item.CurrentPrice ?? position.CurrentPrice); updated++; }
         }
+        await db.SaveChangesAsync(ct);
         var assetsByTicker = await db.Assets.Where(a => normalized.Transactions.Select(t => t.Ticker).Contains(a.Ticker)).ToDictionaryAsync(a => a.Ticker, ct);
         var importedTransactions = 0;
+        var ignoredDuplicateTransactions = 0;
         var importedFingerprints = new HashSet<string>(StringComparer.Ordinal);
         var existingFingerprints = await db.PortfolioTransactions.AsNoTracking()
             .Where(x => x.PortfolioId == portfolioId && x.ImportFingerprint != null)
@@ -79,14 +88,16 @@ public sealed class PortfolioImportsController : ControllerBase
             var transactionAmount = decimal.Round(imported.TotalAmount, 2);
             if (transactionAmount <= 0) continue;
             var fingerprint = PortfolioTransaction.CreateImportFingerprint(portfolioId, asset.Id, imported.Type, imported.OccurredAt, imported.Quantity, imported.UnitPrice, imported.Institution);
-            if (!importedFingerprints.Add(fingerprint) || existingFingerprints.Contains(fingerprint)) continue;
+            if (!importedFingerprints.Add(fingerprint) || existingFingerprints.Contains(fingerprint)) { ignoredDuplicateTransactions++; continue; }
             var transactionRecord = new PortfolioTransaction(portfolioId, imported.Type, imported.OccurredAt, null, transactionAmount, fingerprint, FinancialSource.B3Import, imported.DatePrecision);
             transactionRecord.Items.Add(new PortfolioTransactionItem(transactionRecord.Id, asset.Id, imported.Quantity, imported.UnitPrice));
             db.PortfolioTransactions.Add(transactionRecord);
             importedTransactions++;
         }
         PortfolioCalculator.RecalculateWeights(portfolio.Positions);
-        session.MarkConfirmed(); session.SetPortfolioSnapshotKey(PortfolioSnapshotKeyCalculator.Calculate(portfolio)); session.MarkCompleted(); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
+        session.MarkConfirmed(); session.SetPortfolioSnapshotKey(PortfolioSnapshotKeyCalculator.Calculate(portfolio)); session.MarkCompleted(); await db.SaveChangesAsync(ct);
+        var autoReconciled = await reconciliation.AutoResolveDeterministic(portfolioId, ct);
+        await transaction.CommitAsync(ct);
         logger.LogInformation("Import confirmed: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, CreatedAssetCount={CreatedAssetCount}, AddedToPortfolioAssetCount={AddedToPortfolioAssetCount}, UpdatedPositionCount={UpdatedPositionCount}", session.Id, portfolioId, createdAssets, addedToPortfolio, updated);
         try { await bootstrap.DiscoverLatestOnlyAsync(addedAssetIds, ct); } catch (Exception exception) { logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId); }
         var importedDocumentAssetIds = portfolio.Positions
@@ -103,7 +114,7 @@ public sealed class PortfolioImportsController : ControllerBase
         {
             logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId);
         }
-        return Ok(new ImportConfirmationDto("Completed", createdAssets, addedToPortfolio, updated, importedTransactions));
+        return Ok(new ImportConfirmationDto("Completed", createdAssets, addedToPortfolio, updated, importedTransactions, ignoredDuplicateTransactions, autoReconciled));
     }
 
     [HttpGet]
@@ -130,5 +141,5 @@ public sealed class PortfolioImportsController : ControllerBase
 }
 
 public sealed record ImportPreviewDto(Guid ImportSessionId, PortfolioImportSource Source, DateTimeOffset? ReferenceDate, IReadOnlyList<string> NewAssets, IReadOnlyList<string> UpdatedPositions, IReadOnlyList<string> UnchangedPositions, IReadOnlyList<string> Warnings, IReadOnlyList<string> Errors, bool CanConfirm);
-public sealed record ImportConfirmationDto(string Status, int CreatedAssets, int AddedToPortfolioAssets, int UpdatedPositions, int ImportedTransactions = 0);
+public sealed record ImportConfirmationDto(string Status, int CreatedAssets, int AddedToPortfolioAssets, int UpdatedPositions, int ImportedTransactions = 0, int IgnoredDuplicateTransactions = 0, int AutoReconciledTransactions = 0);
 public sealed record ImportSessionDto(Guid Id, PortfolioImportSource Source, string OriginalFileName, PortfolioImportStatus Status, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
