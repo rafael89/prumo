@@ -41,6 +41,26 @@ public sealed class PortfolioImpactAssessmentServiceTests
     }
 
     [Fact]
+    public void Common_corporate_action_at_five_percent_is_not_attention_now()
+    {
+        var result = Assess(InvestmentEventType.CorporateAction, 5.39m);
+
+        Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.Monitor, result.ActionRequirement);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
+    }
+
+    [Fact]
+    public void Capital_raise_at_five_percent_remains_attention_now()
+    {
+        var result = Assess(InvestmentEventType.CapitalRaise, 5m);
+
+        Assert.Equal(AttentionPriority.Medium, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+        Assert.Equal(CapitalDecisionImpact.Caution, result.CapitalDecisionImpact);
+    }
+
+    [Fact]
     public void Large_exposure_thresholds_are_preserved()
     {
         Assert.Equal(AttentionPriority.High, Assess(InvestmentEventType.Other, 10m).AttentionPriority);
@@ -71,7 +91,7 @@ public sealed class PortfolioImpactAssessmentServiceTests
         var current = await service.EnsureFreshAsync(portfolio, Array.Empty<TargetAllocation>(), new[] { first, second }, CancellationToken.None);
 
         Assert.Single(current);
-        Assert.Equal("portfolio-impact-v2", current[0].AssessmentVersion);
+        Assert.Equal("portfolio-impact-v3", current[0].AssessmentVersion);
         Assert.Equal(1, await db.PortfolioAssessments.CountAsync());
     }
 

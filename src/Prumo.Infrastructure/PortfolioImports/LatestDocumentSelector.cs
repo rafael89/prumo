@@ -30,25 +30,21 @@ public static class LatestDocumentSelector
         var cutoff = now.AddMonths(-Math.Max(1, materialFactLookbackMonths));
         foreach (var group in candidates.GroupBy(candidate => candidate.Ticker, StringComparer.OrdinalIgnoreCase))
         {
-            var context = group.Where(IsContextDocument).OrderBy(candidate => ContextPriority(candidate.DocumentType))
-                .ThenByDescending(candidate => candidate.PublishedAt)
-                .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal).FirstOrDefault();
-            if (context is not null) yield return context;
-
-            var eventDocument = group.Where(candidate => candidate.DocumentType == DocumentType.RelevantFact && candidate.PublishedAt >= cutoff)
+            var latestReports = group.Where(candidate => IsBootstrapReport(candidate) && (candidate.DocumentType != DocumentType.RelevantFact || candidate.PublishedAt >= cutoff))
                 .OrderByDescending(candidate => candidate.PublishedAt)
-                .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal).FirstOrDefault();
-            if (eventDocument is not null && !SameIdentity(context, eventDocument)) yield return eventDocument;
+                .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal)
+                .Take(2)
+                .ToList();
+            foreach (var report in latestReports) yield return report;
+
+            var managementReport = group.Where(candidate => candidate.DocumentType == DocumentType.ManagementReport)
+                .OrderByDescending(candidate => candidate.PublishedAt)
+                .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (managementReport is not null && latestReports.All(report => !SameIdentity(report, managementReport))) yield return managementReport;
         }
     }
 
-    private static bool IsContextDocument(DocumentCandidate candidate) => candidate.DocumentType is DocumentType.ManagementReport or DocumentType.QuarterlyReport or DocumentType.MonthlyReport;
-    private static int ContextPriority(DocumentType type) => type switch
-    {
-        DocumentType.ManagementReport => 0,
-        DocumentType.QuarterlyReport => 1,
-        DocumentType.MonthlyReport => 2,
-        _ => int.MaxValue
-    };
+    private static bool IsBootstrapReport(DocumentCandidate candidate) => candidate.DocumentType is DocumentType.ManagementReport or DocumentType.QuarterlyReport or DocumentType.MonthlyReport or DocumentType.RelevantFact;
     private static bool SameIdentity(DocumentCandidate? first, DocumentCandidate second) => first is not null && ((!string.IsNullOrWhiteSpace(first.SourceIdentifier) && first.SourceIdentifier == second.SourceIdentifier) || first.SourceUrl == second.SourceUrl);
 }

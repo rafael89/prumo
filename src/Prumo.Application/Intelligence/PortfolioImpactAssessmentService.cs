@@ -5,7 +5,7 @@ namespace Prumo.Application.Intelligence;
 
 public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmentService
 {
-    public const string CurrentVersion = "portfolio-impact-v2";
+    public const string CurrentVersion = "portfolio-impact-v3";
     private const decimal MediumExposureThreshold = 5m;
     private const decimal HighExposureThreshold = 10m;
     private const decimal CriticalExposureThreshold = 20m;
@@ -20,6 +20,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         var totalExposure = context.RelevantPositions.Sum(x => x.PortfolioWeight);
         var largestExposure = context.RelevantPositions.Count == 0 ? 0 : context.RelevantPositions.Max(x => x.PortfolioWeight);
         var hasExposure = context.RelevantPositions.Count > 0 && totalExposure > 0;
+        var usesMaterialEventThreshold = context.InvestmentEvent.EventType is InvestmentEventType.CorporateAction;
 
         var action = context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
             ? hasExposure && largestExposure >= MediumExposureThreshold ? ActionRequirement.Review : ActionRequirement.Monitor
@@ -30,14 +31,15 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         var capitalImpact = context.InvestmentEvent.EventType switch
         {
             InvestmentEventType.Liquidation when largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Block,
-            InvestmentEventType.CorporateAction when hasExposure && largestExposure >= MediumExposureThreshold => CapitalDecisionImpact.Caution,
+            InvestmentEventType.CorporateAction when hasExposure && largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Caution,
             InvestmentEventType.CapitalRaise when hasExposure && largestExposure >= MediumExposureThreshold => CapitalDecisionImpact.Caution,
             _ => CapitalDecisionImpact.None
         };
 
+        var attentionExposureThreshold = usesMaterialEventThreshold ? HighExposureThreshold : MediumExposureThreshold;
         var attention = largestExposure >= CriticalExposureThreshold ? AttentionPriority.Critical
             : largestExposure >= HighExposureThreshold ? AttentionPriority.High
-            : largestExposure >= MediumExposureThreshold || action is ActionRequirement.Review or ActionRequirement.Act || capitalImpact >= CapitalDecisionImpact.Caution
+            : largestExposure >= attentionExposureThreshold || action is ActionRequirement.Review or ActionRequirement.Act || capitalImpact >= CapitalDecisionImpact.Caution
                 ? AttentionPriority.Medium
                 : AttentionPriority.Low;
 

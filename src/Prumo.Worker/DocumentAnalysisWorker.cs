@@ -72,16 +72,6 @@ public sealed class DocumentAnalysisWorker : BackgroundService
                 return;
             }
 
-            if (job.Document is not null && await HasNewerDocumentAsync(dbContext, job.Document, cancellationToken))
-            {
-                job.Document.MarkIgnored();
-                job.Complete(DateTimeOffset.UtcNow);
-                await dbContext.SaveChangesAsync(cancellationToken);
-                logger.LogInformation("Job de analise {JobId} ignorado: documento {DocumentId} nao e o mais recente do ativo {AssetId}; duraçãoMs={DurationMs}; backlog={Backlog}.", job.Id, job.DocumentId, job.Document.AssetId, stopwatch.Elapsed.TotalMilliseconds, backlog);
-                metrics.RecordCompleted(ProcessingJobType.AnalyzeDocument, stopwatch.Elapsed);
-                return;
-            }
-
             await processor.ProcessAsync(job, cancellationToken);
             metrics.RecordCompleted(ProcessingJobType.AnalyzeDocument, stopwatch.Elapsed);
         }
@@ -101,13 +91,6 @@ public sealed class DocumentAnalysisWorker : BackgroundService
             await FailJobAsync(dbContext, job.Id, exception.Message, exception, cancellationToken);
         }
     }
-
-    private static Task<bool> HasNewerDocumentAsync(PrumoDbContext dbContext, Prumo.Domain.Entities.Document document, CancellationToken cancellationToken) =>
-        dbContext.Documents.AnyAsync(candidate =>
-            candidate.AssetId == document.AssetId
-            && candidate.Id != document.Id
-            && candidate.PublishedAt > document.PublishedAt,
-            cancellationToken);
 
     private static Task<bool> HasActivePositionAsync(PrumoDbContext dbContext, Guid assetId, CancellationToken cancellationToken) =>
         dbContext.PortfolioPositions.AnyAsync(position => position.AssetId == assetId && position.Quantity > 0, cancellationToken);

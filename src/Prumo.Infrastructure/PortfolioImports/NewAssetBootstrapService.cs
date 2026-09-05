@@ -36,6 +36,7 @@ public sealed class NewAssetBootstrapService
             if (existing is not null)
             {
                 existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType);
+                await RequeueIgnoredDocumentAsync(existing, ct);
                 continue;
             }
             var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl, candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
@@ -45,6 +46,22 @@ public sealed class NewAssetBootstrapService
         }
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Bootstrap LatestOnly concluído para {AssetCount} ativo(s)", assets.Count);
+    }
+
+    private async Task RequeueIgnoredDocumentAsync(Document document, CancellationToken ct)
+    {
+        if (document.ProcessingStatus != DocumentProcessingStatus.Ignored || await db.DocumentAnalyses.AnyAsync(analysis => analysis.DocumentId == document.Id, ct)) return;
+        if (await db.ProcessingJobs.AnyAsync(job => job.DocumentId == document.Id && (job.Status == ProcessingJobStatus.Queued || job.Status == ProcessingJobStatus.Processing), ct)) return;
+        if (string.IsNullOrWhiteSpace(document.FilePath))
+        {
+            document.MarkPendingDownload();
+            db.ProcessingJobs.Add(new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow));
+        }
+        else
+        {
+            document.MarkWaitingProcessing();
+            db.ProcessingJobs.Add(new ProcessingJob(document.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow));
+        }
     }
 
     public async Task<BootstrapRepairResult> EnsurePortfolioDocumentBootstrapAsync(Guid portfolioId, CancellationToken ct)

@@ -24,7 +24,7 @@ public sealed class LatestDocumentSelectorTests
     }
 
     [Fact]
-    public void Bootstrap_keeps_its_limited_context_policy()
+    public void Bootstrap_keeps_two_latest_reports_and_a_management_report()
     {
         var candidates = new[]
         {
@@ -35,7 +35,7 @@ public sealed class LatestDocumentSelectorTests
 
         var selected = LatestDocumentSelector.SelectBootstrap(candidates, DateTimeOffset.UtcNow, 12).ToArray();
 
-        Assert.Equal(new[] { "A", "C" }, selected.Select(x => x.SourceIdentifier));
+        Assert.Equal(new[] { "A", "B", "C" }, selected.Select(x => x.SourceIdentifier).OrderBy(x => x));
     }
 
     private static DocumentCandidate Candidate(string ticker, string identifier, int day, DocumentType type = DocumentType.RelevantFact) =>

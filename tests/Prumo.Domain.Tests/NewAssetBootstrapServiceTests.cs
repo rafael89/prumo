@@ -34,7 +34,7 @@ public sealed class NewAssetBootstrapServiceTests
     }
 
     [Fact]
-    public async Task Bootstrap_selects_only_latest_document_for_each_asset()
+    public async Task Bootstrap_selects_two_latest_documents_for_each_asset()
     {
         var options = new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         await using var db = new PrumoDbContext(options);
@@ -47,10 +47,11 @@ public sealed class NewAssetBootstrapServiceTests
         var service = new NewAssetBootstrapService(db, new MultipleDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);
         await service.DiscoverLatestOnlyAsync(new[] { asset.Id }, CancellationToken.None);
 
-        var document = Assert.Single(db.Documents);
-        Assert.Equal(DateTimeOffset.Parse("2026-07-01T00:00:00Z"), document.PublishedAt);
-        Assert.Single(db.ProcessingJobs);
-        Assert.Equal(ProcessingJobType.DownloadDocument, db.ProcessingJobs.Single().JobType);
+        Assert.Equal(2, db.Documents.Count());
+        Assert.Contains(db.Documents, document => document.PublishedAt == DateTimeOffset.Parse("2026-07-01T00:00:00Z"));
+        Assert.Contains(db.Documents, document => document.PublishedAt == DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
+        Assert.Equal(2, db.ProcessingJobs.Count());
+        Assert.All(db.ProcessingJobs, job => Assert.Equal(ProcessingJobType.DownloadDocument, job.JobType));
     }
 
     [Fact]
@@ -67,7 +68,7 @@ public sealed class NewAssetBootstrapServiceTests
         var service = new NewAssetBootstrapService(db, new BootstrapDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);
         await service.DiscoverLatestOnlyAsync(new[] { asset.Id }, CancellationToken.None);
 
-        Assert.Equal(2, db.Documents.Count());
+        Assert.Equal(3, db.Documents.Count());
         Assert.Contains(db.Documents, document => document.DocumentType == DocumentType.ManagementReport);
         Assert.Contains(db.Documents, document => document.DocumentType == DocumentType.RelevantFact);
     }
