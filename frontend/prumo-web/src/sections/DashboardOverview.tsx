@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faCircleCheck, faCircleInfo, faEye, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
 
-import { apiBaseUrl, getJson } from '../api/client'
+import { apiBaseUrl } from '../api/client'
+import { TransactionReconciliationSection } from './TransactionReconciliationSection'
 const contributionApiUrl = apiBaseUrl
 
 type Position = {
@@ -350,9 +351,6 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
 }
 
 export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false }: DashboardOverviewProps) {
-  const portfolioId = activePortfolio?.id
-  const completeness = useQuery({ queryKey: ['historical-completeness', portfolioId], queryFn: () => getJson<{ overallStatus: string; reliableFrom: string | null }>(`/api/portfolios/${portfolioId}/historical-completeness`), enabled: Boolean(portfolioId) })
-  const reconciliation = useQuery({ queryKey: ['transaction-reconciliation-candidates', portfolioId], queryFn: () => getJson<unknown[]>(`/api/portfolios/${portfolioId}/transaction-reconciliation/candidates`), enabled: Boolean(portfolioId) })
   if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
   if (dashboard.isLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
@@ -373,7 +371,7 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
     </div>
     <div className="mt-4 grid gap-4 md:grid-cols-3">
       <article className="rounded-3xl border border-amber-200 bg-amber-50 p-5"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Próximo passo</p><h2 className="mt-2 text-lg font-semibold">Pronto para aportar?</h2><p className="mt-2 text-sm leading-6 text-amber-950">Informe um valor e receba um cenário de distribuição baseado nos dados conhecidos.</p><Link to="/contributions" className="mt-4 inline-flex rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Aportar <FontAwesomeIcon icon={faArrowRight} /></Link></article>
-      {(completeness.data?.overallStatus !== 'Complete' || (reconciliation.data?.length ?? 0) > 0) && <article className="rounded-3xl border border-amber-200 bg-white p-5 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">Prumo precisa de você</p>{(reconciliation.data?.length ?? 0) > 0 && <p className="mt-3 text-sm font-semibold">{reconciliation.data?.length} movimentação(ões) podem representar a mesma operação.</p>}{completeness.data?.overallStatus !== 'Complete' && <p className="mt-3 text-sm text-slate-700">Alguns cálculos usam histórico parcial.</p>}<Link to="/financial-history" className="mt-4 inline-flex text-sm font-semibold text-sky-700">Entender e revisar <FontAwesomeIcon icon={faArrowRight} /></Link></article>}
     </div>
+    <TransactionReconciliationSection portfolioId={activePortfolio.id} />
   </section>
 }

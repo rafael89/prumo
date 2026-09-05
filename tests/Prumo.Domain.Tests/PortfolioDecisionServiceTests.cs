@@ -161,9 +161,30 @@ public sealed class PortfolioDecisionServiceTests
     {
         var first = CandidateIdentity.Known(Guid.NewGuid());
         var second = CandidateIdentity.Known(Guid.NewGuid());
+        var snapshot = new CandidateFinancialSnapshot(
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            FinancialPeriodType.Ttm,
+            DateTimeOffset.UtcNow,
+            FinancialDataSource.Provider,
+            NetIncome: 10,
+            Equity: 100,
+            PriceEarnings: 5);
         var service = new PortfolioDecisionService();
-        var result = service.DecideDeterministically(100, new[] { Candidate(first, "AAA"), Candidate(second, "BBB") });
-        Assert.Equal(first.Key, result.RecommendedScenario!.Allocations.Single().Key);
+        var beforePriceChange = new[]
+        {
+            Candidate(first, "AAA") with { FinancialSnapshot = snapshot },
+            Candidate(second, "BBB") with { FinancialSnapshot = snapshot }
+        };
+        var afterPriceChange = beforePriceChange
+            .Select(candidate => candidate with { FinancialSnapshot = snapshot with { PriceEarnings = 500 } })
+            .ToArray();
+
+        var before = service.DecideDeterministically(100, beforePriceChange);
+        var after = service.DecideDeterministically(100, afterPriceChange);
+
+        Assert.Equal(
+            before.RecommendedScenario!.Allocations.Single().Key,
+            after.RecommendedScenario!.Allocations.Single().Key);
     }
 
     [Fact]

@@ -10,7 +10,7 @@ export function TransactionReconciliationSection({ portfolioId }: { portfolioId:
   const client = useQueryClient()
   const candidates = useQuery({ queryKey: ['transaction-reconciliation-candidates', portfolioId], queryFn: () => getJson<Candidate[]>(`/api/portfolios/${portfolioId}/transaction-reconciliation/candidates`) })
   const resolutions = useQuery({ queryKey: ['transaction-reconciliations', portfolioId], queryFn: () => getJson<Resolution[]>(`/api/portfolios/${portfolioId}/transaction-reconciliation`) })
-  const refresh = () => { void client.invalidateQueries({ queryKey: ['transaction-reconciliation-candidates', portfolioId] }); void client.invalidateQueries({ queryKey: ['transaction-reconciliations', portfolioId] }); void client.invalidateQueries({ queryKey: ['history-timeline', portfolioId] }); void client.invalidateQueries({ queryKey: ['performance', portfolioId] }) }
+  const refresh = () => { void client.invalidateQueries({ queryKey: ['transaction-reconciliation-candidates', portfolioId] }); void client.invalidateQueries({ queryKey: ['transaction-reconciliations', portfolioId] }); void client.invalidateQueries({ queryKey: ['history-timeline', portfolioId] }) }
   const resolve = useMutation({ mutationFn: ({ candidate, status }: { candidate: Candidate; status: number }) => sendJson<Resolution, unknown>(`/api/portfolios/${portfolioId}/transaction-reconciliation`, 'POST', { transactionIds: [candidate.transactionAId, candidate.transactionBId], status }), onSuccess: refresh })
   const remove = useMutation({ mutationFn: (id: string) => sendVoid(`/api/portfolios/${portfolioId}/transaction-reconciliation/${id}`), onSuccess: refresh })
   if (candidates.data?.length === 0 && resolutions.data?.length === 0) return null
