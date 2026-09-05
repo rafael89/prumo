@@ -1,4 +1,5 @@
 using Prumo.Domain.Enums;
+using Prumo.Application.Abstractions;
 
 namespace Prumo.Application.Contributions;
 
@@ -7,6 +8,13 @@ public sealed record PortfolioExposureDimensionSummary(string Dimension, decimal
 public sealed record PortfolioExposureSummary(decimal InvestedPortfolioValue, PortfolioExposureDimensionSummary Sector, PortfolioExposureDimensionSummary Geography, PortfolioExposureDimensionSummary Currency);
 public sealed record PortfolioExposureImpact(string Dimension, string Key, decimal BeforePercentage, decimal AfterPercentage);
 public sealed record MultidimensionalPortfolioNeed(string Type, string Dimension, string? Key, decimal Severity, string Confidence, ExposureCoverage Coverage, IReadOnlyList<string> Reasons);
+public sealed record PortfolioStructuralNeed(
+    string Type,
+    string Dimension,
+    string Key,
+    decimal Severity,
+    IReadOnlyList<CandidateKey> CandidateKeys,
+    string Explanation);
 
 public static class PortfolioExposureAggregator
 {
@@ -82,6 +90,43 @@ public static class PortfolioExposureAggregator
         AddDominantNeed(needs, exposure.Geography, "GeographicConcentration");
         AddDominantNeed(needs, exposure.Currency, "CurrencyConcentration");
         return needs;
+    }
+
+    public static IReadOnlyList<PortfolioStructuralNeed> DetectStructuralNeeds(
+        IReadOnlyList<ContributionCandidate> candidates,
+        PortfolioExposureSummary exposure)
+    {
+        var result = new List<PortfolioStructuralNeed>();
+        foreach (var need in DetectNeeds(candidates, exposure).Where(x => x.Key is not null && x.Coverage == ExposureCoverage.Complete))
+        {
+            var candidatesThatReduceConcentration = candidates
+                .Where(candidate => !candidate.HasBlock && ReducesDominantExposure(candidate, need))
+                .OrderByDescending(candidate => candidate.DecisionScore)
+                .ThenBy(candidate => candidate.Ticker, StringComparer.Ordinal)
+                .Select(candidate => candidate.CandidateKey)
+                .ToArray();
+            if (candidatesThatReduceConcentration.Length == 0) continue;
+
+            result.Add(new PortfolioStructuralNeed(
+                need.Type,
+                need.Dimension,
+                need.Key!,
+                need.Severity,
+                candidatesThatReduceConcentration,
+                $"A carteira tem concentraÃ§Ã£o estrutural em {need.Key} ({need.Severity:0.##}%), e estes candidatos reduzem essa exposiÃ§Ã£o conhecida."));
+        }
+        return result;
+    }
+
+    private static bool ReducesDominantExposure(ContributionCandidate candidate, MultidimensionalPortfolioNeed need)
+    {
+        if (need.Dimension == "Sector")
+            return !string.Equals(candidate.SectorCategory?.ToString(), need.Key, StringComparison.OrdinalIgnoreCase);
+        if (need.Dimension == "Geography")
+            return candidate.GeographicExposures?.Any(x => string.Equals(x.CountryCode, need.Key, StringComparison.OrdinalIgnoreCase) && x.Percentage is > 50m) != true;
+        if (need.Dimension == "Currency")
+            return candidate.CurrencyExposures?.Any(x => string.Equals(x.CurrencyCode, need.Key, StringComparison.OrdinalIgnoreCase) && x.Percentage is > 50m) != true;
+        return false;
     }
 
     private static void AddDominantNeed(List<MultidimensionalPortfolioNeed> needs, PortfolioExposureDimensionSummary dimension, string type)

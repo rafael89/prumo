@@ -112,7 +112,7 @@ public sealed class ContributionScenarioSelectionTests
     }
 
     [Fact]
-    public void Selection_prompt_sends_derived_recent_history_but_not_valuation_or_price()
+    public void Selection_prompt_sends_derived_history_and_financial_context()
     {
         var candidate = Candidate("AAA3") with
         {
@@ -126,9 +126,8 @@ public sealed class ContributionScenarioSelectionTests
 
         Assert.Contains("recentContributionCount", prompt);
         Assert.Contains("lastContributionAt", prompt);
-        Assert.DoesNotContain("financialQuality", contextJson);
-        Assert.DoesNotContain("priceEarnings", contextJson);
-        Assert.DoesNotContain("valuation", contextJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("financialSnapshot", contextJson);
+        Assert.Contains("priceEarnings", contextJson);
     }
 
     private static ContributionCandidate Candidate(string ticker)

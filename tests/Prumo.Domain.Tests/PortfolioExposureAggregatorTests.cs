@@ -56,6 +56,22 @@ public sealed class PortfolioExposureAggregatorTests
         Assert.Equal(100m, result.Currency.UnknownPortfolioPercentage);
     }
 
+    [Fact]
+    public void Exposes_structural_candidates_that_reduce_dominant_geography()
+    {
+        var brazil = Candidate(100, Geographic: new[] { new KnownGeographicExposure("BR", 100) });
+        var international = Candidate(0, Geographic: new[] { new KnownGeographicExposure("US", 100) }) with { Ticker = "IVVB11" };
+        var candidates = new[] { brazil, international };
+        var exposure = PortfolioExposureAggregator.Aggregate(candidates);
+
+        var needs = PortfolioExposureAggregator.DetectStructuralNeeds(candidates, exposure);
+
+        var geographyNeed = needs.Single(x => x.Dimension == "Geography");
+        Assert.Equal("BR", geographyNeed.Key);
+        Assert.Contains(international.CandidateKey, geographyNeed.CandidateKeys);
+        Assert.DoesNotContain(brazil.CandidateKey, geographyNeed.CandidateKeys);
+    }
+
     private static ContributionCandidate Candidate(decimal currentValue, EconomicSector? Sector = null, IReadOnlyList<KnownGeographicExposure>? Geographic = null)
         => new(CandidateIdentity.Known(Guid.NewGuid()), "TEST", AssetClass.BrazilianStock, currentValue, 100, 100, 100, 0, false, Array.Empty<ContributionAssessmentContext>(), SectorCategory: Sector, GeographicExposures: Geographic);
 }

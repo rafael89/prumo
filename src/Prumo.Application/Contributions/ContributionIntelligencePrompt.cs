@@ -40,6 +40,14 @@ public static class ContributionIntelligencePrompt
             recentContributionCount = candidate.RecentContributionCount,
             recentContributionAmount = candidate.RecentContributionAmount,
             lastContributionAt = candidate.LastContributionAt,
+            sectorCategory = candidate.SectorCategory,
+            geographicExposureCoverage = candidate.GeographicExposureCoverage,
+            geographicExposures = candidate.GeographicExposures,
+            economicCurrencyExposureCoverage = candidate.EconomicCurrencyExposureCoverage,
+            currencyExposures = candidate.CurrencyExposures,
+            listingCountryCode = candidate.ListingCountryCode,
+            tradingCurrency = candidate.TradingCurrency,
+            financialSnapshot = candidate.FinancialSnapshot,
             assessments = candidate.CurrentAssessments
         });
         var instructions = """
@@ -130,6 +138,12 @@ public static class ContributionIntelligencePrompt
             candidate.SectorWeightWithinClass,
             candidate.RecentContributionAmount,
             candidate.RecentContributionCount,
+            candidate.GeographicExposureCoverage,
+            candidate.GeographicExposures,
+            candidate.EconomicCurrencyExposureCoverage,
+            candidate.CurrencyExposures,
+            candidate.SectorCategory,
+            candidate.FinancialSnapshot,
             candidate.CurrentAssessments
         });
         var context = JsonSerializer.Serialize(new { portfolioId, contributionAmount, candidates = safeCandidates, scenarios }, JsonOptions);

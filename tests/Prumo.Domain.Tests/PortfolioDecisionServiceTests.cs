@@ -109,6 +109,37 @@ public sealed class PortfolioDecisionServiceTests
     }
 
     [Fact]
+    public void Optimizes_cross_class_split_against_projected_class_targets()
+    {
+        var international = CandidateIdentity.Known(Guid.NewGuid());
+        var brazilian = CandidateIdentity.Known(Guid.NewGuid());
+        var result = new PortfolioDecisionService().DecideDeterministically(100, new[]
+        {
+            new ContributionCandidate(international, "IVVB11", AssetClass.International, 0, 0, 0, 70, 100, false, Array.Empty<ContributionAssessmentContext>()),
+            new ContributionCandidate(brazilian, "WEGE3", AssetClass.BrazilianStock, 0, 0, 0, 30, 100, false, Array.Empty<ContributionAssessmentContext>())
+        });
+
+        Assert.Equal(PortfolioDecisionType.SplitContribution, result.DecisionType);
+        Assert.Equal(70m, result.RecommendedScenario!.Allocations.Single(x => x.Key == international.Key).Amount);
+        Assert.Equal(30m, result.RecommendedScenario.Allocations.Single(x => x.Key == brazilian.Key).Amount);
+    }
+
+    [Fact]
+    public void Uses_existing_international_target_to_prioritize_ivvb11_automatically()
+    {
+        var ivvb11 = CandidateIdentity.Known(Guid.NewGuid());
+        var result = new PortfolioDecisionService().DecideDeterministically(25, new[]
+        {
+            new ContributionCandidate(ivvb11, "IVVB11", AssetClass.International, 0, 0, 0, 20, 25, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Etf, HasPosition: false),
+            new ContributionCandidate(CandidateIdentity.Known(Guid.NewGuid()), "BBSE3", AssetClass.BrazilianStock, 100, 100, 100, 80, 0, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Stock)
+        });
+
+        Assert.Equal(PortfolioDecisionType.AddNewAsset, result.DecisionType);
+        Assert.Equal(ivvb11.Key, result.RecommendedScenario!.Allocations.Single().Key);
+        Assert.Equal(25m, result.RecommendedScenario.Allocations.Single().Amount);
+    }
+
+    [Fact]
     public void Financial_quality_breaks_structural_tie()
     {
         var stronger = Guid.NewGuid();
@@ -154,6 +185,24 @@ public sealed class PortfolioDecisionServiceTests
         });
         Assert.Equal(before.RecommendedScenario!.Allocations.Single().Key, after.RecommendedScenario!.Allocations.Single().Key);
         Assert.Equal("NotUsed", after.DecisionEvidence!.ValuationContext);
+    }
+
+    [Fact]
+    public void Uses_relative_valuation_only_for_comparable_candidates()
+    {
+        var cheaper = Guid.NewGuid();
+        var expensive = Guid.NewGuid();
+        var today = DateTimeOffset.UtcNow;
+        var cheapSnapshot = new CandidateFinancialSnapshot(DateOnly.FromDateTime(today.Date), FinancialPeriodType.Ttm, today, FinancialDataSource.Provider, PriceEarnings: 8m);
+        var expensiveSnapshot = cheapSnapshot with { PriceEarnings = 30m };
+        var result = new PortfolioDecisionService().DecideDeterministically(100, new[]
+        {
+            new ContributionCandidate(CandidateIdentity.Known(expensive), "EXP", AssetClass.BrazilianStock, 0, 0, 0, 100, 100, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Stock, SectorCategory: EconomicSector.Technology, FinancialSnapshot: expensiveSnapshot),
+            new ContributionCandidate(CandidateIdentity.Known(cheaper), "CHEAP", AssetClass.BrazilianStock, 0, 0, 0, 100, 100, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Stock, SectorCategory: EconomicSector.Technology, FinancialSnapshot: cheapSnapshot)
+        });
+
+        Assert.Equal(CandidateIdentity.Known(cheaper).Key, result.RecommendedScenario!.Allocations.Single().Key);
+        Assert.Equal("RelativeValuation", result.DecisionEvidence!.DecisiveFactor);
     }
 
     [Fact]

@@ -38,7 +38,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision);
                     if (deterministicOptions.Length == 0)
                     {
-                        guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R17.8", decisionType = deterministicDecision.DecisionType.ToString(), primaryNeed = deterministicDecision.PrimaryNeed, decisionEvidence = deterministicDecision.DecisionEvidence }));
+                        guidance.UpdateIntelligence("deterministic", "portfolio-rules", "Deterministic", string.Join("\n", deterministicDecision.Reasons), JsonSerializer.Serialize(new { engineVersion = "R17.8", decisionType = deterministicDecision.DecisionType.ToString(), primaryNeed = deterministicDecision.PrimaryNeed, structuralNeeds = deterministicDecision.StructuralNeeds, decisionEvidence = deterministicDecision.DecisionEvidence }));
                         guidance.ReplaceAllocations(Array.Empty<PersistedContributionGuidanceAllocation>());
                     }
                     else
@@ -58,6 +58,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 usedFallback = false,
                                 decisionType = deterministicDecision.DecisionType.ToString(),
                                 primaryNeed = deterministicDecision.PrimaryNeed,
+                                structuralNeeds = deterministicDecision.StructuralNeeds,
                                 decisionEvidence = deterministicDecision.DecisionEvidence,
                                 assessmentVersions = workItem.Baseline.AssessmentVersions,
                                 evidenceCount = workItem.Baseline.Evidence.Count,

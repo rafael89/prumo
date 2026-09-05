@@ -8,7 +8,10 @@ public sealed record PortfolioNeed(AssetClass AssetClass, decimal CurrentPercent
 public enum CandidateStructuralFit { DirectlyAddressesPrimaryNeed, AddressesPrimaryNeedButWorsensConcentration, AddressesSecondaryNeedOnly, Neutral, StructurallyInferior, InsufficientExposureContext }
 public sealed record IntegratedDecisionEvidence(string PrimaryNeed, decimal PrimaryNeedImprovement, CandidateStructuralFit StructuralFit, string ConcentrationEffect, string SecondaryExposureEffect, string QualityContext, string ValuationContext, string RecentContributionContext, string DecisiveFactor, string? AlternativeComparisonReason);
 public sealed record ContributionScenario(IReadOnlyList<CandidateAllocation> Allocations, decimal DeviationBefore, decimal DeviationAfter, decimal Improvement, IReadOnlyList<string> Reasons, PortfolioExposureSummary? ExposureAfter = null, IReadOnlyList<PortfolioExposureImpact>? ExposureImpacts = null);
-public sealed record PortfolioDecision(PortfolioDecisionType DecisionType, decimal ContributionAmount, PortfolioNeed? PrimaryNeed, ContributionScenario? RecommendedScenario, IReadOnlyList<ContributionScenario> AlternativeScenarios, IReadOnlyList<string> Reasons, IReadOnlyList<string> MissingData, IReadOnlyList<MultidimensionalPortfolioNeed>? SecondaryNeeds = null, PortfolioExposureSummary? ExposureSummary = null, IReadOnlyList<CandidateFinancialEvaluation>? FinancialEvaluations = null, IntegratedDecisionEvidence? DecisionEvidence = null);
+public sealed record PortfolioDecision(PortfolioDecisionType DecisionType, decimal ContributionAmount, PortfolioNeed? PrimaryNeed, ContributionScenario? RecommendedScenario, IReadOnlyList<ContributionScenario> AlternativeScenarios, IReadOnlyList<string> Reasons, IReadOnlyList<string> MissingData, IReadOnlyList<MultidimensionalPortfolioNeed>? SecondaryNeeds = null, PortfolioExposureSummary? ExposureSummary = null, IReadOnlyList<CandidateFinancialEvaluation>? FinancialEvaluations = null, IntegratedDecisionEvidence? DecisionEvidence = null)
+{
+    public IReadOnlyList<PortfolioStructuralNeed> StructuralNeeds { get; init; } = Array.Empty<PortfolioStructuralNeed>();
+}
 
 public sealed class PortfolioDecisionService
 {
@@ -17,14 +20,15 @@ public sealed class PortfolioDecisionService
         candidates ??= Array.Empty<ContributionCandidate>();
         var exposure = PortfolioExposureAggregator.Aggregate(candidates);
         var secondary = PortfolioExposureAggregator.DetectNeeds(candidates, exposure);
+        var structuralNeeds = PortfolioExposureAggregator.DetectStructuralNeeds(candidates, exposure);
         var financial = candidates.Where(x => x.Identity.AssetId is not null).Select(x => CandidateFinancialEvaluator.Evaluate(x.Identity.AssetId!.Value, x.AssetType, x.FinancialSnapshot)).ToArray();
         var needs = candidates.GroupBy(x => x.AssetClass)
             .Select(g => { var first = g.First(); return new PortfolioNeed(g.Key, first.CurrentClassWeight, first.TargetClassWeight, first.TargetClassWeight - first.CurrentClassWeight); })
             .Where(x => x.GapPercentagePoints > 2m).OrderByDescending(x => x.GapPercentagePoints).ThenBy(x => x.AssetClass.ToString(), StringComparer.Ordinal).ToArray();
-        if (needs.Length == 0) return NoAction(amount, "Não há uma necessidade de alocação suficientemente relevante agora.", secondary, exposure, MissingData(exposure), financial);
+        if (needs.Length == 0) return NoAction(amount, "Não há uma necessidade de alocação suficientemente relevante agora.", secondary, exposure, MissingData(exposure), financial) with { StructuralNeeds = structuralNeeds };
         var eligible = candidates.Where(x => x.AssetClass == needs[0].AssetClass && !x.HasBlock).ToArray();
         var scenarios = eligible.Select(x => Scenario(candidates, new[] { new CandidateAllocation(x.Identity, amount) }, $"{x.Ticker} atende a necessidade primária de {needs[0].AssetClass}.")).ToArray();
-        if (scenarios.Length == 0) return NoAction(amount, "Não há candidato elegível para a necessidade atual.", secondary, exposure, MissingData(exposure), financial);
+        if (scenarios.Length == 0) return NoAction(amount, "Não há candidato elegível para a necessidade atual.", secondary, exposure, MissingData(exposure), financial) with { StructuralNeeds = structuralNeeds };
         if (needs.Length > 1 && eligible.Length > 0)
         {
             var secondNeed = needs[1];
@@ -39,6 +43,10 @@ public sealed class PortfolioDecisionService
                 }, $"Divide o aporte entre {needs[0].AssetClass} e {secondNeed.AssetClass} proporcionalmente às defasagens projetadas.") }).ToArray();
             }
         }
+        // Also evaluate bounded cross-class splits. This keeps the original
+        // class-gap baseline while allowing the best proportion to emerge
+        // from the projected portfolio instead of assuming 50/50.
+        scenarios = scenarios.Concat(GenerateSplitScenarios(amount, candidates, needs)).ToArray();
         var ordered = scenarios.Where(x => x.Allocations.Sum(a => a.Amount) == amount)
             .OrderBy(x => x, ScenarioComparer(candidates, financial)).ToArray();
         var winner = ordered[0];
@@ -52,7 +60,7 @@ public sealed class PortfolioDecisionService
             candidate.RecentContributionCount > 0 ? "Recebeu aporte recentemente; contexto considerado." : "Sem aporte recente relevante.", factor,
             runner is null ? null : $"{candidates.Single(x => x.CandidateKey == runner.Allocations[0].Key).Ticker} perdeu em {factor}.");
         var type = winner.Allocations.Count > 1 ? PortfolioDecisionType.SplitContribution : candidate.HasPosition ? PortfolioDecisionType.ReinforceExisting : PortfolioDecisionType.AddNewAsset;
-        return new(type, amount, needs[0], winner, runner is null ? Array.Empty<ContributionScenario>() : new[] { runner }, new[] { "O cenário foi selecionado por comparação determinística pós-aporte." }, MissingData(exposure), secondary, exposure, financial, evidence);
+        return new PortfolioDecision(type, amount, needs[0], winner, runner is null ? Array.Empty<ContributionScenario>() : new[] { runner }, new[] { "O cenário foi selecionado por comparação determinística pós-aporte." }, MissingData(exposure), secondary, exposure, financial, evidence) with { StructuralNeeds = structuralNeeds };
     }
 
     private static int SecondaryImprovement(ContributionScenario scenario) => scenario.ExposureImpacts?.Count(x => x.AfterPercentage < x.BeforePercentage) ?? 0;
@@ -64,11 +72,15 @@ public sealed class PortfolioDecisionService
     {
         var result = right.Improvement.CompareTo(left.Improvement);
         if (result != 0) return result;
+        result = StructuralExposureImprovement(left).CompareTo(StructuralExposureImprovement(right));
+        if (result != 0) return result;
         result = WorsensSevereConcentration(candidates, left.Allocations).CompareTo(WorsensSevereConcentration(candidates, right.Allocations));
         if (result != 0) return result;
         result = SecondaryImprovement(right).CompareTo(SecondaryImprovement(left));
         if (result != 0) return result;
         result = QualityRank(candidates, financial, right).CompareTo(QualityRank(candidates, financial, left));
+        if (result != 0) return result;
+        result = CompareRelativeValuation(candidates, financial, left, right);
         if (result != 0) return result;
         result = RecentCount(candidates, left).CompareTo(RecentCount(candidates, right));
         if (result != 0) return result;
@@ -83,11 +95,79 @@ public sealed class PortfolioDecisionService
     private static string ComparisonFactor(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial, ContributionScenario winner, ContributionScenario runner)
     {
         if (winner.Improvement != runner.Improvement) return "PrimaryStructuralImprovement";
+        if (StructuralExposureImprovement(winner) != StructuralExposureImprovement(runner)) return "MultidimensionalExposure";
         if (WorsensSevereConcentration(candidates, winner.Allocations) != WorsensSevereConcentration(candidates, runner.Allocations)) return "Concentration";
         if (SecondaryImprovement(winner) != SecondaryImprovement(runner)) return "SecondaryExposure";
         if (QualityRank(candidates, financial, winner) != QualityRank(candidates, financial, runner)) return "FinancialQuality";
+        if (CompareRelativeValuation(candidates, financial, winner, runner) != 0) return "RelativeValuation";
         if (RecentCount(candidates, winner) != RecentCount(candidates, runner)) return "RecentContribution";
         return "StableTieBreaker";
+    }
+
+    private static decimal StructuralExposureImprovement(ContributionScenario scenario)
+        => scenario.ExposureImpacts?.Where(x => x.AfterPercentage < x.BeforePercentage)
+            .Sum(x => x.BeforePercentage - x.AfterPercentage) ?? 0m;
+
+    private static int CompareRelativeValuation(
+        IReadOnlyList<ContributionCandidate> candidates,
+        IReadOnlyList<CandidateFinancialEvaluation> financial,
+        ContributionScenario left,
+        ContributionScenario right)
+    {
+        var leftCandidate = candidates.Single(x => x.CandidateKey == left.Allocations[0].Key);
+        var rightCandidate = candidates.Single(x => x.CandidateKey == right.Allocations[0].Key);
+        if (leftCandidate.AssetClass != rightCandidate.AssetClass
+            || leftCandidate.SectorCategory is null
+            || leftCandidate.SectorCategory != rightCandidate.SectorCategory)
+            return 0;
+
+        var leftValue = RelativeValuationValue(financial.FirstOrDefault(x => x.AssetId == leftCandidate.Identity.AssetId)?.Valuation);
+        var rightValue = RelativeValuationValue(financial.FirstOrDefault(x => x.AssetId == rightCandidate.Identity.AssetId)?.Valuation);
+        return leftValue.HasValue && rightValue.HasValue ? leftValue.Value.CompareTo(rightValue.Value) : 0;
+    }
+
+    private static decimal? RelativeValuationValue(CandidateValuationEvaluation? valuation)
+    {
+        if (valuation is null || valuation.Metrics.Count == 0 || valuation.Freshness == FinancialEvidenceFreshness.Stale) return null;
+        var multiples = valuation.Metrics.Where(x => (x.Metric is "P/E" or "P/B" or "EV/EBITDA") && x.Value > 0).Select(x => x.Value).ToArray();
+        return multiples.Length == 0 ? null : multiples.Average();
+    }
+
+    private static IEnumerable<ContributionScenario> GenerateSplitScenarios(
+        decimal amount,
+        IReadOnlyList<ContributionCandidate> candidates,
+        IReadOnlyList<PortfolioNeed> needs)
+    {
+        var classes = needs
+            .Select(need => new
+            {
+                Need = need,
+                Candidates = candidates.Where(candidate => candidate.AssetClass == need.AssetClass && !candidate.HasBlock)
+                    .OrderByDescending(candidate => candidate.DecisionScore)
+                    .ThenBy(candidate => candidate.Ticker, StringComparer.Ordinal)
+                    .Take(4)
+                    .ToArray()
+            })
+            .Where(x => x.Candidates.Length > 0)
+            .ToArray();
+
+        foreach (var left in classes)
+        foreach (var right in classes.Where(x => string.CompareOrdinal(x.Need.AssetClass.ToString(), left.Need.AssetClass.ToString()) > 0))
+        foreach (var leftCandidate in left.Candidates)
+        foreach (var rightCandidate in right.Candidates)
+        foreach (var leftPercentage in new[] { 10m, 20m, 30m, 40m, 50m, 60m, 70m, 80m, 90m })
+        {
+            var leftAmount = Money(amount * leftPercentage / 100m);
+            var rightAmount = Money(amount - leftAmount);
+            if (leftAmount <= 0 || rightAmount <= 0
+                || leftAmount > leftCandidate.ClassBudget
+                || rightAmount > rightCandidate.ClassBudget)
+                continue;
+
+            yield return Scenario(candidates,
+                new[] { new CandidateAllocation(leftCandidate.Identity, leftAmount), new CandidateAllocation(rightCandidate.Identity, rightAmount) },
+                $"Compara {leftPercentage:0}% em {left.Need.AssetClass} e {100m - leftPercentage:0}% em {right.Need.AssetClass} pela melhora projetada da carteira.");
+        }
     }
 
     private static decimal Money(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
@@ -100,15 +180,16 @@ public sealed class PortfolioDecisionService
         candidates ??= Array.Empty<ContributionCandidate>();
         var exposure = PortfolioExposureAggregator.Aggregate(candidates);
         var secondary = PortfolioExposureAggregator.DetectNeeds(candidates, exposure);
+        var structuralNeeds = PortfolioExposureAggregator.DetectStructuralNeeds(candidates, exposure);
         var missing = MissingData(exposure);
         var financial = candidates.Where(x => x.Identity.AssetId is not null).Select(x => CandidateFinancialEvaluator.Evaluate(x.Identity.AssetId!.Value, x.AssetType, x.FinancialSnapshot)).ToArray();
         var needs = candidates.GroupBy(x => x.AssetClass).Select(g => { var f = g.First(); return new PortfolioNeed(g.Key, f.CurrentClassWeight, f.TargetClassWeight, f.TargetClassWeight - f.CurrentClassWeight); }).Where(x => x.GapPercentagePoints > 2m).OrderByDescending(x => x.GapPercentagePoints).ThenBy(x => x.AssetClass.ToString(), StringComparer.Ordinal).ToArray();
-        if (needs.Length == 0) return NoAction(amount, "Não há uma necessidade de alocação suficientemente relevante agora.", secondary, exposure, missing, financial);
+        if (needs.Length == 0) return NoAction(amount, "Não há uma necessidade de alocação suficientemente relevante agora.", secondary, exposure, missing, financial) with { StructuralNeeds = structuralNeeds };
         var byKey = candidates.ToDictionary(x => x.CandidateKey);
         var allocations = recommended.Where(x => x.Amount > 0 && byKey.ContainsKey(x.Key)).ToArray();
-        if (allocations.Length == 0) return NoAction(amount, "O Prumo não encontrou um candidato elegível para a necessidade atual.", secondary, exposure, missing, financial);
+        if (allocations.Length == 0) return NoAction(amount, "O Prumo não encontrou um candidato elegível para a necessidade atual.", secondary, exposure, missing, financial) with { StructuralNeeds = structuralNeeds };
         var scenario = Scenario(candidates, allocations, $"A classe {needs[0].AssetClass} está {needs[0].GapPercentagePoints:0.##} p.p. abaixo do target.");
-        if (scenario.Improvement <= 0.01m) return NoAction(amount, "O Prumo não encontrou um aporte suficientemente adequado entre os candidatos conhecidos.", secondary, exposure, missing, financial);
+        if (scenario.Improvement <= 0.01m) return NoAction(amount, "O Prumo não encontrou um aporte suficientemente adequado entre os candidatos conhecidos.", secondary, exposure, missing, financial) with { StructuralNeeds = structuralNeeds };
         var type = allocations.Length > 1 ? PortfolioDecisionType.SplitContribution : byKey[allocations[0].Key].HasPosition ? PortfolioDecisionType.ReinforceExisting : PortfolioDecisionType.AddNewAsset;
         var alternatives = candidates.Where(x => !x.HasBlock && x.AssetClass == needs[0].AssetClass && allocations.All(a => a.Key != x.CandidateKey)).OrderByDescending(x => FinancialRank(financial, x.CandidateKey)).ThenByDescending(x => x.DecisionScore).ThenBy(x => x.RecentContributionCount).ThenBy(x => x.Ticker, StringComparer.Ordinal).ThenBy(x => x.CandidateKey.Value, StringComparer.Ordinal).Take(2).Select(x => Scenario(candidates, new[] { new CandidateAllocation(x.Identity, amount) }, $"{x.Ticker} é uma alternativa conhecida para a classe atualmente mais defasada.")).Where(x => x.Improvement > 0.01m).ToArray();
         var safer = alternatives.FirstOrDefault(x => WorsensSevereConcentration(candidates, allocations) && !WorsensSevereConcentration(candidates, x.Allocations));
@@ -126,7 +207,7 @@ public sealed class PortfolioDecisionService
             concentration, secondaryEffect, quality, "NotUsed",
             winner.RecentContributionCount > 0 ? "Recebeu aporte recentemente; contexto considerado." : "Sem aporte recente relevante.",
             safer is not null ? "LowerResultingConcentration" : "PrimaryNeedImprovement", alternatives.FirstOrDefault() is null ? null : "Alternativa estruturalmente comparável avaliada e não selecionada.");
-        return new(type, amount, needs[0], scenario, alternatives, new[] { "O cenário recomendado produz a melhor melhora mensurável entre os candidatos avaliados." }, missing, secondary, exposure, financial, evidence);
+        return new PortfolioDecision(type, amount, needs[0], scenario, alternatives, new[] { "O cenário recomendado produz a melhor melhora mensurável entre os candidatos avaliados." }, missing, secondary, exposure, financial, evidence) with { StructuralNeeds = structuralNeeds };
     }
 
     private static ContributionScenario Scenario(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateAllocation> allocations, string reason)
