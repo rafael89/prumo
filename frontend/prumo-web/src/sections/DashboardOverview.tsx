@@ -127,13 +127,6 @@ function formatRelativeDate(value: string | null) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date)
 }
 
-function CardHeader({ eyebrow, linkLabel, to }: { eyebrow: string; linkLabel: string; to: string }) {
-  return <div className="flex items-center justify-between gap-4">
-    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">{eyebrow}</p>
-    <Link to={to} className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold text-sky-700 transition hover:text-sky-900">{linkLabel}<FontAwesomeIcon icon={faArrowRight} /></Link>
-  </div>
-}
-
 function PortfolioHealthCardLegacy({ data }: { data: Dashboard }) {
   const health = data.portfolioHealthSummary
   const overview = data.portfolioOverview
@@ -142,7 +135,7 @@ function PortfolioHealthCardLegacy({ data }: { data: Dashboard }) {
   const aligned = health?.status === 'Aligned'
 
   return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-    <CardHeader eyebrow="Saúde da carteira" linkLabel="Ver detalhes" to="/portfolio" />
+    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Saúde da carteira</p>
     <h2 className="mt-4 flex items-center justify-between gap-4 text-xl font-semibold tracking-tight text-slate-950">
       <span>{health?.summary ?? overview?.healthSummary ?? 'Estado da carteira indisponível.'}</span>
       <span aria-hidden="true" className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-base shadow-sm ${aligned ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : notConfigured ? 'border-slate-200 bg-slate-100 text-slate-600' : 'border-amber-300 bg-amber-100 text-amber-700 shadow-amber-100'}`}>
@@ -193,7 +186,7 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
   const scoreColor = score >= 80 ? '#f59e0b' : score >= 60 ? '#f97316' : '#ef4444'
 
   return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-    <CardHeader eyebrow="Saude da carteira" linkLabel="Ver detalhes" to="/portfolio" />
+    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Saude da carteira</p>
     <div className="mt-5 grid gap-5 md:grid-cols-[minmax(150px,0.72fr)_minmax(0,1.28fr)] md:gap-7">
       <div className="flex flex-col items-center justify-center border-b border-slate-100 pb-5 md:border-b-0 md:border-r md:pb-0 md:pr-7">
         <div className="relative grid h-32 w-32 place-items-center rounded-full" style={{ background: `conic-gradient(${scoreColor} ${score * 3.6}deg, #f1f5f9 0deg)` }}>
@@ -233,7 +226,7 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
   const queryClient = useQueryClient()
   const statusMutation = useMutation({ mutationFn: ({ id, resolved }: { id: string; resolved: boolean }) => fetch(`${contributionApiUrl}/api/radar/${id}/${resolved ? 'status' : 'seen'}?portfolioId=${portfolioId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(resolved ? { status: 'Closed' } : { status: 'Seen' }) }).then(response => { if (!response.ok) throw new Error('Não foi possível atualizar o Radar.'); return response }), onSuccess: (_, variables) => { void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }); if (variables.resolved) setSelectedItem(null) } })
   return <article className="order-1 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-1">
-    <CardHeader eyebrow="Radar" linkLabel="Ver Radar" to="/radar" />
+    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Radar</p>
     {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
     </div> : <div className="mt-4 divide-y divide-slate-100">
