@@ -21,6 +21,9 @@ O Prumo combina importação de carteira da B3, descoberta e análise de documen
 - Visão geral com saúde da carteira, Radar e atualizações recentes.
 - Radar com prioridades, filtros, estados por carteira, paginação e resolução de situações.
 - Tela própria de Aportes (`/contributions`) para gerar orientação, acompanhar a análise da IA e registrar aportes realizados.
+- Motor de aportes que compara necessidades de alocação, diversificação, concentração, aportes recentes, qualidade financeira e valuation relativo quando há dados suficientes.
+- Simulação de cenários concentrados ou distribuídos, com fallback determinístico quando um provider de IA está indisponível.
+- Histórico da carteira com compras, eventos, documentos e mudanças de avaliação.
 - Configuração de alocações-alvo por classe de ativo.
 - Privacy mode para ocultar valores financeiros durante a sessão.
 - Providers de IA `Fake`, `Gemini`, `OpenAI` e HTTP customizado.
@@ -59,7 +62,7 @@ Documento -> DocumentAnalysis global -> InvestmentEvent
                                 -> PortfolioAssessment por carteira -> Radar/Aportes
 ```
 
-O backend é a fonte de verdade para os cálculos financeiros e as decisões de produto. A IA interpreta o texto extraído e o contexto consolidado, mas não altera dados financeiros durante a análise.
+O backend é a fonte de verdade para os cálculos financeiros e as decisões de produto. Na orientação de aportes, ele calcula candidatos, restrições e cenários válidos. A IA pode ajudar a selecionar e explicar uma alternativa, mas não cria ativos, valores ou regras. Se um provider falhar, o Prumo utiliza o fallback determinístico seguro.
 
 O frontend é organizado por fluxos:
 
@@ -69,6 +72,7 @@ O frontend é organizado por fluxos:
 /radar            Eventos que exigem atenção
 /contributions    Orientação e registro de aportes
 /documents        Documentos e análises
+/about            Sobre o Prumo
 ```
 
 A orientação de aportes fica concentrada na tela `/contributions`; a visão geral não exibe mais o card de aportes.
@@ -185,16 +189,16 @@ O endpoint `GET /api/documents/{id}/analysis` retorna a análise validada mais r
 
 ## Migrations
 
-As migrations ficam em [src/Prumo.Infrastructure/Persistence/Migrations](src/Prumo.Infrastructure/Persistence/Migrations). O estado atual é uma baseline única `InitialCreate`, gerada diretamente do modelo EF.
+As migrations ficam em [src/Prumo.Infrastructure/Migrations](src/Prumo.Infrastructure/Migrations) e são aplicadas de forma incremental pelo Entity Framework Core.
 
 ```powershell
 dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
 ```
 
-A baseline atual é:
+As migrations iniciais e incrementais atuais incluem:
 
 ```text
-20260903035839_InitialCreate
+InitialCreate, fundamentos de carteira, histórico financeiro, exposições de ativos, fatos financeiros e correções de relacionamento.
 ```
 
 Depois do primeiro banco Beta com dados importantes, novas migrations devem ser append-only.
