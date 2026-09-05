@@ -273,7 +273,9 @@ public sealed class DocumentsController : ControllerBase
             assessment?.PortfolioImpactText ?? "O impacto na carteira é calculado separadamente para cada carteira.",
             analysis.AffectedAssets,
             analysis.Confidence,
-            analysis.CreatedAt, assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.RadarStatus.ToString()));
+            analysis.CreatedAt,
+            analysis.Document!.PublishedAt,
+            assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.RadarStatus.ToString()));
     }
 }
 
@@ -317,6 +319,8 @@ public sealed record DocumentAnalysisResponse(
     string PortfolioImpact,
     IReadOnlyList<string> AffectedAssets,
     decimal Confidence,
-    DateTimeOffset CreatedAt, PortfolioAssessmentResponse? PortfolioAssessment = null);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset PublishedAt,
+    PortfolioAssessmentResponse? PortfolioAssessment = null);
 
 public sealed record PortfolioAssessmentResponse(Guid PortfolioId, Guid AssetId, decimal? CurrentValue, decimal CurrentWeight, string Priority, bool RequiresAttention, IReadOnlyList<string> Reasons, string PortfolioImpactText, string RadarStatus);

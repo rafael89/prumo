@@ -50,6 +50,7 @@ type RecentDocumentAnalysis = {
   promptVersion: string
   affectedAssets: string[]
   createdAt: string
+  publishedAt: string
 }
 
 export type Dashboard = {
@@ -312,6 +313,7 @@ export function RecentAnalysisModal({ item, portfolioId, onClose, onMarkSeen, on
     <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><h2 id="recent-analysis-title" className="mt-2 text-xl font-semibold text-slate-950">Análise de <span className="text-amber-700">{item.asset}</span></h2></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      {analysis.data && <div className="mb-5 grid gap-2 border-b border-slate-200 pb-4 text-sm text-slate-600 sm:grid-cols-2"><span><strong>Publicado em:</strong> {formatDateTime(analysis.data.publishedAt)}</span><span><strong>Analisado em:</strong> {formatDateTime(analysis.data.createdAt)}</span></div>}
       {analysis.isLoading && <p className="py-8 text-sm text-slate-500">Carregando análise...</p>}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
       {!analysis.isLoading && !analysis.isError && !analysis.data && <p className="mt-5 rounded-xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">Nenhuma análise validada foi encontrada para este documento ainda.</p>}
@@ -351,7 +353,7 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
   const data = dashboard.data
   if (data.positionCount === 0) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Importar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
 
-  return <section className="mx-auto max-w-358 px-4 pb-16 pt-8 sm:px-6 sm:pt-10">
+  return <section className="mx-auto max-w-358 px-4 pb-16 pt-3 sm:px-6">
     <header className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1><p className="mt-2 text-sm text-slate-600">Aqui está o que importa sobre sua carteira agora.</p></div>
       {data.portfolioOverview?.lastPortfolioUpdate && <p className="text-xs text-slate-500">Carteira atualizada em {formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}</p>}

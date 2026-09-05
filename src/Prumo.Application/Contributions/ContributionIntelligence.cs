@@ -66,13 +66,20 @@ public static class ContributionScenarioValidator
     public static ContributionScenarioOption Select(ContributionScenarioSelection selection, IReadOnlyList<ContributionScenarioOption> scenarios, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates)
     {
         var scenario = scenarios.SingleOrDefault(x => x.ScenarioKey == selection.SelectedScenarioKey)
-            ?? throw new InvalidOperationException("A IA selecionou um cenário fora do conjunto seguro.");
+            ?? throw new InvalidOperationException($"A IA selecionou um cenário fora do conjunto seguro: '{selection.SelectedScenarioKey}'.");
         var byKey = candidates.ToDictionary(x => x.CandidateKey);
-        if (scenario.Allocations.Count == 0 || scenario.Allocations.Any(x => !byKey.TryGetValue(x.Identity.Key, out var candidate) || candidate.HasBlock || x.Amount < 0 || decimal.Round(x.Amount, 2) != x.Amount)
-            || scenario.Allocations.Select(x => x.Identity.Key).Distinct().Count() != scenario.Allocations.Count
-            || scenario.Allocations.GroupBy(x => byKey[x.Identity.Key].AssetClass).Any(group => group.Sum(x => x.Amount) > byKey[group.First().Identity.Key].ClassBudget)
-            || decimal.Round(scenario.Allocations.Sum(x => x.Amount), 2) != decimal.Round(contributionAmount, 2))
-            throw new InvalidOperationException("A IA retornou um cenário inválido.");
+        if (scenario.Allocations.Count == 0)
+            throw new InvalidOperationException("A IA retornou um cenário sem alocações.");
+        if (scenario.Allocations.Any(x => !byKey.TryGetValue(x.Identity.Key, out var candidate) || candidate.HasBlock))
+            throw new InvalidOperationException("A IA retornou um cenário com candidato inexistente ou bloqueado.");
+        if (scenario.Allocations.Any(x => x.Amount < 0 || decimal.Round(x.Amount, 2) != x.Amount))
+            throw new InvalidOperationException("A IA retornou um cenário com valor de alocação inválido.");
+        if (scenario.Allocations.Select(x => x.Identity.Key).Distinct().Count() != scenario.Allocations.Count)
+            throw new InvalidOperationException("A IA retornou um cenário com o mesmo candidato mais de uma vez.");
+        if (scenario.Allocations.GroupBy(x => byKey[x.Identity.Key].AssetClass).Any(group => group.Sum(x => x.Amount) > byKey[group.First().Identity.Key].ClassBudget))
+            throw new InvalidOperationException("A IA retornou um cenário acima do orçamento de uma classe de ativos.");
+        if (decimal.Round(scenario.Allocations.Sum(x => x.Amount), 2) != decimal.Round(contributionAmount, 2))
+            throw new InvalidOperationException("A IA retornou um cenário cuja soma não corresponde ao valor do aporte.");
         return scenario;
     }
 }

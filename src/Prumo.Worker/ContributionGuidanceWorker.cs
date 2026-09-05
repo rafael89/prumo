@@ -74,7 +74,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         {
                             usedFallback = true;
                             ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code);
-                            logger.LogWarning(ex, "IA indisponível para o job de guidance {JobId}; fallback determinístico aplicado", job.Id);
+                            logger.LogWarning(ex, "Resposta da IA não utilizável para o job de guidance {JobId}; fallback determinístico aplicado", job.Id);
                         }
                     }
                     AppendProjectedPortfolioReason(guidance, workItem);
@@ -128,6 +128,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
     {
         HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests } => ("A cota da IA foi excedida; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-quota-exceeded"),
         TimeoutException or TaskCanceledException => ("A IA não respondeu dentro do prazo; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-timeout"),
+        InvalidOperationException { Message: not null } ex when ex.Message.StartsWith("A IA retornou", StringComparison.Ordinal) => ("A IA respondeu em formato incompatível com as regras do Prumo; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-invalid-scenario"),
         _ => ("A IA não respondeu corretamente; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-unavailable")
     };
 

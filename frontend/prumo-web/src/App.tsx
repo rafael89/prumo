@@ -364,10 +364,10 @@ function App() {
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}
-        {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} /><div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={dashboard.data?.page ?? 1} totalPages={dashboard.data?.totalPages ?? 0} onPageChange={setPositionPage} /></div></>}
+        {route === '/history' && activePortfolio && <><div className="-mt-5"><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} /></div><div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={dashboard.data?.page ?? 1} totalPages={dashboard.data?.totalPages ?? 0} onPageChange={setPositionPage} /></div></>}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
-        <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') ? 'pb-0' : 'pb-12'}`}>
+        <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>
           {feedback && (
             <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
               {feedback.message}
@@ -376,14 +376,14 @@ function App() {
           {portfolios.isLoading && <p className="text-slate-500">Carregando carteiras...</p>}
           {portfolios.isError && <p className="text-rose-700">API indisponível. Inicie o backend em `http://localhost:5200`.</p>}
 
-          {route === '/portfolio' && portfolios.isLoading && <p className="mt-4 rounded-2xl bg-white p-6 text-slate-500">Carregando sua carteira...</p>}
-          {route === '/portfolio' && !portfolios.isLoading && !portfolios.isError && <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start *:min-w-0">
+          {route === '/portfolio' && portfolios.isLoading && <p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua carteira...</p>}
+          {route === '/portfolio' && !portfolios.isLoading && !portfolios.isError && <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start *:min-w-0">
             <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} />
             {activePortfolio && <div className="target-allocation-frame order-2 self-start xl:col-start-2 xl:row-start-2 [&>section]:px-0! [&>section]:pb-0!"><TargetAllocationSection portfolioId={activePortfolio.id} /></div>}
             {activePortfolio && <div className="order-2 self-start rounded-[1.75rem] border border-amber-200 bg-amber-50/40 xl:col-start-2 xl:row-start-1 [&>section]:px-0! [&>section]:pb-0!"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
           </div>}
         </section>
-        {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-358 gap-8 px-6 pb-24"><RadarSection portfolioId={activePortfolio.id} /></div>}
+        {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-358 gap-8 px-6 pb-24 pt-3"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
