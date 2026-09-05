@@ -62,11 +62,11 @@ public sealed class RadarController : ControllerBase
     {
         var portfolioExists = await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct);
         if (!portfolioExists) return NotFound();
-        var candidates = await db.DocumentAnalyses
+            var candidates = await db.DocumentAnalyses
             .Where(analysis => (analysis.Importance == AnalysisImportance.Critical || analysis.Importance == AnalysisImportance.Relevant)
-                && db.InvestmentEvents.Any(eventItem => eventItem.DocumentAnalysisId == analysis.Id)
-                && !db.PortfolioAssessments.Any(assessment => assessment.PortfolioId == portfolioId && assessment.InvestmentEvent!.DocumentAnalysisId == analysis.Id)
-                && db.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == analysis.Document!.AssetId && position.Quantity > 0))
+                && db.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == analysis.Document!.AssetId && position.Quantity > 0)
+                && (!db.InvestmentEvents.Any(eventItem => eventItem.DocumentAnalysisId == analysis.Id)
+                    || !db.PortfolioAssessments.Any(assessment => assessment.PortfolioId == portfolioId && assessment.InvestmentEvent!.DocumentAnalysisId == analysis.Id)))
             .Select(analysis => analysis.DocumentId)
             .ToListAsync(ct);
         var activeJobs = await db.ProcessingJobs
