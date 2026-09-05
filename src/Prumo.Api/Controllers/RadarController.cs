@@ -66,7 +66,7 @@ public sealed class RadarController : ControllerBase
             .Where(analysis => (analysis.Importance == AnalysisImportance.Critical || analysis.Importance == AnalysisImportance.Relevant)
                 && db.InvestmentEvents.Any(eventItem => eventItem.DocumentAnalysisId == analysis.Id)
                 && !db.PortfolioAssessments.Any(assessment => assessment.PortfolioId == portfolioId && assessment.InvestmentEvent!.DocumentAnalysisId == analysis.Id)
-                && db.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == analysis.Document!.AssetId))
+                && db.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == analysis.Document!.AssetId && position.Quantity > 0))
             .Select(analysis => analysis.DocumentId)
             .ToListAsync(ct);
         var activeJobs = await db.ProcessingJobs

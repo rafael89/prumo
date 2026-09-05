@@ -53,6 +53,11 @@ public sealed class DocumentStorageRepairWorker : BackgroundService
 
         foreach (var document in documents)
         {
+            if (!await db.PortfolioPositions.AnyAsync(position => position.AssetId == document.AssetId && position.Quantity > 0, cancellationToken))
+            {
+                continue;
+            }
+
             if (await storage.ExistsAsync(document.FilePath!, cancellationToken))
             {
                 if (document.ProcessingStatus != DocumentProcessingStatus.Error) continue;

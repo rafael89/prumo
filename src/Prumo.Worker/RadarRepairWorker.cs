@@ -26,6 +26,7 @@ public sealed class RadarRepairWorker : BackgroundService
             var candidates = await db.DocumentAnalyses
                 .Where(analysis => analysis.Importance == AnalysisImportance.Critical || analysis.Importance == AnalysisImportance.Relevant)
                 .Where(analysis => !db.InvestmentEvents.Any(eventItem => eventItem.DocumentAnalysisId == analysis.Id))
+                .Where(analysis => db.PortfolioPositions.Any(position => position.AssetId == analysis.Document!.AssetId && position.Quantity > 0))
                 .Select(analysis => analysis.DocumentId)
                 .ToListAsync(stoppingToken);
             var existing = await db.ProcessingJobs

@@ -9,7 +9,6 @@ const features = [
   { title: 'Radar', text: 'Conecta eventos e an&aacute;lises aos ativos que voc&ecirc; possui. O foco n&atilde;o &eacute; mostrar toda not&iacute;cia, mas indicar o que importa para sua carteira.' },
   { title: 'Aportes', text: 'Combina metas, posi&ccedil;&otilde;es existentes, diversifica&ccedil;&atilde;o, concentra&ccedil;&atilde;o e aportes recentes para simular cen&aacute;rios e orientar o pr&oacute;ximo aporte.' },
   { title: 'Documentos', text: 'Processa documentos da carteira e transforma informa&ccedil;&otilde;es relevantes em an&aacute;lises com impacto, prioridade e a&ccedil;&atilde;o sugerida.' },
-  { title: 'Hist&oacute;rico', text: 'Preserva compras, eventos, documentos e mudan&ccedil;as de avalia&ccedil;&atilde;o para que cada decis&atilde;o tenha contexto.' },
   { title: 'Vis&atilde;o geral', text: 'Re&uacute;ne as conclus&otilde;es mais importantes em uma &uacute;nica tela: aten&ccedil;&atilde;o agora, mudan&ccedil;as recentes e pr&oacute;ximos passos.' },
 ]
 

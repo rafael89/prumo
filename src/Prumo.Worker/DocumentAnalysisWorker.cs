@@ -62,6 +62,16 @@ public sealed class DocumentAnalysisWorker : BackgroundService
 
         try
         {
+            if (job.Document is not null && !await HasActivePositionAsync(dbContext, job.Document.AssetId, cancellationToken))
+            {
+                job.Document.MarkIgnored();
+                job.Complete(DateTimeOffset.UtcNow);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                logger.LogInformation("Job de analise {JobId} ignorado: ativo {AssetId} nao possui posicao positiva.", job.Id, job.Document.AssetId);
+                metrics.RecordCompleted(ProcessingJobType.AnalyzeDocument, stopwatch.Elapsed);
+                return;
+            }
+
             if (job.Document is not null && await HasNewerDocumentAsync(dbContext, job.Document, cancellationToken))
             {
                 job.Document.MarkIgnored();
@@ -98,6 +108,9 @@ public sealed class DocumentAnalysisWorker : BackgroundService
             && candidate.Id != document.Id
             && candidate.PublishedAt > document.PublishedAt,
             cancellationToken);
+
+    private static Task<bool> HasActivePositionAsync(PrumoDbContext dbContext, Guid assetId, CancellationToken cancellationToken) =>
+        dbContext.PortfolioPositions.AnyAsync(position => position.AssetId == assetId && position.Quantity > 0, cancellationToken);
 
     private async Task FailJobAsync(PrumoDbContext dbContext, Guid jobId, string error, Exception exception, CancellationToken cancellationToken)
     {

@@ -20,7 +20,10 @@ public sealed class NewAssetBootstrapService
 
     public async Task DiscoverLatestOnlyAsync(IEnumerable<Guid> assetIds, CancellationToken ct)
     {
-        var assets = await db.Assets.Where(a => assetIds.Contains(a.Id) && (a.AssetClass == AssetClass.Fii || a.AssetClass == AssetClass.BrazilianStock)).ToListAsync(ct);
+        var assets = await db.Assets.Where(a => assetIds.Contains(a.Id)
+                && (a.AssetClass == AssetClass.Fii || a.AssetClass == AssetClass.BrazilianStock)
+                && db.PortfolioPositions.Any(position => position.AssetId == a.Id && position.Quantity > 0))
+            .ToListAsync(ct);
         if (assets.Count == 0) return;
         logger.LogInformation("CVM bootstrap iniciado para {AssetCount} novo(s) ativo(s)", assets.Count);
         var candidates = await source.FindAsync(assets.Select(a => new DocumentSourceAsset(a.Ticker, a.Cnpj, a.AssetClass)).ToArray(), ct);
@@ -46,7 +49,7 @@ public sealed class NewAssetBootstrapService
 
     public async Task<BootstrapRepairResult> EnsurePortfolioDocumentBootstrapAsync(Guid portfolioId, CancellationToken ct)
     {
-        var assets = await db.PortfolioPositions.Where(p => p.PortfolioId == portfolioId)
+        var assets = await db.PortfolioPositions.Where(p => p.PortfolioId == portfolioId && p.Quantity > 0)
             .Select(p => p.Asset!).Where(a => (a.AssetClass == AssetClass.Fii || a.AssetClass == AssetClass.BrazilianStock)).Distinct().ToListAsync(ct);
         var candidates = new List<Guid>();
         var skipped = 0;

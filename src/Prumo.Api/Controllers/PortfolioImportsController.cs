@@ -111,7 +111,7 @@ public sealed class PortfolioImportsController : ControllerBase
         logger.LogInformation("Import confirmed: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}, CreatedAssetCount={CreatedAssetCount}, AddedToPortfolioAssetCount={AddedToPortfolioAssetCount}, UpdatedPositionCount={UpdatedPositionCount}", session.Id, portfolioId, createdAssets, addedToPortfolio, updated);
         try { await bootstrap.DiscoverLatestOnlyAsync(addedAssetIds, ct); } catch (Exception exception) { logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId); }
         var importedDocumentAssetIds = portfolio.Positions
-            .Where(position => position.Asset?.AssetClass is AssetClass.Fii or AssetClass.BrazilianStock)
+            .Where(position => position.Quantity > 0 && position.Asset?.AssetClass is (AssetClass.Fii or AssetClass.BrazilianStock))
             .Select(position => position.AssetId)
             .Distinct()
             .ToList();

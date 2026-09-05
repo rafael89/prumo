@@ -126,7 +126,7 @@ public sealed class DocumentsController : ControllerBase
             .Include(job => job.Document)
             .Where(job => job.JobType == ProcessingJobType.AnalyzeDocument
                 && job.Status == ProcessingJobStatus.Failed
-                && dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == job.Document!.AssetId)
+                && dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == job.Document!.AssetId && position.Quantity > 0)
                 && (string.IsNullOrEmpty(errorFilter) || (job.LastError != null && EF.Functions.ILike(job.LastError, $"%{errorFilter}%"))))
             .ToListAsync(cancellationToken);
 
@@ -209,7 +209,7 @@ public sealed class DocumentsController : ControllerBase
     private async Task<PortfolioDocumentAssessment?> CreateAssessment(Domain.Entities.DocumentAnalysis analysis, Guid portfolioId, CancellationToken cancellationToken)
     {
         var position = await dbContext.PortfolioPositions.Include(p => p.Asset)
-            .SingleOrDefaultAsync(p => p.PortfolioId == portfolioId && p.AssetId == analysis.Document!.AssetId, cancellationToken);
+            .SingleOrDefaultAsync(p => p.PortfolioId == portfolioId && p.AssetId == analysis.Document!.AssetId && p.Quantity > 0, cancellationToken);
         if (position is null) return null;
         var state = await dbContext.RadarItemStates.AsNoTracking().SingleOrDefaultAsync(s => s.PortfolioId == portfolioId && s.DocumentAnalysisId == analysis.Id, cancellationToken);
         return new PortfolioDocumentAssessmentService().Assess(portfolioId, position, analysis, state?.Status ?? RadarItemStatus.Unread);

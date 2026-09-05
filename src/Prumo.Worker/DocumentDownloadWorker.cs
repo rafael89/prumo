@@ -66,6 +66,16 @@ public sealed class DocumentDownloadWorker : BackgroundService
 
         try
         {
+            if (job.Document is not null && !await HasActivePositionAsync(dbContext, job.Document.AssetId, cancellationToken))
+            {
+                job.Document.MarkIgnored();
+                job.Complete(DateTimeOffset.UtcNow);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                logger.LogInformation("Job de download {JobId} ignorado: ativo {AssetId} nao possui posicao positiva.", job.Id, job.Document.AssetId);
+                metrics.RecordCompleted(ProcessingJobType.DownloadDocument, stopwatch.Elapsed);
+                return;
+            }
+
             await DownloadAsync(job, dbContext, scope.ServiceProvider.GetRequiredService<IFileStorage>(), cancellationToken);
             job.Document!.MarkWaitingProcessing();
             var analysisExists = await dbContext.DocumentAnalyses.AnyAsync(
@@ -151,6 +161,9 @@ public sealed class DocumentDownloadWorker : BackgroundService
         }
         job.Document.MarkDownloaded(storedFile.Path, storedFile.Hash);
     }
+
+    private static Task<bool> HasActivePositionAsync(PrumoDbContext dbContext, Guid assetId, CancellationToken cancellationToken) =>
+        dbContext.PortfolioPositions.AnyAsync(position => position.AssetId == assetId && position.Quantity > 0, cancellationToken);
 
 }
 

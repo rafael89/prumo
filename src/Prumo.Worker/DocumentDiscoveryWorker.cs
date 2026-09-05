@@ -57,7 +57,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         var source = scope.ServiceProvider.GetRequiredService<IDocumentSource>();
         var assets = await dbContext.PortfolioPositions
             .Include(position => position.Asset)
-            .Where(position => position.Asset != null)
+            .Where(position => position.Asset != null && position.Quantity > 0)
             .Select(position => position.Asset!)
             .Distinct()
             .ToListAsync(cancellationToken);
