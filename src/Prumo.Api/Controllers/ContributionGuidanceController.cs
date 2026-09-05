@@ -140,8 +140,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             var existingStatus = await db.ContributionGuidanceJobs.AsNoTracking()
                 .Where(x => x.ContributionGuidanceId == existing.Id).OrderByDescending(x => x.CreatedAt)
                 .Select(x => (ContributionGuidanceJobStatus?)x.Status).FirstOrDefaultAsync(ct);
-            if (existingStatus is ContributionGuidanceJobStatus.Completed)
-                return Ok(await CompletedResponseAsync(portfolioId, existing, ct));
+            // Completed guidance is intentionally not reused: each new simulation
+            // must consult the configured intelligence provider again.
             if (existingStatus is ContributionGuidanceJobStatus.Queued or ContributionGuidanceJobStatus.Processing)
                 return Accepted(PendingResponse(existing.Id, existing.RequestedAmount, existingStatus.Value, true));
         }
@@ -428,7 +428,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 "ai-timeout" => "A IA não respondeu dentro do prazo.",
                 "ai-invalid-scenario" => "A IA respondeu, mas o cenário não passou nas regras de segurança do Prumo.",
                 "ai-unavailable" => "A IA não respondeu corretamente.",
-                "deterministic-partial-allocation" => "Não havia um cenário completo que respeitasse os limites das classes; foi usada a distribuição parcial segura.",
+                "deterministic-partial-allocation" => "A IA foi consultada, mas não havia um cenário completo que respeitasse os limites das classes; foi usada a distribuição parcial segura.",
                 _ => null
             };
         }

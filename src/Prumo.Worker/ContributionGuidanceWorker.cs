@@ -38,12 +38,46 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision);
                     if (deterministicOptions.Length == 0)
                     {
-                        usedFallback = true;
-                        ApplyFallback(
-                            guidance,
-                            workItem.Baseline,
-                            deterministicDecision.Reasons.FirstOrDefault() ?? "Não há um cenário completo que respeite os limites atuais; a distribuição parcial segura foi preservada.",
-                            "deterministic-partial-allocation");
+                        try
+                        {
+                            // The AI is consulted even when there is no complete safe
+                            // scenario. Its response cannot invent an allocation, but it
+                            // can still provide contextual reasoning for the fallback.
+                            var selection = await intelligenceProvider.SelectScenarioAsync(job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, stoppingToken);
+                            usedFallback = true;
+                            ApplyFallback(
+                                guidance,
+                                workItem.Baseline,
+                                deterministicDecision.Reasons.FirstOrDefault() ?? "Não há um cenário completo que respeite os limites atuais; a distribuição parcial segura foi preservada.",
+                                "deterministic-partial-allocation");
+                            guidance.UpdateIntelligence(
+                                "deterministic-fallback",
+                                "portfolio-rules",
+                                ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
+                                string.IsNullOrWhiteSpace(selection.Reason) ? guidance.Reasoning : $"{selection.Reason}\n{guidance.Reasoning}",
+                                JsonSerializer.Serialize(new
+                                {
+                                    engineVersion = selection.Metadata.EngineVersion,
+                                    policyVersion = workItem.Baseline.PortfolioHealthPolicyVersion,
+                                    promptVersion = selection.Metadata.PromptVersion,
+                                    aiProvider = selection.Metadata.Provider,
+                                    aiModel = selection.Metadata.Model,
+                                    fallbackReason = "deterministic-partial-allocation",
+                                    usedFallback = true,
+                                    generatedAt = DateTimeOffset.UtcNow,
+                                    classAllocations = workItem.Baseline.ClassAllocations
+                                }));
+                        }
+                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            usedFallback = true;
+                            ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code);
+                            logger.LogWarning(ex, "Resposta da IA não utilizável para o job de guidance {JobId}; fallback determinístico aplicado", job.Id);
+                        }
                     }
                     else
                     {

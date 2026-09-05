@@ -27,8 +27,14 @@ public sealed class PortfolioDecisionService
             .Where(x => x.GapPercentagePoints > 2m).OrderByDescending(x => x.GapPercentagePoints).ThenBy(x => x.AssetClass.ToString(), StringComparer.Ordinal).ToArray();
         if (needs.Length == 0) return NoAction(amount, "Não há uma necessidade de alocação suficientemente relevante agora.", secondary, exposure, MissingData(exposure), financial) with { StructuralNeeds = structuralNeeds };
         var eligible = candidates.Where(x => x.AssetClass == needs[0].AssetClass && !x.HasBlock).ToArray();
+        var dominant = DominantHeldCandidate(eligible);
         var scenarios = eligible.Select(x => Scenario(candidates, new[] { new CandidateAllocation(x.Identity, amount) }, $"{x.Ticker} atende a necessidade primária de {needs[0].AssetClass}.")).ToArray();
         if (scenarios.Length == 0) return NoAction(amount, "Não há candidato elegível para a necessidade atual.", secondary, exposure, MissingData(exposure), financial) with { StructuralNeeds = structuralNeeds };
+        if (dominant is not null && eligible.Length > 1)
+        {
+            scenarios = scenarios.Where(x => x.Allocations.Count != 1 || x.Allocations[0].Identity != dominant.Identity).ToArray();
+            scenarios = scenarios.Concat(GenerateSameClassSplitScenarios(amount, candidates, dominant, eligible)).ToArray();
+        }
         if (needs.Length > 1 && eligible.Length > 0)
         {
             var secondNeed = needs[1];
@@ -143,6 +149,45 @@ public sealed class PortfolioDecisionService
         var multiples = valuation.Metrics.Where(x => (x.Metric is "P/E" or "P/B" or "EV/EBITDA") && x.Value > 0).Select(x => x.Value).ToArray();
         return multiples.Length == 0 ? null : multiples.Average();
     }
+
+    private static IEnumerable<ContributionScenario> GenerateSameClassSplitScenarios(
+        decimal amount,
+        IReadOnlyList<ContributionCandidate> candidates,
+        ContributionCandidate dominant,
+        IReadOnlyList<ContributionCandidate> eligible)
+    {
+        var alternatives = eligible
+            .Where(x => x.CandidateKey != dominant.CandidateKey)
+            .OrderByDescending(x => x.DecisionScore)
+            .ThenBy(x => x.Ticker, StringComparer.Ordinal)
+            .Take(3)
+            .ToArray();
+
+        foreach (var alternative in alternatives)
+        foreach (var dominantPercentage in new[] { 30m, 40m, 50m })
+        {
+            var dominantAmount = Money(amount * dominantPercentage / 100m);
+            var alternativeAmount = Money(amount - dominantAmount);
+            if (dominantAmount <= 0 || alternativeAmount <= 0
+                || dominantAmount > dominant.ClassBudget
+                || alternativeAmount > alternative.ClassBudget)
+                continue;
+
+            yield return Scenario(candidates,
+                new[]
+                {
+                    new CandidateAllocation(dominant.Identity, dominantAmount),
+                    new CandidateAllocation(alternative.Identity, alternativeAmount)
+                },
+                $"Divide o aporte entre {dominant.Ticker} e {alternative.Ticker} para corrigir a classe sem ampliar excessivamente a concentraÃ§Ã£o.");
+        }
+    }
+
+    private static ContributionCandidate? DominantHeldCandidate(IReadOnlyList<ContributionCandidate> candidates)
+        => candidates.Where(x => x.HasPosition && x.CurrentValue > 0)
+            .OrderByDescending(x => x.CurrentValue)
+            .ThenBy(x => x.Ticker, StringComparer.Ordinal)
+            .FirstOrDefault();
 
     private static IEnumerable<ContributionScenario> GenerateSplitScenarios(
         decimal amount,

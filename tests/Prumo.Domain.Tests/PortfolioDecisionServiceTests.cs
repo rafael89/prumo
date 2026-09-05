@@ -67,6 +67,26 @@ public sealed class PortfolioDecisionServiceTests
     }
 
     [Fact]
+    public void Does_not_send_entire_contribution_to_dominant_asset_when_same_class_alternative_exists()
+    {
+        var dominant = Guid.NewGuid();
+        var alternative = Guid.NewGuid();
+        var candidates = new[]
+        {
+            new ContributionCandidate(CandidateIdentity.Known(dominant), "BBSE3", AssetClass.BrazilianStock, 60, 60, 80, 100, 100, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Stock),
+            new ContributionCandidate(CandidateIdentity.Known(alternative), "WEGE3", AssetClass.BrazilianStock, 40, 40, 80, 100, 100, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Stock),
+            new ContributionCandidate(CandidateIdentity.Known(Guid.NewGuid()), "HGLG11", AssetClass.Fii, 0, 0, 0, 0, 0, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Fii)
+        };
+
+        var result = new PortfolioDecisionService().DecideDeterministically(100, candidates);
+
+        Assert.NotNull(result.RecommendedScenario);
+        Assert.Contains(result.RecommendedScenario!.Allocations, x => x.Identity == CandidateIdentity.Known(dominant));
+        Assert.Contains(result.RecommendedScenario.Allocations, x => x.Identity == CandidateIdentity.Known(alternative));
+        Assert.True(result.RecommendedScenario.Allocations.Single(x => x.Identity == CandidateIdentity.Known(dominant)).Amount <= 50m);
+    }
+
+    [Fact]
     public void Exposes_structured_evidence_for_the_decisive_factor()
     {
         var id = Guid.NewGuid();
