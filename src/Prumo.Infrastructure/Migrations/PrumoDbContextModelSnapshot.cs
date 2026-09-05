@@ -593,9 +593,6 @@ namespace Prumo.Infrastructure.Migrations
                     b.Property<Guid>("AssetId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("AssetId1")
-                        .HasColumnType("uuid");
-
                     b.Property<decimal>("Confidence")
                         .HasPrecision(5, 4)
                         .HasColumnType("numeric(5,4)");
@@ -636,8 +633,6 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssetId");
-
-                    b.HasIndex("AssetId1");
 
                     b.HasIndex("DocumentId", "AssetId", "Metric", "ReferencePeriod", "PeriodType")
                         .IsUnique();
@@ -1614,14 +1609,10 @@ namespace Prumo.Infrastructure.Migrations
             modelBuilder.Entity("Prumo.Domain.Entities.DocumentFinancialFact", b =>
                 {
                     b.HasOne("Prumo.Domain.Entities.Asset", "Asset")
-                        .WithMany()
+                        .WithMany("DocumentFinancialFacts")
                         .HasForeignKey("AssetId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.HasOne("Prumo.Domain.Entities.Asset", null)
-                        .WithMany("DocumentFinancialFacts")
-                        .HasForeignKey("AssetId1");
 
                     b.HasOne("Prumo.Domain.Entities.Document", "Document")
                         .WithMany()

@@ -16,6 +16,9 @@ public sealed class DocumentFinancialFactConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.Confidence).HasPrecision(5, 4);
         builder.HasIndex(x => new { x.DocumentId, x.AssetId, x.Metric, x.ReferencePeriod, x.PeriodType }).IsUnique();
         builder.HasOne(x => x.Document).WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Cascade);
-        builder.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.Asset)
+            .WithMany(x => x.DocumentFinancialFacts)
+            .HasForeignKey(x => x.AssetId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
