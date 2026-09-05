@@ -27,10 +27,10 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
         if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
-        using var permit = await limiter.AcquireAsync(timeout.Token);
         var prompt = ContributionIntelligencePrompt.Build(portfolioId, amount, candidates);
+        var estimatedTokens = AiRequestRateLimiter.EstimateTokens(prompt) + 2000;
         var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = Schema } };
-        var raw = await SendAsync(settings.Model, request, timeout.Token);
+        var raw = await SendAsync(settings.Model, request, estimatedTokens, timeout.Token);
         return Parse(raw, settings.Model);
     }
 
@@ -39,10 +39,10 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
         if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
-        using var permit = await limiter.AcquireAsync(timeout.Token);
         var prompt = ContributionIntelligencePrompt.BuildScenarioSelection(portfolioId, contributionAmount, scenarios, candidates);
+        var estimatedTokens = AiRequestRateLimiter.EstimateTokens(prompt) + 2000;
         var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = ScenarioSchema } };
-        var raw = await SendAsync(settings.Model, request, timeout.Token);
+        var raw = await SendAsync(settings.Model, request, estimatedTokens, timeout.Token);
         using var document = JsonDocument.Parse(raw);
         var text = document.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
         if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Resposta Gemini vazia.");
@@ -51,15 +51,33 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
         return new(payload.SelectedScenarioKey, payload.Reason ?? string.Empty, payload.Considerations?.ToArray() ?? Array.Empty<string>(), ContributionIntelligenceAvailability.IntelligenceAvailable, new("R17.8", "contribution-scenario", ContributionIntelligencePrompt.Version, "Gemini", settings.Model, DateTimeOffset.UtcNow));
     }
 
-    private async Task<string> SendAsync(string model, object body, CancellationToken ct)
+    private async Task<string> SendAsync(string model, object body, int estimatedTokens, CancellationToken ct)
     {
-        using var message = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model)}:generateContent") { Content = JsonContent.Create(body) };
-        message.Headers.Add("x-goog-api-key", settings.ApiKey);
-        using var response = await http.SendAsync(message, ct); var raw = await response.Content.ReadAsStringAsync(ct);
-        if (response.StatusCode == HttpStatusCode.TooManyRequests && !string.IsNullOrWhiteSpace(settings.FallbackModel) && !string.Equals(model, settings.FallbackModel, StringComparison.OrdinalIgnoreCase)) return await SendAsync(settings.FallbackModel, body, ct);
-        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Gemini HTTP {(int)response.StatusCode}: {TrimError(raw)}", null, response.StatusCode);
-        return raw;
+        HttpStatusCode lastStatus = HttpStatusCode.ServiceUnavailable;
+        var lastRaw = string.Empty;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var permit = await limiter.AcquireAsync(estimatedTokens, ct);
+            using var message = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model)}:generateContent") { Content = JsonContent.Create(body) };
+            message.Headers.Add("x-goog-api-key", settings.ApiKey);
+            using var response = await http.SendAsync(message, ct);
+            var raw = await response.Content.ReadAsStringAsync(ct);
+            lastStatus = response.StatusCode;
+            lastRaw = raw;
+            if (response.IsSuccessStatusCode) return raw;
+
+            var transient = response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
+            if (!transient || attempt == 1) break;
+            await Task.Delay(TimeSpan.FromMilliseconds(500 * (attempt + 1)), ct);
+        }
+
+        if (IsTransient(lastStatus) && !string.IsNullOrWhiteSpace(settings.FallbackModel) && !string.Equals(model, settings.FallbackModel, StringComparison.OrdinalIgnoreCase))
+            return await SendAsync(settings.FallbackModel, body, estimatedTokens, ct);
+        if (lastStatus != HttpStatusCode.OK) throw new HttpRequestException($"Gemini HTTP {(int)lastStatus}: {TrimError(lastRaw)}", null, lastStatus);
+        return lastRaw;
     }
+
+    private static bool IsTransient(HttpStatusCode statusCode) => statusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
 
     private static ContributionIntelligenceResult Parse(string raw, string model)
     {
