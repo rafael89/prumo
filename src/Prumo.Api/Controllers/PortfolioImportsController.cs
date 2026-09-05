@@ -58,10 +58,20 @@ public sealed class PortfolioImportsController : ControllerBase
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var session = await db.PortfolioImportSessions.SingleOrDefaultAsync(s => s.Id == importSessionId && s.PortfolioId == portfolioId, ct);
         if (session is null) return NotFound();
-        if (session.Status == PortfolioImportStatus.Completed) return Ok(new ImportConfirmationDto("AlreadyImported", 0, 0, 0));
-        if (session.Status != PortfolioImportStatus.Previewed) return Conflict("A sessão de importação não está disponível para confirmação.");
         var normalized = JsonSerializer.Deserialize<NormalizedPortfolioImport>(session.NormalizedJson);
         if (normalized is null || normalized.Errors.Count > 0) return Conflict("O preview não pode ser confirmado.");
+        if (session.Status == PortfolioImportStatus.Completed)
+        {
+            var importedTickers = normalized.Items.Select(x => x.Ticker).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var currentTickers = await db.PortfolioPositions.Include(x => x.Asset)
+                .Where(x => x.PortfolioId == portfolioId)
+                .Select(x => x.Asset!.Ticker)
+                .ToListAsync(ct);
+            if (!importedTickers.Except(currentTickers, StringComparer.OrdinalIgnoreCase).Any())
+                return Ok(new ImportConfirmationDto("AlreadyImported", 0, 0, 0));
+        }
+        if (session.Status != PortfolioImportStatus.Previewed && session.Status != PortfolioImportStatus.Completed)
+            return Conflict("A sessão de importação não está disponível para confirmação.");
         var portfolio = await db.Portfolios.Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, ct);
         var createdAssets = 0; var addedToPortfolio = 0; var updated = 0; var addedAssetIds = new List<Guid>();
         foreach (var item in normalized.Items)

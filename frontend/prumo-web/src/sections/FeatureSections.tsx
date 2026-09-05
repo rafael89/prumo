@@ -111,7 +111,7 @@ export function B3ImportSection({ portfolioId, onImportStateChange }: { portfoli
   async function analyze() {
     if (!file) return
     setBusy(true); setMessage(null)
-    try { const body = new FormData(); body.append('file', file); const response = await fetch(`${apiUrl}/api/portfolios/${portfolioId}/imports/b3/preview`, { method: 'POST', body }); if (!response.ok) throw new Error(await readError(response, 'Não foi possível analisar o arquivo.')); const nextPreview = await response.json() as ImportPreview; setPreview(nextPreview); if (nextPreview.canConfirm) await confirmImport(nextPreview) } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível analisar o arquivo.') } finally { setBusy(false) }
+     try { const body = new FormData(); body.append('file', file); const response = await fetch(`${apiUrl}/api/portfolios/${portfolioId}/imports/b3/preview`, { method: 'POST', body }); if (!response.ok) throw new Error(await readError(response, 'Não foi possível analisar o arquivo.')); const nextPreview = await response.json() as ImportPreview; setPreview(nextPreview) } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível analisar o arquivo.') } finally { setBusy(false) }
   }
   async function confirmImport(importToConfirm = preview) {
     if (!importToConfirm) return

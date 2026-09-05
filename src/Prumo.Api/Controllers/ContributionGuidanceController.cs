@@ -67,7 +67,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
 
         var health = new PortfolioHealthCalculator().Calculate(portfolio, targets);
         var total = portfolio.Positions.Sum(x => x.CurrentValue ?? 0);
-        var existingPositions = portfolio.Positions.Where(x => x.Asset is not null && x.CurrentValue.HasValue)
+        // Posições zeradas permanecem no cadastro/histórico, mas não podem
+        // receber novos aportes até que uma importação as reative.
+        var existingPositions = portfolio.Positions.Where(x => x.Asset is not null && x.CurrentValue is > 0)
             .Select(x =>
             {
                 var asset = x.Asset!;
@@ -92,7 +94,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
                     asset.ListingCountryCode, asset.TradingCurrency, DocumentFinancialQualityResolver.Resolve(asset));
             }).ToList();
-        var positionAssetIds = existingPositions.Select(x => x.AssetId).ToHashSet();
+        var positionAssetIds = portfolio.Positions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
         var catalogCandidates = await db.Assets.AsNoTracking()
             .Include(x => x.FundamentalSnapshots).Include(x => x.DocumentFinancialFacts)
