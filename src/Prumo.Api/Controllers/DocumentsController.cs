@@ -211,8 +211,28 @@ public sealed class DocumentsController : ControllerBase
         var position = await dbContext.PortfolioPositions.Include(p => p.Asset)
             .SingleOrDefaultAsync(p => p.PortfolioId == portfolioId && p.AssetId == analysis.Document!.AssetId && p.Quantity > 0, cancellationToken);
         if (position is null) return null;
-        var state = await dbContext.RadarItemStates.AsNoTracking().SingleOrDefaultAsync(s => s.PortfolioId == portfolioId && s.DocumentAnalysisId == analysis.Id, cancellationToken);
-        return new PortfolioDocumentAssessmentService().Assess(portfolioId, position, analysis, state?.Status ?? RadarItemStatus.Unread);
+        var persisted = await dbContext.PortfolioAssessments.AsNoTracking()
+            .Include(item => item.InvestmentEvent!).ThenInclude(item => item.AffectedAssets)
+            .Where(item => item.PortfolioId == portfolioId && item.InvestmentEvent!.DocumentAnalysisId == analysis.Id)
+            .OrderByDescending(item => item.GeneratedAt)
+            .ThenByDescending(item => item.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (persisted is null) return null;
+
+        var radarStatus = persisted.Status == AssessmentStatus.Closed
+            ? RadarItemStatus.Resolved
+            : persisted.UserState == AssessmentUserState.Seen ? RadarItemStatus.Read : RadarItemStatus.Unread;
+        return new PortfolioDocumentAssessment(
+            portfolioId,
+            persisted.InvestmentEvent!.AffectedAssets.FirstOrDefault()?.Id ?? position.AssetId,
+            analysis.Id,
+            position.CurrentValue,
+            position.PortfolioWeight,
+            RadarAttentionNowPolicy.RequiresAttention(persisted),
+            persisted.WhyItMatters,
+            (RadarPriority)persisted.AttentionPriority,
+            Array.Empty<RadarReason>(),
+            radarStatus);
     }
 
     private static DocumentResponse CreateResponse(Domain.Entities.Document document)

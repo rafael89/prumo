@@ -144,7 +144,7 @@ public sealed class PortfoliosController : ControllerBase
     }
 
     private static DashboardAssessment CreateDashboardAssessment(PortfolioAssessment assessment)
-        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact);
+        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Status, assessment.UserState);
 
     private static string HealthLabel(PortfolioHealthStatus status) => status switch
     {
@@ -312,7 +312,7 @@ public enum DashboardState { Ready, FirstUse, Processing, StrategyNotConfigured 
 public enum ContributionPreviewStatus { Available, NotConfigured, NoNeeds, EmptyPortfolio }
 public sealed record PortfolioOverview(Guid PortfolioId, string PortfolioName, decimal CurrentValue, string HealthStatus, string HealthSummary, string? MainDeviationSummary, DateTimeOffset? LastPortfolioUpdate);
 public sealed record ContributionPreview(ContributionPreviewStatus Status, AssetClass? PrimaryCapitalNeed, string Summary);
-public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact);
+public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState);
 public sealed record PortfolioHealthSummary(string Status, string Summary, IReadOnlyList<AllocationDeviation> AllocationDeviations, MainDeviation? MainDeviation);
 public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0, DashboardState State = DashboardState.Ready, PortfolioOverview? PortfolioOverview = null, IReadOnlyList<DashboardAssessment>? AttentionNow = null, ContributionPreview? ContributionPreview = null, PortfolioHealthSummary? PortfolioHealthSummary = null, IReadOnlyList<DashboardAssessment>? RecentUpdates = null, DateTimeOffset? GeneratedAt = null);
 public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight, ExposureMetadataResponse? Exposure = null);

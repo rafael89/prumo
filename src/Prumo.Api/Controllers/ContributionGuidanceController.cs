@@ -297,7 +297,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 model = item.Model,
                 policyVersion = ExtractPolicyVersion(item.MetadataJson),
                 assessmentVersions = ExtractAssessmentVersions(item.MetadataJson),
-                evidenceCount = ExtractEvidenceCount(item.MetadataJson, allocations.SelectMany(x => x.evidence).Distinct().Count())
+                evidenceCount = ExtractEvidenceCount(item.MetadataJson, allocations.SelectMany(x => x.evidence).Distinct().Count()),
+                fallbackReason = ExtractFallbackReason(item.MetadataJson)
             },
             item.IntelligenceAvailability,
             reasoning = ContributionText.NormalizeAssetClassNames(item.Reasoning),
@@ -415,8 +416,31 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         return allocationEvidenceCount;
     }
 
+    private static string? ExtractFallbackReason(string json)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            if (!TryGet(root, "fallbackReason", "FallbackReason", out var value) || value.ValueKind != JsonValueKind.String) return null;
+            return value.GetString() switch
+            {
+                "ai-quota-exceeded" => "O limite de cota da IA foi atingido.",
+                "ai-timeout" => "A IA não respondeu dentro do prazo.",
+                "ai-invalid-scenario" => "A IA respondeu, mas o cenário não passou nas regras de segurança do Prumo.",
+                "ai-unavailable" => "A IA não respondeu corretamente.",
+                "deterministic-partial-allocation" => "Não havia um cenário completo que respeitasse os limites das classes; foi usada a distribuição parcial segura.",
+                _ => null
+            };
+        }
+        catch (JsonException) { return null; }
+    }
+
     private static bool TryGet(JsonElement root, string camelName, string pascalName, out JsonElement value)
-        => root.TryGetProperty(camelName, out value) || root.TryGetProperty(pascalName, out value);
+    {
+        value = default;
+        return root.ValueKind == JsonValueKind.Object
+            && (root.TryGetProperty(camelName, out value) || root.TryGetProperty(pascalName, out value));
+    }
 }
 
 public sealed record ContributionRequest(decimal Amount);

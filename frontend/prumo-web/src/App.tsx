@@ -367,7 +367,7 @@ function App() {
         {route === '/history' && activePortfolio && <><div className="-mt-5"><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} /></div><div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={dashboard.data?.page ?? 1} totalPages={dashboard.data?.totalPages ?? 0} onPageChange={setPositionPage} /></div></>}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
-        <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>
+        <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') || route === '/radar' ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>
           {feedback && (
             <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
               {feedback.message}
