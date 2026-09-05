@@ -59,6 +59,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 decisionType = deterministicDecision.DecisionType.ToString(),
                                 primaryNeed = deterministicDecision.PrimaryNeed,
                                 decisionEvidence = deterministicDecision.DecisionEvidence,
+                                assessmentVersions = workItem.Baseline.AssessmentVersions,
+                                evidenceCount = workItem.Baseline.Evidence.Count,
                                 considerations = selection.Considerations
                             }));
                             guidance.ReplaceAllocations(ToPersistedAllocations(guidance.Id, selected, workItem.Candidates));
@@ -116,7 +118,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
+            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId!.Value, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }

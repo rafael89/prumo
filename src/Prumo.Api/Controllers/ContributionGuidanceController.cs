@@ -295,7 +295,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 model = item.Model,
                 policyVersion = ExtractPolicyVersion(item.MetadataJson),
                 assessmentVersions = ExtractAssessmentVersions(item.MetadataJson),
-                evidenceCount = allocations.SelectMany(x => x.evidence).Distinct().Count()
+                evidenceCount = ExtractEvidenceCount(item.MetadataJson, allocations.SelectMany(x => x.evidence).Distinct().Count())
             },
             item.IntelligenceAvailability,
             reasoning = ContributionText.NormalizeAssetClassNames(item.Reasoning),
@@ -400,6 +400,17 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             return value.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToArray();
         }
         catch (JsonException) { return Array.Empty<string>(); }
+    }
+
+    private static int ExtractEvidenceCount(string json, int allocationEvidenceCount)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            if (root.TryGetProperty("evidenceCount", out var value) && value.TryGetInt32(out var count)) return Math.Max(0, count);
+        }
+        catch (JsonException) { }
+        return allocationEvidenceCount;
     }
 
     private static bool TryGet(JsonElement root, string camelName, string pascalName, out JsonElement value)
