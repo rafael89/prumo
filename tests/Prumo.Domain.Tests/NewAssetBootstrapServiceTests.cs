@@ -39,7 +39,9 @@ public sealed class NewAssetBootstrapServiceTests
         var options = new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         await using var db = new PrumoDbContext(options);
         var asset = new Asset("XPML11", "XP Malls", AssetType.Fii, null, AssetClass.Fii, "12345678000190");
-        db.Assets.Add(asset);
+        var portfolio = new Portfolio("Test");
+        db.AddRange(asset, portfolio);
+        db.PortfolioPositions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1, 0, 100));
         await db.SaveChangesAsync();
 
         var service = new NewAssetBootstrapService(db, new MultipleDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);
@@ -57,7 +59,9 @@ public sealed class NewAssetBootstrapServiceTests
         var options = new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         await using var db = new PrumoDbContext(options);
         var asset = new Asset("XPML11", "XP Malls", AssetType.Fii, null, AssetClass.Fii, "12345678000190");
-        db.Assets.Add(asset);
+        var portfolio = new Portfolio("Test");
+        db.AddRange(asset, portfolio);
+        db.PortfolioPositions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1, 0, 100));
         await db.SaveChangesAsync();
 
         var service = new NewAssetBootstrapService(db, new BootstrapDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);

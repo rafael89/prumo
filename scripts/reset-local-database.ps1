@@ -70,18 +70,19 @@ try {
         if ($LASTEXITCODE -ne 0) { Stop-Reset 'falha ao aplicar as migrations EF.' }
 
         Write-Host '[3/4] Validando histórico de migrations...'
-        $migrationFiles = @(Get-ChildItem -LiteralPath 'src/Prumo.Infrastructure/Persistence/Migrations' -Filter '*.cs' | Where-Object { $_.Name -match '^\d+_.+\.cs$' -and $_.Name -notmatch '\.Designer\.cs$' })
+        $migrationFiles = @(Get-ChildItem -LiteralPath 'src/Prumo.Infrastructure/Migrations' -Filter '*.cs' | Where-Object { $_.Name -match '^\d+_.+\.cs$' -and $_.Name -notmatch '\.Designer\.cs$' })
         if ($migrationFiles.Count -eq 0) { Stop-Reset 'nenhuma migration foi encontrada.' }
         $expectedMigrations = @($migrationFiles | ForEach-Object { $_.BaseName })
-        $history = (& $psql --host $hostName --port $port --username $username --dbname $database --tuples-only --no-align --command='SELECT \"MigrationId\" FROM \"__EFMigrationsHistory\" ORDER BY \"MigrationId\";')
+        $historySql = 'SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY "MigrationId";'
+        $history = (& $psql --host $hostName --port $port --username $username --dbname $database --tuples-only --no-align --command=$historySql)
         if ($LASTEXITCODE -ne 0) { Stop-Reset 'falha ao consultar o histórico de migrations.' }
         $actualMigrations = @($history | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         if (($actualMigrations -join '|') -ne ($expectedMigrations -join '|')) { Stop-Reset "histórico inesperado. Esperado: $($expectedMigrations -join ', '); encontrado: $($actualMigrations -join ', ')." }
 
         Write-Host '[4/4] Validando banco vazio...'
-        $tables = @('Assets', 'Portfolios', 'PortfolioPositions', 'Documents', 'ProcessingJobs', 'DocumentAnalyses', 'RadarItemStates', 'PortfolioAllocationStrategies', 'StrategyAllocations', 'PortfolioImportSessions', 'InvestmentObjectives', 'InvestmentEvents', 'InvestmentEventEvidence', 'PortfolioAssessments')
+        $tables = @('Assets', 'Portfolios', 'PortfolioPositions', 'Documents', 'ProcessingJobs', 'DocumentAnalyses', 'RadarItemStates', 'PortfolioImportSessions', 'ContributionGuidanceJobs', 'ContributionGuidances', 'ContributionGuidanceAllocations', 'InvestmentEvents', 'InvestmentEventAssets', 'InvestmentEventEvidence', 'PortfolioAssessments', 'PortfolioTransactions', 'PortfolioTransactionItems', 'TargetAllocations', 'PortfolioCashFlows', 'AssetPrices', 'FinancialHistoryCoverages', 'PortfolioHistoricalAnchors', 'PortfolioHistoricalAnchorItems', 'TransactionReconciliations', 'TransactionReconciliationMembers', 'AssetCorporateActions', 'PortfolioCashAnchors', 'AssetCurrencyExposures', 'AssetGeographicExposures', 'AssetFundamentalSnapshots', 'AssetValuationSnapshots', 'DocumentFinancialFacts')
         foreach ($table in $tables) {
-            $sql = 'SELECT count(*) FROM \"' + $table + '\";'
+            $sql = 'SELECT count(*) FROM "' + $table + '";'
             $count = (& $psql --host $hostName --port $port --username $username --dbname $database --tuples-only --no-align --command=$sql)
             if ($LASTEXITCODE -ne 0) { Stop-Reset "falha ao validar a tabela $table." }
             if ([int64]$count.Trim() -ne 0) { Stop-Reset "a tabela $table não está vazia." }

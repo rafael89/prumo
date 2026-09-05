@@ -189,19 +189,19 @@ O endpoint `GET /api/documents/{id}/analysis` retorna a análise validada mais r
 
 ## Migrations
 
-As migrations ficam em [src/Prumo.Infrastructure/Migrations](src/Prumo.Infrastructure/Migrations) e são aplicadas de forma incremental pelo Entity Framework Core.
+O schema do banco fica em [src/Prumo.Infrastructure/Migrations](src/Prumo.Infrastructure/Migrations), atualmente concentrado em uma única migration `InitialCreate`. Ela é aplicada pelo Entity Framework Core.
 
 ```powershell
 dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
 ```
 
-As migrations iniciais e incrementais atuais incluem:
+O estado atual do modelo é representado por:
 
 ```text
-InitialCreate, fundamentos de carteira, histórico financeiro, exposições de ativos, fatos financeiros e correções de relacionamento.
+InitialCreate
 ```
 
-Depois do primeiro banco Beta com dados importantes, novas migrations devem ser append-only.
+Como o Prumo ainda não está em produção, a baseline pode ser regenerada junto com um reset local do banco quando houver alterações estruturais. Depois do primeiro banco com dados reais, novas migrations devem ser append-only.
 
 ## Validação
 

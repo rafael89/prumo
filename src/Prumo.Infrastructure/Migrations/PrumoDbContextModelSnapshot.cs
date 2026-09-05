@@ -34,7 +34,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("InvestmentEventId");
 
-                    b.ToTable("InvestmentEventAssets", (string)null);
+                    b.ToTable("InvestmentEventAssets");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.Asset", b =>
@@ -94,7 +94,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("Ticker")
                         .IsUnique();
 
-                    b.ToTable("Assets", (string)null);
+                    b.ToTable("Assets");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.AssetCorporateAction", b =>
@@ -147,7 +147,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("AssetId", "Type", "EffectiveDate", "FactorNumerator", "FactorDenominator", "Source")
                         .IsUnique();
 
-                    b.ToTable("AssetCorporateActions", (string)null);
+                    b.ToTable("AssetCorporateActions");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.AssetCurrencyExposure", b =>
@@ -186,7 +186,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("AssetId", "CurrencyCode")
                         .IsUnique();
 
-                    b.ToTable("AssetCurrencyExposures", (string)null);
+                    b.ToTable("AssetCurrencyExposures");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.AssetFundamentalSnapshot", b =>
@@ -255,7 +255,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("AssetId", "Source", "ReferenceDate", "PeriodType")
                         .IsUnique();
 
-                    b.ToTable("AssetFundamentalSnapshots", (string)null);
+                    b.ToTable("AssetFundamentalSnapshots");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.AssetGeographicExposure", b =>
@@ -294,7 +294,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("AssetId", "CountryCode")
                         .IsUnique();
 
-                    b.ToTable("AssetGeographicExposures", (string)null);
+                    b.ToTable("AssetGeographicExposures");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.AssetPrice", b =>
@@ -333,7 +333,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("AssetId", "PriceDate", "Source")
                         .IsUnique();
 
-                    b.ToTable("AssetPrices", (string)null);
+                    b.ToTable("AssetPrices");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.AssetValuationSnapshot", b =>
@@ -379,7 +379,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("AssetId", "Source", "ReferenceDate")
                         .IsUnique();
 
-                    b.ToTable("AssetValuationSnapshots", (string)null);
+                    b.ToTable("AssetValuationSnapshots");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.ContributionGuidanceJob", b =>
@@ -422,7 +422,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("PortfolioId", "ContributionGuidanceId", "Status");
 
-                    b.ToTable("ContributionGuidanceJobs", (string)null);
+                    b.ToTable("ContributionGuidanceJobs");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.Document", b =>
@@ -503,7 +503,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("SourceName", "SourceUrl");
 
-                    b.ToTable("Documents", (string)null);
+                    b.ToTable("Documents");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.DocumentAnalysis", b =>
@@ -581,7 +581,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("DocumentId", "Model", "PromptVersion")
                         .IsUnique();
 
-                    b.ToTable("DocumentAnalyses", (string)null);
+                    b.ToTable("DocumentAnalyses");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.DocumentFinancialFact", b =>
@@ -637,7 +637,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("DocumentId", "AssetId", "Metric", "ReferencePeriod", "PeriodType")
                         .IsUnique();
 
-                    b.ToTable("DocumentFinancialFacts", (string)null);
+                    b.ToTable("DocumentFinancialFacts");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.FinancialHistoryCoverage", b =>
@@ -679,7 +679,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("PortfolioId", "Dimension", "FromDate", "ToDate");
 
-                    b.ToTable("FinancialHistoryCoverages", (string)null);
+                    b.ToTable("FinancialHistoryCoverages");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.InvestmentEvent", b =>
@@ -722,7 +722,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("DocumentAnalysisId", "Fingerprint")
                         .IsUnique();
 
-                    b.ToTable("InvestmentEvents", (string)null);
+                    b.ToTable("InvestmentEvents");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.InvestmentEventEvidence", b =>
@@ -753,7 +753,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("InvestmentEventId");
 
-                    b.ToTable("InvestmentEventEvidence", (string)null);
+                    b.ToTable("InvestmentEventEvidence");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PersistedContributionGuidance", b =>
@@ -821,7 +821,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("PortfolioId", "PortfolioSnapshotKey", "TargetAllocationKey", "IntelligenceContextKey", "RequestedAmount", "GeneratedAt");
 
-                    b.ToTable("ContributionGuidances", (string)null);
+                    b.ToTable("ContributionGuidances");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PersistedContributionGuidanceAllocation", b =>
@@ -909,7 +909,7 @@ namespace Prumo.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"CandidateKey\" IS NOT NULL");
 
-                    b.ToTable("ContributionGuidanceAllocations", (string)null);
+                    b.ToTable("ContributionGuidanceAllocations");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.Portfolio", b =>
@@ -931,7 +931,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Portfolios", (string)null);
+                    b.ToTable("Portfolios");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioAssessment", b =>
@@ -1006,7 +1006,7 @@ namespace Prumo.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"PortfolioSnapshotKey\" IS NOT NULL AND \"TargetAllocationKey\" IS NOT NULL");
 
-                    b.ToTable("PortfolioAssessments", (string)null);
+                    b.ToTable("PortfolioAssessments");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioCashAnchor", b =>
@@ -1051,7 +1051,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("PortfolioId", "AnchorDate")
                         .IsUnique();
 
-                    b.ToTable("PortfolioCashAnchors", (string)null);
+                    b.ToTable("PortfolioCashAnchors");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioCashFlow", b =>
@@ -1095,7 +1095,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("PortfolioId", "OccurredAt");
 
-                    b.ToTable("PortfolioCashFlows", (string)null);
+                    b.ToTable("PortfolioCashFlows");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioHistoricalAnchor", b =>
@@ -1131,7 +1131,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("PortfolioId", "AnchorDate")
                         .IsUnique();
 
-                    b.ToTable("PortfolioHistoricalAnchors", (string)null);
+                    b.ToTable("PortfolioHistoricalAnchors");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioHistoricalAnchorItem", b =>
@@ -1161,7 +1161,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("AnchorId", "AssetId")
                         .IsUnique();
 
-                    b.ToTable("PortfolioHistoricalAnchorItems", (string)null);
+                    b.ToTable("PortfolioHistoricalAnchorItems");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioImportSession", b =>
@@ -1219,7 +1219,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("PortfolioId", "Source", "FileHash")
                         .IsUnique();
 
-                    b.ToTable("PortfolioImportSessions", (string)null);
+                    b.ToTable("PortfolioImportSessions");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioPosition", b =>
@@ -1264,7 +1264,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("PortfolioId", "AssetId")
                         .IsUnique();
 
-                    b.ToTable("PortfolioPositions", (string)null);
+                    b.ToTable("PortfolioPositions");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioTransaction", b =>
@@ -1314,7 +1314,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("PortfolioId", "OccurredAt");
 
-                    b.ToTable("PortfolioTransactions", (string)null);
+                    b.ToTable("PortfolioTransactions");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioTransactionItem", b =>
@@ -1343,7 +1343,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("PortfolioTransactionId");
 
-                    b.ToTable("PortfolioTransactionItems", (string)null);
+                    b.ToTable("PortfolioTransactionItems");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.ProcessingJob", b =>
@@ -1385,7 +1385,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("Status", "AvailableAt");
 
-                    b.ToTable("ProcessingJobs", (string)null);
+                    b.ToTable("ProcessingJobs");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.RadarItemState", b =>
@@ -1422,7 +1422,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("PortfolioId", "DocumentAnalysisId")
                         .IsUnique();
 
-                    b.ToTable("RadarItemStates", (string)null);
+                    b.ToTable("RadarItemStates");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.TargetAllocation", b =>
@@ -1446,7 +1446,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("PortfolioId", "AssetClass")
                         .IsUnique();
 
-                    b.ToTable("TargetAllocations", (string)null);
+                    b.ToTable("TargetAllocations");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.TransactionReconciliation", b =>
@@ -1478,7 +1478,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.HasIndex("PortfolioId", "Status");
 
-                    b.ToTable("TransactionReconciliations", (string)null);
+                    b.ToTable("TransactionReconciliations");
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.TransactionReconciliationMember", b =>
@@ -1500,7 +1500,7 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasIndex("ReconciliationId", "PortfolioTransactionId")
                         .IsUnique();
 
-                    b.ToTable("TransactionReconciliationMembers", (string)null);
+                    b.ToTable("TransactionReconciliationMembers");
                 });
 
             modelBuilder.Entity("InvestmentEventAssets", b =>
