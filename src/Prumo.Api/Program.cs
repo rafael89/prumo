@@ -63,6 +63,17 @@ builder.Services.AddScoped<PortfolioAssessmentCurrentService>();
 
 var app = builder.Build();
 
+if (app.Configuration.GetValue<bool>("Database:ApplyMigrations"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<PrumoDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseMigration");
+
+    logger.LogInformation("Aplicando migrations do banco de dados.");
+    await db.Database.MigrateAsync();
+    logger.LogInformation("Migrations do banco de dados aplicadas.");
+}
+
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
     var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;

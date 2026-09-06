@@ -135,6 +135,7 @@ docker compose up --build
 ```
 
 O frontend fica disponível em `http://localhost:5273` e a API em `http://localhost:5200`.
+Ao usar o Compose completo, a API aplica automaticamente as migrations antes de ficar saudável e o Worker aguarda essa etapa.
 
 ## IA e configuração
 

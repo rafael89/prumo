@@ -26,6 +26,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      Database__ApplyMigrations: "true"
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
       Storage__RootPath: /storage/documents
       Discord__WebhookUrl: ${DISCORD_WEBHOOK_URL:-}
@@ -63,7 +64,7 @@ services:
       - document-storage:/storage/documents
       - worker-logs:/storage/logs/worker
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
 
   frontend:
