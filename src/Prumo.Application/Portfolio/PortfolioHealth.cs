@@ -21,7 +21,8 @@ public sealed class PortfolioHealthCalculator
     {
         policy ??= PortfolioHealthPolicy.V1;
         var generatedAt = DateTimeOffset.UtcNow;
-        if (targetAllocations is null || targetAllocations.Count == 0 || targetAllocations.GroupBy(x => x.AssetClass).Any(x => x.Count() > 1) || Math.Abs(targetAllocations.Sum(x => x.TargetPercentage) - 100m) > .01m)
+        var configuredTargets = targetAllocations?.Where(x => x.TargetPercentage > 0).ToList();
+        if (configuredTargets is null || configuredTargets.Count == 0 || configuredTargets.GroupBy(x => x.AssetClass).Any(x => x.Count() > 1) || Math.Abs(configuredTargets.Sum(x => x.TargetPercentage) - 100m) > .01m)
             return new(PortfolioHealthStatus.NotConfigured, Array.Empty<AllocationDeviation>(), null, Array.Empty<CapitalNeed>(), policy.Version, generatedAt);
 
         var eligible = portfolio.Positions.Where(p => p.CurrentValue.HasValue).ToList();
@@ -31,8 +32,11 @@ public sealed class PortfolioHealthCalculator
         PortfolioCalculator.RecalculateWeights(eligible);
         var total = PortfolioCalculator.CalculateTotalValue(eligible);
         var currentByClass = eligible.GroupBy(p => p.Asset?.AssetClass ?? AssetClass.Other).ToDictionary(g => g.Key, g => total > 0 ? g.Sum(p => p.CurrentValue ?? 0) / total * 100m : 0m);
-        var targetByClass = targetAllocations.ToDictionary(a => a.AssetClass, a => a.TargetPercentage);
-        var classes = currentByClass.Keys.Union(targetByClass.Keys).Distinct().OrderBy(c => c.ToString(), StringComparer.Ordinal).ToList();
+        var targetByClass = configuredTargets.ToDictionary(a => a.AssetClass, a => a.TargetPercentage);
+        // Only evaluate classes explicitly included in the target allocation.
+        // Positions from classes without a configured target must not appear as
+        // if their implicit target were 0%.
+        var classes = targetByClass.Keys.OrderBy(c => c.ToString(), StringComparer.Ordinal).ToList();
         var deviations = classes.Select(assetClass =>
         {
             var current = currentByClass.GetValueOrDefault(assetClass);
