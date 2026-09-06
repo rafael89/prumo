@@ -22,7 +22,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             try
             {
                 using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PrumoDbContext>(); var job = await ClaimNextAsync(db, stoppingToken);
-                if (job is null) { await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); continue; }
+                if (job is null) { await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); continue; }
                 claimedJobId = job.Id;
                 var stopwatch = Stopwatch.StartNew();
                 var backlog = await db.ContributionGuidanceJobs.CountAsync(x => x.Status == ContributionGuidanceJobStatus.Queued, stoppingToken);
@@ -143,8 +143,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 {
                     await RecoverClaimedJobAsync(claimedJobId.Value, ex.Message, stoppingToken);
                 }
-                logger.LogError(ex, "Erro inesperado no polling de jobs de guidance; nova tentativa em {RetryDelay}", TimeSpan.FromSeconds(2));
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                logger.LogError(ex, "Erro inesperado no polling de jobs de guidance; nova tentativa em {RetryDelay}", TimeSpan.FromSeconds(10));
+                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
             }
         }
     }

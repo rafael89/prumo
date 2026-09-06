@@ -169,7 +169,7 @@ public sealed class DocumentDownloadWorker : BackgroundService
 
 public sealed class JobProcessingOptions
 {
-    public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(5);
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(20);
     public TimeSpan Lease { get; set; } = TimeSpan.FromMinutes(30);
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromMinutes(1);
     public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromMinutes(30);

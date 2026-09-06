@@ -9,7 +9,7 @@ namespace Prumo.Worker;
 /// <summary>Requeues downloads for documents whose persisted local file no longer exists.</summary>
 public sealed class DocumentStorageRepairWorker : BackgroundService
 {
-    private static readonly TimeSpan RepairInterval = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan RepairInterval = TimeSpan.FromHours(1);
     private readonly IServiceScopeFactory scopeFactory;
     private readonly ILogger<DocumentStorageRepairWorker> logger;
 

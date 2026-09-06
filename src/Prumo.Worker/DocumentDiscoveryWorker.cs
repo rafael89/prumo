@@ -25,7 +25,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
             try
             {
                 await DiscoverAsync(stoppingToken);
-                await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
+                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
