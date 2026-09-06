@@ -76,9 +76,9 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
           <p className="mt-2 text-xs leading-5 text-slate-500">Os candidatos são definidos automaticamente a partir dos dados da carteira, da estratégia cadastrada e dos eventos relevantes.</p>
           <form className="mt-5" onSubmit={event => { event.preventDefault(); generate.mutate() }}>
             <label className="text-sm font-medium">Qual valor deseja simular?</label>
-            <div className="mt-2 flex gap-2">
-              <input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="min-w-0 flex-[1.15] rounded-xl border border-slate-300 bg-stone-50 px-4 py-3" />
-              <button disabled={pending || !amount || !positions.length} className="inline-flex cursor-pointer items-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              <input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="R$ 0,00" className="min-w-0 w-full flex-[1.15] rounded-xl border border-slate-300 bg-stone-50 px-4 py-3 sm:w-auto" />
+              <button disabled={pending || !amount || !positions.length} className="inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50 sm:w-auto">
                 <FontAwesomeIcon icon={faWandMagicSparkles} className="mr-2" />{generate.isPending ? 'Enviando...' : 'Gerar cenário'}
               </button>
             </div>
