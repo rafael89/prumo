@@ -215,7 +215,7 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
               <div className="min-w-0"><p className="text-sm font-semibold leading-5 text-slate-800">{aligned ? `${assetClassLabels[item.assetClass] ?? 'Classe'} alinhada ao ideal` : `${assetClassLabels[item.assetClass] ?? 'Classe'} ${above ? 'acima' : 'abaixo'} do ideal`}</p><p className="text-xs leading-5 text-slate-500">Atual {formatPercentage(item.currentPercentage)}% · meta {formatPercentage(item.targetPercentage)}%</p></div>
             </div>
           })}
-        </div> : <div className="mt-3 flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600"><FontAwesomeIcon icon={faCircleInfo} /></span><div><p className="text-sm font-semibold text-slate-800">Defina uma alocacao-alvo</p><p className="text-xs leading-5 text-slate-500">{overview?.healthSummary ?? 'Configure sua carteira para acompanhar este indicador.'}</p></div></div>}
+        </div> : <div className="mt-3 flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600"><FontAwesomeIcon icon={faCircleInfo} /></span><div><p className="text-sm font-semibold text-slate-800">Defina uma alocação-alvo</p><p className="text-xs leading-5 text-slate-500">{overview?.healthSummary ?? 'Configure sua carteira para acompanhar este indicador.'}</p></div></div>}
       </div>
     </div>
   </article>
