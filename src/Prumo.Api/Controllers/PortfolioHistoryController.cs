@@ -8,9 +8,9 @@ namespace Prumo.Api.Controllers;
 public sealed class PortfolioHistoryController(PortfolioHistoryService history) : ControllerBase
 {
     [HttpGet("timeline")]
-    public async Task<ActionResult<PortfolioTimelineResponse>> Timeline(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    public async Task<ActionResult<PortfolioTimelineResponse>> Timeline(Guid portfolioId, [FromQuery] int pageSize = 20, [FromQuery] DateTimeOffset? before = null, CancellationToken ct = default)
     {
-        var response = await history.GetTimelineAsync(portfolioId, Math.Max(page, 1), Math.Clamp(pageSize, 1, 200), ct);
+        var response = await history.GetTimelineAsync(portfolioId, Math.Clamp(pageSize, 1, 200), before, ct);
         return response is null ? NotFound() : Ok(response);
     }
 

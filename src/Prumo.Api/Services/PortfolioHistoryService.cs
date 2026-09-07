@@ -8,14 +8,15 @@ namespace Prumo.Api.Services;
 
 public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconciliationService? canonical = null)
 {
-    public async Task<PortfolioTimelineResponse?> GetTimelineAsync(Guid portfolioId, int page, int pageSize, CancellationToken ct)
+    public async Task<PortfolioTimelineResponse?> GetTimelineAsync(Guid portfolioId, int pageSize, DateTimeOffset? before, CancellationToken ct)
     {
-        var take = page * pageSize + 1;
-        var data = await LoadAsync(portfolioId, null, take, null, ct);
+        var take = pageSize + 1;
+        var data = await LoadAsync(portfolioId, null, take, before, ct);
         if (data is null) return null;
-        var items = data.Items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        var hasMore = data.Items.Count > page * pageSize;
-        return new PortfolioTimelineResponse(items, hasMore, page, pageSize, hasMore ? page + 1 : page);
+        var items = data.Items.Take(pageSize).ToList();
+        var hasMore = data.Items.Count > pageSize;
+        var nextBefore = hasMore ? items.LastOrDefault()?.OccurredAt?.ToString("O") : null;
+        return new PortfolioTimelineResponse(items, hasMore, pageSize, nextBefore);
     }
 
     public async Task<AssetHistoryResponse?> GetAssetHistoryAsync(Guid portfolioId, Guid assetId, int limit, CancellationToken ct)
@@ -174,7 +175,7 @@ public sealed class PortfolioHistoryService(PrumoDbContext db, TransactionReconc
     }
 }
 
-public sealed record PortfolioTimelineResponse(IReadOnlyList<PortfolioTimelineItem> Items, bool HasMore, int Page = 1, int PageSize = 20, int TotalPages = 1);
+public sealed record PortfolioTimelineResponse(IReadOnlyList<PortfolioTimelineItem> Items, bool HasMore, int PageSize = 20, string? NextBefore = null);
 public sealed record PortfolioTimelineItem(DateTimeOffset? OccurredAt, string Type, Guid? AssetId, string? Ticker, string Title, string Summary, string Source, Guid? RelatedEntityId, Guid? RelatedDocumentId, string? PreviousAssessment, string? CurrentAssessment, string? DecisionType = null, string? ConfirmationStatus = null, Guid? TransactionId = null, decimal? ContributionAmount = null, IReadOnlyList<string>? AllocationTickers = null, IReadOnlyList<decimal>? AllocationAmounts = null, IReadOnlyList<string>? Evidence = null);
 public sealed record AssessmentTransition(DateTimeOffset OccurredAt, Guid AssetId, string Ticker, string? PreviousAssessment, string CurrentAssessment, Guid InvestmentEventId, Guid AssessmentId, Guid? DocumentId, string Reason);
 public sealed record AssetHistoryResponse(Guid PortfolioId, Guid AssetId, string Ticker, string Name, IReadOnlyList<PortfolioTimelineItem> Items, IReadOnlyList<AssessmentTransition> AssessmentEvolution, SinceLastPurchaseResponse SinceLastPurchase);

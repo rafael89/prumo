@@ -121,6 +121,7 @@ function App() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [historyTotalPages, setHistoryTotalPages] = useState(1)
+  const [historyCursors, setHistoryCursors] = useState<Record<number, string | null>>({ 1: null })
   const [importProcessing, setImportProcessing] = useState(false)
   const [failedNoticeOverride, setFailedNoticeOverride] = useState<{ portfolioId: string; dismissed: boolean } | null>(null)
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
@@ -353,7 +354,7 @@ function App() {
   }
 
   return (
-      <main className={`min-h-screen bg-stone-50 text-slate-900 ${activePortfolio ? '' : 'no-portfolio'}`}>
+      <main className={`flex min-h-screen flex-col bg-stone-50 text-slate-900 ${activePortfolio ? '' : 'no-portfolio'}`}>
         <nav className="sticky top-0 z-20 border-b border-slate-200 bg-stone-50/95 px-4 py-4 backdrop-blur md:px-6">
           <div className="mx-auto flex max-w-358 flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">prumo<span className="text-amber-600">.</span></Link>
@@ -365,7 +366,7 @@ function App() {
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}
-        {route === '/history' && activePortfolio && <><div className="-mt-5"><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} onTotalPages={setHistoryTotalPages} /></div>{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={setPositionPage} /></div>}</>}
+        {route === '/history' && activePortfolio && <><div className="-mt-5"><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={(hasMore, nextBefore) => { setHistoryTotalPages(hasMore ? positionPage + 1 : positionPage); if (nextBefore) setHistoryCursors(current => ({ ...current, [positionPage + 1]: nextBefore })) }} /></div>{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') || route === '/radar' ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>
@@ -384,10 +385,10 @@ function App() {
             {activePortfolio && <div className="order-2 self-start rounded-[1.75rem] border border-amber-200 bg-amber-50/40 xl:col-start-2 xl:row-start-1 [&>section]:px-0! [&>section]:pb-0!"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
           </div>}
         </section>
-        {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-358 gap-8 px-6 pb-24 pt-3"><RadarSection portfolioId={activePortfolio.id} /></div>}
+        {route === '/radar' && activePortfolio && <div className="mx-auto grid w-full max-w-358 gap-8 px-6 pb-24 pt-3"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
-        <footer className="mt-auto border-t border-slate-200 bg-white/70 px-6 py-6">
-          <div className="mx-auto flex max-w-358 items-center justify-between gap-3 text-sm text-slate-500">
+        <footer className="mt-auto h-14 border-t border-slate-200 bg-white/70 px-6 py-0">
+          <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-3 text-sm text-slate-500">
             <p>prumo<span className="text-amber-600">.</span></p>
             <Link to="/about" aria-current={route === '/about' ? 'page' : undefined} className="font-semibold text-slate-700 transition hover:text-amber-700">Sobre</Link>
           </div>

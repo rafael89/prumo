@@ -111,7 +111,7 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
           </div>)}{completed.allocations.map(item => <div key={item.candidateKey ?? item.assetId ?? item.ticker}>
             <div className="flex justify-between text-sm"><strong>{item.ticker}</strong><span>{money(item.amount, false)}</span></div>
             <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(item.amount / completed.requestedAmount * 100, 100)}%` }} /></div>
-            <p className="mt-1 text-xs text-slate-500">{item.reason}</p>
+            {item.reason && item.reason !== item.ticker && <p className="mt-1 text-xs text-slate-500">{item.reason}</p>}
             <button type="button" onClick={() => setSelected(item)} className="mt-2 cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:border-amber-500">Registrar este aporte</button>
           </div>)}</div>
         </> : <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm text-slate-500">
