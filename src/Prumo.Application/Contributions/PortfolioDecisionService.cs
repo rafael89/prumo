@@ -15,9 +15,10 @@ public sealed record PortfolioDecision(PortfolioDecisionType DecisionType, decim
 
 public sealed class PortfolioDecisionService
 {
-    public PortfolioDecision DecideDeterministically(decimal amount, IReadOnlyList<ContributionCandidate> candidates)
+    public PortfolioDecision DecideDeterministically(decimal amount, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null)
     {
         candidates ??= Array.Empty<ContributionCandidate>();
+        investorPolicy ??= InvestorPolicy.Current;
         var exposure = PortfolioExposureAggregator.Aggregate(candidates);
         var secondary = PortfolioExposureAggregator.DetectNeeds(candidates, exposure);
         var structuralNeeds = PortfolioExposureAggregator.DetectStructuralNeeds(candidates, exposure);
@@ -54,7 +55,7 @@ public sealed class PortfolioDecisionService
         // from the projected portfolio instead of assuming 50/50.
         scenarios = scenarios.Concat(GenerateSplitScenarios(amount, candidates, needs)).ToArray();
         var ordered = scenarios.Where(x => x.Allocations.Sum(a => a.Amount) == amount && IsWithinClassBudgets(x, candidates))
-            .OrderBy(x => x, ScenarioComparer(candidates, financial)).ToArray();
+            .OrderBy(x => x, ScenarioComparer(candidates, financial, investorPolicy)).ToArray();
         if (ordered.Length == 0)
             return NoAction(amount, "Nenhum cenário respeita o orçamento disponível para as classes atuais.", secondary, exposure, MissingData(exposure), financial) with { StructuralNeeds = structuralNeeds };
         var winner = ordered[0];
@@ -83,9 +84,9 @@ public sealed class PortfolioDecisionService
     private static int SecondaryImprovement(ContributionScenario scenario) => scenario.ExposureImpacts?.Count(x => x.AfterPercentage < x.BeforePercentage) ?? 0;
     private static int RecentCount(IReadOnlyList<ContributionCandidate> candidates, ContributionScenario scenario) => scenario.Allocations.Sum(a => candidates.Single(x => x.CandidateKey == a.Key).RecentContributionCount);
 
-    private static Comparer<ContributionScenario> ScenarioComparer(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial) => Comparer<ContributionScenario>.Create((left, right) => Compare(candidates, financial, left, right));
+    private static Comparer<ContributionScenario> ScenarioComparer(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial, InvestorPolicy policy) => Comparer<ContributionScenario>.Create((left, right) => Compare(candidates, financial, left, right, policy));
 
-    private static int Compare(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial, ContributionScenario left, ContributionScenario right)
+    private static int Compare(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial, ContributionScenario left, ContributionScenario right, InvestorPolicy policy)
     {
         var result = right.Improvement.CompareTo(left.Improvement);
         if (result != 0) return result;
@@ -101,8 +102,16 @@ public sealed class PortfolioDecisionService
         if (result != 0) return result;
         result = RecentCount(candidates, left).CompareTo(RecentCount(candidates, right));
         if (result != 0) return result;
+        if (policy.PreferExistingPositionsWhenEquivalent)
+        {
+            result = ExistingPositionCount(candidates, right).CompareTo(ExistingPositionCount(candidates, left));
+            if (result != 0) return result;
+        }
         return string.Compare(string.Join("|", left.Allocations.Select(x => x.Key.Value).OrderBy(x => x, StringComparer.Ordinal)), string.Join("|", right.Allocations.Select(x => x.Key.Value).OrderBy(x => x, StringComparer.Ordinal)), StringComparison.Ordinal);
     }
+
+    private static int ExistingPositionCount(IReadOnlyList<ContributionCandidate> candidates, ContributionScenario scenario)
+        => scenario.Allocations.Count(allocation => candidates.Single(x => x.CandidateKey == allocation.Key).HasPosition);
 
     private static int QualityRank(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateFinancialEvaluation> financial, ContributionScenario scenario) => scenario.Allocations
         .Select(a => candidates.Single(x => x.CandidateKey == a.Key)).Select(x => financial.FirstOrDefault(f => f.AssetId == x.Identity.AssetId)?.Quality)

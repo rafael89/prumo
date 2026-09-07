@@ -173,6 +173,9 @@ public sealed class ContributionScenarioSelectionTests
         var contextJson = prompt[(prompt.IndexOf("Contexto JSON:\n", StringComparison.Ordinal) + "Contexto JSON:\n".Length)..];
 
         Assert.Contains("recentContributionCount", prompt);
+        Assert.Contains("investorPolicy", contextJson);
+        Assert.Contains("preferExistingPositionsWhenEquivalent", contextJson);
+        Assert.Contains("isEstablishingPosition", contextJson);
         Assert.Contains("lastContributionAt", prompt);
         Assert.Contains("financialSnapshot", contextJson);
         Assert.Contains("priceEarnings", contextJson);

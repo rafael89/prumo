@@ -98,7 +98,7 @@ public sealed class PortfolioDecisionServiceTests
     }
 
     [Fact]
-    public void Deterministic_selection_is_independent_of_candidate_order_and_origin()
+    public void Deterministic_selection_is_independent_of_candidate_order_and_prefers_existing_position_on_tie()
     {
         var external = CandidateIdentity.FromExternal(new("Brapi", "EXT11", "B3", AssetType.Stock));
         var known = CandidateIdentity.Known(Guid.NewGuid());
@@ -108,7 +108,7 @@ public sealed class PortfolioDecisionServiceTests
 
         Assert.Equal(first.RecommendedScenario!.Allocations.Select(x => x.Key), second.RecommendedScenario!.Allocations.Select(x => x.Key));
         Assert.Equal(first.DecisionEvidence!.DecisiveFactor, second.DecisionEvidence!.DecisiveFactor);
-        Assert.Equal(external.Key, first.RecommendedScenario.Allocations.Single().Key);
+        Assert.Equal(known.Key, first.RecommendedScenario.Allocations.Single().Key);
     }
 
     [Fact]

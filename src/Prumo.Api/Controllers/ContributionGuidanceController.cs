@@ -316,7 +316,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 evidenceCount = ExtractEvidenceCount(item.MetadataJson, allocations.SelectMany(x => x.evidence).Distinct().Count()),
                 fallbackReason = ExtractFallbackReason(item.MetadataJson),
                 selectionMode = ExtractSelectionMode(item.MetadataJson),
-                selectedScenarioKey = ExtractMetadataString(item.MetadataJson, "selectedScenarioKey")
+                selectedScenarioKey = ExtractMetadataString(item.MetadataJson, "selectedScenarioKey"),
+                investorPolicyId = ExtractMetadataString(item.MetadataJson, "investorPolicyId"),
+                investorPolicyVersion = ExtractMetadataString(item.MetadataJson, "investorPolicyVersion")
             },
             item.IntelligenceAvailability,
             reasoning = ContributionText.NormalizeAssetClassNames(item.Reasoning),

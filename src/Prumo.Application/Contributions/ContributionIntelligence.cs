@@ -6,6 +6,21 @@ namespace Prumo.Application.Contributions;
 
 public enum ContributionIntelligenceAvailability { IntelligenceAvailable, PartialIntelligence, InsufficientIntelligence }
 
+public sealed record InvestorPolicy(
+    string PolicyId,
+    string PolicyVersion,
+    string Strategy,
+    string InvestmentHorizon,
+    string RebalanceMode,
+    bool AllowSellingForRebalance,
+    string NewPositionBuildMode,
+    bool PreferExistingPositionsWhenEquivalent)
+{
+    public static InvestorPolicy Current { get; } = new(
+        "rafael-long-term-income", "v1", "long_term_income", "10y_plus",
+        "contributions_only", false, "gradual", true);
+}
+
 internal static class ContributionRecency
 {
     public static decimal Penalty(decimal configuredPenalty, int recentContributionCount, DateTimeOffset? lastContributionAt, bool isEstablishingPosition = false, decimal currentWeight = 100)
@@ -110,7 +125,7 @@ public static class ContributionScenarioValidator
 public interface IContributionIntelligenceProvider
 {
     Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default);
-    Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)
+    Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Este provider não oferece seleção de cenários.");
 }
 
@@ -171,7 +186,7 @@ public static class ContributionIntelligenceApplier
 
 public sealed class DeterministicContributionIntelligenceProvider : IContributionIntelligenceProvider
 {
-    public Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)
+    public Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null, CancellationToken cancellationToken = default)
         => Task.FromResult(new ContributionScenarioSelection(string.Empty, "A IA não está configurada; foi aplicado o fallback determinístico.", Array.Empty<string>(), ContributionIntelligenceAvailability.InsufficientIntelligence, new("R17.8", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
 
     public Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)

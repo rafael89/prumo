@@ -24,7 +24,7 @@ public sealed class HttpContributionIntelligenceProvider : IContributionIntellig
     public Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("O provider HTTP de contribuição usa seleção de cenários.");
 
-    public async Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default)
+    public async Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(settings.Endpoint)) throw new InvalidOperationException("Provider HTTP de IA não configurado.");
         if (string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Modelo de IA não configurado.");
@@ -33,7 +33,7 @@ public sealed class HttpContributionIntelligenceProvider : IContributionIntellig
         using var permit = await limiter.AcquireAsync(timeout.Token);
         using var request = new HttpRequestMessage(HttpMethod.Post, settings.Endpoint)
         {
-            Content = JsonContent.Create(new Request(settings.Model, ContributionIntelligencePrompt.BuildScenarioSelection(portfolioId, contributionAmount, scenarios, candidates)))
+            Content = JsonContent.Create(new Request(settings.Model, ContributionIntelligencePrompt.BuildScenarioSelection(portfolioId, contributionAmount, scenarios, candidates, investorPolicy ?? InvestorPolicy.Current)))
         };
         if (!string.IsNullOrWhiteSpace(settings.ApiKey)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey);
         using var response = await http.SendAsync(request, timeout.Token);

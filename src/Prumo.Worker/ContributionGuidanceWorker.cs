@@ -32,7 +32,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var guidance = await db.ContributionGuidances.Include(x => x.Allocations).SingleAsync(x => x.Id == job.ContributionGuidanceId, stoppingToken);
                     var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson)
                         ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
-                    var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates);
+                    var investorPolicy = InvestorPolicy.Current;
+                    var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates, investorPolicy);
                     var usedFallback = false;
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision, workItem.Baseline, workItem.Candidates);
                     if (deterministicOptions.Length == 0)
@@ -94,7 +95,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         {
                             var (selection, selected, retryCount) = deterministicOptions.Length == 1
                                 ? SingleScenarioSelection(deterministicOptions[0])
-                                : await SelectValidatedScenarioAsync(scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, stoppingToken);
+                                : await SelectValidatedScenarioAsync(scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, investorPolicy, stoppingToken);
                             var selectionMode = deterministicOptions.Length == 1 ? "single-safe-scenario" : "ai-scenario-selection";
                             if (deterministicOptions.Length == 1) metrics.RecordAiOutcome("single-safe-scenario");
                             guidance.UpdateIntelligence(selection.Metadata.Provider, selection.Metadata.Model, selection.Availability.ToString(), selection.Reason, JsonSerializer.Serialize(new
@@ -111,6 +112,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 usedFallback = false,
                                 selectionMode,
                                 retryCount,
+                                investorPolicyId = investorPolicy.PolicyId,
+                                investorPolicyVersion = investorPolicy.PolicyVersion,
                                 decisionType = deterministicDecision.DecisionType.ToString(),
                                 primaryNeed = deterministicDecision.PrimaryNeed,
                                 structuralNeeds = deterministicDecision.StructuralNeeds,
@@ -174,7 +177,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
+            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, investorPolicyId = InvestorPolicy.Current.PolicyId, investorPolicyVersion = InvestorPolicy.Current.PolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId!.Value, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }
@@ -260,6 +263,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         decimal amount,
         IReadOnlyList<ContributionScenarioOption> scenarios,
         IReadOnlyList<ContributionCandidate> candidates,
+        InvestorPolicy investorPolicy,
         CancellationToken cancellationToken)
     {
         Exception? last = null;
@@ -267,7 +271,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         {
             try
             {
-                var selection = await provider.SelectScenarioAsync(portfolioId, amount, scenarios, candidates, cancellationToken);
+                var selection = await provider.SelectScenarioAsync(portfolioId, amount, scenarios, candidates, investorPolicy, cancellationToken);
                 var selected = ContributionScenarioValidator.Select(selection, scenarios, amount, candidates);
                 if (!HasGroundedReason(selection, selected))
                     throw new InvalidOperationException("A IA retornou uma justificativa insuficiente para o cenário selecionado.");
