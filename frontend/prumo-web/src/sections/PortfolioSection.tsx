@@ -123,11 +123,11 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                               <p className="text-sm font-semibold">{position.ticker}</p>
                               <p className="text-xs text-slate-500">{position.name}</p>
                             </div>
-                            <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
-                            <input value={editForm.quantity} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, quantity: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
-                            <input value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
-                            <div className="text-right text-sm text-slate-500">{formatCurrency(position.currentValue, privacyHidden)}</div>
-                            <div className="text-right text-sm text-slate-500">{position.portfolioWeight.toFixed(2)}%</div>
+                            <div className="text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
+                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span><input aria-label="Quantidade" value={editForm.quantity} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, quantity: event.target.value }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
+                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Preço ref.</span><input aria-label="Preço de referência" value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
+                            <div className="text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Valor atual</span>{formatCurrency(position.currentValue, privacyHidden)}</div>
+                            <div className="text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Peso</span>{position.portfolioWeight.toFixed(2)}%</div>
                             <div className="flex items-center justify-end gap-2 md:justify-center">
                               <button type="submit" aria-label="Salvar posição" title="Salvar posição" disabled={updatePosition.isPending} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"><FontAwesomeIcon icon={faCheck} /></button>
                               <button type="button" aria-label="Cancelar edição" title="Cancelar edição" onClick={() => setEditingPositionId(null)} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"><FontAwesomeIcon icon={faBan} /></button>
@@ -139,11 +139,11 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                               <p className="truncate text-sm font-semibold">{position.ticker}</p>
                               <p className="break-words text-xs text-slate-500">{position.name}</p>
                             </div>
-                            <div className="min-w-0 text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
-                            <div className="min-w-0 text-right text-sm text-slate-600">{formatNumber(position.quantity)}</div>
-                            <div className="min-w-0 text-sm text-slate-600 md:text-right">{formatCurrency(position.currentPrice, privacyHidden)}</div>
-                            <div className="min-w-0 text-right text-sm text-slate-900">{formatCurrency(position.currentValue, privacyHidden)}</div>
-                            <div className="min-w-0 text-sm text-slate-600 md:text-right">{position.portfolioWeight.toFixed(2)}%</div>
+                            <div className="min-w-0 text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
+                            <div className="min-w-0 text-right text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span>{formatNumber(position.quantity)}</div>
+                            <div className="min-w-0 text-sm text-slate-600 md:text-right"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Preço ref.</span>{formatCurrency(position.currentPrice, privacyHidden)}</div>
+                            <div className="min-w-0 text-right text-sm text-slate-900"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Valor atual</span>{formatCurrency(position.currentValue, privacyHidden)}</div>
+                            <div className="min-w-0 text-sm text-slate-600 md:text-right"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Peso</span>{position.portfolioWeight.toFixed(2)}%</div>
                             <div className="flex justify-end gap-2 md:justify-center">
                               <button type="button" aria-label="Editar posição" title="Editar posição" onClick={() => startEditing(position)} className="h-9 w-9 rounded-full border border-slate-300 text-slate-700 hover:border-amber-400 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faPen} /></button>
                               <button type="button" aria-label="Excluir posição" title="Excluir posição" onClick={() => setPositionToDelete(position)} disabled={deletePosition.isPending} className="h-9 w-9 rounded-full border border-rose-200 text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-60"><FontAwesomeIcon icon={faTrash} /></button>

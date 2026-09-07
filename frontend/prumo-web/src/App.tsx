@@ -387,12 +387,12 @@ function App() {
         {route === '/radar' && activePortfolio && <div className="mx-auto grid max-w-358 gap-8 px-6 pb-24 pt-3"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
         <footer className="mt-auto border-t border-slate-200 bg-white/70 px-6 py-6">
-          <div className="mx-auto flex max-w-358 flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mx-auto flex max-w-358 items-center justify-between gap-3 text-sm text-slate-500">
             <p>prumo<span className="text-amber-600">.</span></p>
             <Link to="/about" aria-current={route === '/about' ? 'page' : undefined} className="font-semibold text-slate-700 transition hover:text-amber-700">Sobre</Link>
           </div>
         </footer>
-        {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-5 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faArrowUp} /></button>}
+        {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-16 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 sm:bottom-5"><FontAwesomeIcon icon={faArrowUp} /></button>}
       </main>
   )
 }

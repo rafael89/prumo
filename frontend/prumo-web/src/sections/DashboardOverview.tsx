@@ -120,6 +120,10 @@ function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' }).format(new Date(value))
+}
+
 function formatRelativeDate(value: string | null) {
   if (!value) return 'Sem data informada'
   const date = new Date(value)
@@ -234,15 +238,15 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
     {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
     </div> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 cursor-pointer gap-3 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
-        <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span>
-        <div className="min-w-0">
+      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 grid-cols-2 cursor-pointer gap-3 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
+        <span className={`order-1 w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span>
+        <div className="order-3 col-span-2 min-w-0 sm:order-none sm:col-span-1">
           <h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
           {item.whyItMatters && <p className="mt-1 text-xs leading-5 text-slate-600">{item.whyItMatters}</p>}
         </div>
-        {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
-      </button> : <div key={item.assessmentId} className="grid min-w-0 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
-        <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span><div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>{item.whyItMatters && <p className="mt-1 text-xs leading-5 text-slate-600">{item.whyItMatters}</p>}</div>{formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
+        {formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-none sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
+      </button> : <div key={item.assessmentId} className="grid min-w-0 grid-cols-2 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
+        <span className={`order-1 w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span><div className="order-3 col-span-2 min-w-0 sm:order-none sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>{item.whyItMatters && <p className="mt-1 text-xs leading-5 text-slate-600">{item.whyItMatters}</p>}</div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-none sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
     </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isSeen={selectedItem.userState === 1 || selectedItem.userState === 'Seen'} isResolved={selectedItem.status === 3 || selectedItem.status === 'Closed'} onClose={() => setSelectedItem(null)} onMarkSeen={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: false })} onResolve={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: true })} actionPending={statusMutation.isPending} />}
   </article>
@@ -323,7 +327,7 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
     <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><h2 id="recent-analysis-title" className="mt-2 text-xl font-semibold text-slate-950">Análise de <span className="text-amber-700">{item.asset}</span></h2></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-      {analysis.data && <div className="mb-5 grid gap-2 border-b border-slate-200 pb-4 pt-4 text-sm text-slate-600 sm:grid-cols-2"><span><strong>Publicado em:</strong> {formatDateTime(analysis.data.publishedAt)}</span><span><strong>Analisado em:</strong> {formatDateTime(analysis.data.createdAt)}</span></div>}
+      {analysis.data && <div className="mb-5 grid grid-cols-2 gap-1 border-b border-slate-200 pb-4 pt-4 text-[11px] leading-4 text-slate-600"><span className="min-w-0"><strong>Publicado:</strong> {formatDate(analysis.data.publishedAt)}</span><span className="min-w-0"><strong>Analisado:</strong> {formatDate(analysis.data.createdAt)}</span></div>}
       {analysis.isLoading && <p className="py-8 text-sm text-slate-500">Carregando análise...</p>}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
       {!analysis.isLoading && !analysis.isError && !analysis.data && <p className="mt-5 rounded-xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">Nenhuma análise validada foi encontrada para este documento ainda.</p>}

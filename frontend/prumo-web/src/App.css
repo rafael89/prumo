@@ -16,4 +16,13 @@
 .nav-scroll::-webkit-scrollbar { display: none; }
 @media (max-width: 639px) {
   [data-radar-actions] button { min-width: 0; gap: .375rem; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; justify-content: center; }
+  #radar > div:nth-child(3) { margin-top: 4.5rem; }
+  div:has(> #b3-file) { gap: .5rem; }
+  div:has(> #b3-file) > label,
+  div:has(> #b3-file) > button { min-width: 0; flex: 1 1 0%; justify-content: center; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; white-space: nowrap; }
+  #b3-file ~ span { flex-basis: 100%; }
+  [aria-labelledby="recent-analysis-title"] .space-y-5 > .grid:first-child { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  #radar > div:nth-child(3) button,
+  #radar article button,
+  [data-radar-actions] button { min-height: 2.25rem; padding: .5rem .75rem; font-size: .75rem; line-height: 1rem; gap: .5rem; }
 }
