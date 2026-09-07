@@ -248,6 +248,12 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
 }
 
 export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResolved = false, onClose, onMarkSeen, onResolve, onReopen, actionPending = false }: { item: DashboardAssessment; portfolioId: string; isSeen?: boolean; isResolved?: boolean; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [])
+
   const [markedSeen, setMarkedSeen] = useState(false)
   const analysis = useQuery({
     queryKey: ['dashboard-document-analysis', item.documentId, portfolioId],

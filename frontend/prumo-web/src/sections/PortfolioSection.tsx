@@ -134,16 +134,16 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                             </div>
                           </form>
                         ) : (
-                          <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
-                            <div className="col-span-2 md:col-span-1">
-                              <p className="text-sm font-semibold">{position.ticker}</p>
-                              <p className="text-xs text-slate-500">{position.name}</p>
+                          <div className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
+                            <div className="col-span-2 min-w-0 md:col-span-1">
+                              <p className="truncate text-sm font-semibold">{position.ticker}</p>
+                              <p className="break-words text-xs text-slate-500">{position.name}</p>
                             </div>
-                            <div className="text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
-                            <div className="text-right text-sm text-slate-600">{formatNumber(position.quantity)}</div>
-                            <div className="text-right text-sm text-slate-600">{formatCurrency(position.currentPrice, privacyHidden)}</div>
-                            <div className="text-right text-sm text-slate-900">{formatCurrency(position.currentValue, privacyHidden)}</div>
-                            <div className="text-right text-sm text-slate-600">{position.portfolioWeight.toFixed(2)}%</div>
+                            <div className="min-w-0 text-sm text-slate-600">{assetTypeLabels[position.assetType]}</div>
+                            <div className="min-w-0 text-right text-sm text-slate-600">{formatNumber(position.quantity)}</div>
+                            <div className="min-w-0 text-sm text-slate-600 md:text-right">{formatCurrency(position.currentPrice, privacyHidden)}</div>
+                            <div className="min-w-0 text-right text-sm text-slate-900">{formatCurrency(position.currentValue, privacyHidden)}</div>
+                            <div className="min-w-0 text-sm text-slate-600 md:text-right">{position.portfolioWeight.toFixed(2)}%</div>
                             <div className="flex justify-end gap-2 md:justify-center">
                               <button type="button" aria-label="Editar posição" title="Editar posição" onClick={() => startEditing(position)} className="h-9 w-9 rounded-full border border-slate-300 text-slate-700 hover:border-amber-400 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500"><FontAwesomeIcon icon={faPen} /></button>
                               <button type="button" aria-label="Excluir posição" title="Excluir posição" onClick={() => setPositionToDelete(position)} disabled={deletePosition.isPending} className="h-9 w-9 rounded-full border border-rose-200 text-rose-700 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:opacity-60"><FontAwesomeIcon icon={faTrash} /></button>

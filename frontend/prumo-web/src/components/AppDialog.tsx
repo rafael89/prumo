@@ -10,7 +10,12 @@ export function AppDialog({ title, description, fields = [], confirmLabel, cance
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+    }
   }, [onClose])
   const submit = (event: FormEvent) => { event.preventDefault(); onConfirm(values) }
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="app-dialog-title" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>

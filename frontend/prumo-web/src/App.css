@@ -4,17 +4,6 @@
   display: none;
 }
 
-label:has(> input[inputmode="decimal"]) {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  white-space: normal;
-}
-
-div:has(> label > input[inputmode="decimal"]) {
-  grid-template-columns: minmax(0, 1.35fr) repeat(4, minmax(0, 1fr));
-}
-
 @media (min-width: 1280px) {
   main .target-allocation-frame > section {
     max-width: 72rem;
@@ -23,3 +12,5 @@ div:has(> label > input[inputmode="decimal"]) {
   }
 }
 .document-job-details { margin-top: 2rem; }
+.nav-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.nav-scroll::-webkit-scrollbar { display: none; }
