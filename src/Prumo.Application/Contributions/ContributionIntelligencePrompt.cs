@@ -5,7 +5,7 @@ namespace Prumo.Application.Contributions;
 
 public static class ContributionIntelligencePrompt
 {
-    public const string Version = "r4-contribution-v6";
+    public const string Version = "r4-contribution-v9";
 
     public static string BuildScenarioSelection(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates)
     {
@@ -17,6 +17,8 @@ public static class ContributionIntelligencePrompt
             scenario.Improvement,
             primaryNeed = scenario.PrimaryNeed,
             structuralReasons = scenario.StructuralReasons ?? Array.Empty<string>(),
+            deviationBefore = scenario.DeviationBefore,
+            deviationAfter = scenario.DeviationAfter,
             allocationType = scenario.Allocations.Count switch { 0 => "no-action", 1 => "concentrated", _ => "distributed" },
             allocations = scenario.Allocations.Select(allocation => new
             {
@@ -37,7 +39,12 @@ public static class ContributionIntelligencePrompt
             classBudget = candidate.ClassBudget,
             hasBlock = candidate.HasBlock,
             hasPosition = candidate.HasPosition,
+            isEstablishingPosition = candidate.IsEstablishingPosition,
             decisionScore = candidate.DecisionScore,
+            allocationNeedScore = candidate.AllocationNeedScore,
+            diversificationScore = candidate.DiversificationScore,
+            underweightScore = candidate.UnderweightScore,
+            recentContributionPenalty = candidate.RecentContributionPenalty,
             sector = candidate.Sector,
             sectorWeightWithinClass = candidate.SectorWeightWithinClass,
             recentContributionCount = candidate.RecentContributionCount,
@@ -51,9 +58,14 @@ public static class ContributionIntelligencePrompt
             listingCountryCode = candidate.ListingCountryCode,
             tradingCurrency = candidate.TradingCurrency,
             financialSnapshot = candidate.FinancialSnapshot,
-            assessments = candidate.CurrentAssessments
+            assessments = candidate.CurrentAssessments,
+            pendingEvents = candidate.CurrentAssessments
+                .Where(assessment => assessment.ActionRequirement != "None")
+                .Select(assessment => new { assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior })
         });
         var instructions = """
+            Quando isEstablishingPosition=true, trate o ativo como uma posiÃ§Ã£o em fase inicial: reduza a penalizaÃ§Ã£o por aporte recente se a classe ainda estiver abaixo do target, mas respeite integralmente bloqueios, eventos e limites.
+            Considere a diversificaÃ§Ã£o marginal em relaÃ§Ã£o a esta carteira, nÃ£o a qualidade isolada do ativo. Considere pendingEvents e assessments como contexto de eventos em andamento; um ativo afetado por evento nÃ£o deve receber novo aporte automaticamente quando a exposiÃ§Ã£o projetada ou a orientaÃ§Ã£o do evento recomendar cautela.
             A ordem de decisÃ£o Ã© obrigatÃ³ria: (1) atender a maior necessidade de classe e reduzir o desvio agregado; (2) evitar concentraÃ§Ã£o severa; (3) melhorar exposiÃ§Ãµes secundÃ¡rias; (4) favorecer diversificaÃ§Ã£o quando o benefÃ­cio marginal justificar; (5) penalizar aportes recentes quando houver alternativa equivalente; (6) usar qualidade financeira e valuation somente como desempate com evidÃªncia explÃ­cita.
             O primeiro cenÃ¡rio Ã© o cenÃ¡rio-base determinÃ­stico. Escolha outro somente se houver uma razÃ£o estrutural especÃ­fica. NÃ£o divida o aporte automaticamente. Prefira uma distribuiÃ§Ã£o parcial segura a uma distribuiÃ§Ã£o completa estruturalmente pior e escolha scenario:no-action quando nenhum benefÃ­cio mensurÃ¡vel puder ser justificado.
             Se escolher uma alternativa diferente do cenÃ¡rio-base, a reason deve mencionar o critÃ©rio estrutural que justificou a troca. A reason deve mencionar pelo menos um fato real entre necessidade de classe, desvio, concentraÃ§Ã£o, diversificaÃ§Ã£o, exposiÃ§Ã£o secundÃ¡ria, aporte recente ou assessment; nÃ£o use justificativas genÃ©ricas.

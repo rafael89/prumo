@@ -6,6 +6,20 @@ namespace Prumo.Application.Contributions;
 
 public enum ContributionIntelligenceAvailability { IntelligenceAvailable, PartialIntelligence, InsufficientIntelligence }
 
+internal static class ContributionRecency
+{
+    public static decimal Penalty(decimal configuredPenalty, int recentContributionCount, DateTimeOffset? lastContributionAt, bool isEstablishingPosition = false, decimal currentWeight = 100)
+    {
+        var basePenalty = configuredPenalty > 0 ? configuredPenalty : recentContributionCount > 0 ? 25m : 0m;
+        if (basePenalty <= 0 || lastContributionAt is null) return basePenalty;
+
+        var days = Math.Max(0, (DateTimeOffset.UtcNow - lastContributionAt.Value).TotalDays);
+        var factor = days <= 30 ? 1m : days <= 90 ? .67m : days <= 180 ? .33m : 0m;
+        var adjustedFactor = isEstablishingPosition && currentWeight < 2m ? factor * .25m : factor;
+        return decimal.Round(basePenalty * adjustedFactor, 2);
+    }
+}
+
 public sealed record ContributionCandidate(
     CandidateIdentity Identity,
     string Ticker,
@@ -37,6 +51,7 @@ public sealed record ContributionCandidate(
     string? TradingCurrency = null,
     CandidateFinancialSnapshot? FinancialSnapshot = null)
 {
+    public bool IsEstablishingPosition { get; init; }
     public string? ExternalName { get; init; }
     public string? ExternalSourceReference { get; init; }
     public Guid AssetId => Identity.AssetId ?? throw new InvalidOperationException("Este candidato não possui AssetId persistido.");
@@ -44,7 +59,7 @@ public sealed record ContributionCandidate(
     public decimal DecisionScore => AllocationNeedScore * 0.25m
         + (DiversificationScore > 0 ? DiversificationScore : Math.Clamp(100m - SectorWeightWithinClass, 0, 100)) * 0.20m
         + UnderweightScore * 0.15m
-        + (100m - (RecentContributionPenalty > 0 ? RecentContributionPenalty : RecentContributionCount > 0 ? 25m : 0m)) * 0.15m;
+        + (100m - ContributionRecency.Penalty(RecentContributionPenalty, RecentContributionCount, LastContributionAt, IsEstablishingPosition, CurrentWeight)) * 0.15m;
 }
 public sealed record KnownGeographicExposure(string CountryCode, decimal? Percentage);
 public sealed record KnownCurrencyExposure(string CurrencyCode, decimal? Percentage);
@@ -63,7 +78,9 @@ public sealed record ContributionScenarioOption(
     decimal Improvement,
     string Summary,
     string? PrimaryNeed = null,
-    IReadOnlyList<string>? StructuralReasons = null);
+    IReadOnlyList<string>? StructuralReasons = null,
+    decimal DeviationBefore = 0,
+    decimal DeviationAfter = 0);
 public sealed record ContributionScenarioSelection(string SelectedScenarioKey, string Reason, IReadOnlyList<string> Considerations, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
 public sealed record ContributionGuidanceWorkItem(ContributionGuidance Baseline, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<ContributionCandidate> Candidates);
 

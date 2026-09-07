@@ -31,10 +31,11 @@ public sealed record GuidancePosition(
     string? TradingCurrency = null,
     CandidateFinancialSnapshot? FinancialSnapshot = null)
 {
+    public bool IsEstablishingPosition { get; init; }
     public decimal DecisionScore => AllocationNeedScore * 0.25m
         + (DiversificationScore > 0 ? DiversificationScore : Math.Clamp(100m - SectorWeightWithinClass, 0, 100)) * 0.20m
         + UnderweightScore * 0.15m
-        + (100m - (RecentContributionPenalty > 0 ? RecentContributionPenalty : RecentContributionCount > 0 ? 25m : 0m)) * 0.15m;
+        + (100m - ContributionRecency.Penalty(RecentContributionPenalty, RecentContributionCount, LastContributionAt, IsEstablishingPosition, CurrentWeight)) * 0.15m;
 }
 public sealed record GuidanceAssessment(Guid AssetId, CapitalDecisionImpact Impact, AssessmentStatus Status, string? Evidence, string AssessmentVersion, AttentionPriority AttentionPriority = AttentionPriority.Low, ActionRequirement ActionRequirement = ActionRequirement.None, string Summary = "", string WhyItMatters = "", string SuggestedBehavior = "", decimal Confidence = 0, Guid AssessmentId = default);
 public sealed record ContributionGuidanceInput(Guid PortfolioId, decimal ContributionAmount, PortfolioHealthResult Health, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<GuidanceAssessment> Assessments);

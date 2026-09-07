@@ -42,7 +42,13 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var targetKey = TargetAllocationKeyCalculator.Calculate(targets)!;
         var amount = decimal.Round(request.Amount, 2);
         var recentSince = DateTimeOffset.UtcNow.Subtract(RecentContributionWindow);
-        var recentPurchases = (await (canonical ?? new TransactionReconciliationService(db)).Canonical(portfolioId, ct))
+        var canonicalTransactions = await (canonical ?? new TransactionReconciliationService(db)).Canonical(portfolioId, ct);
+        var purchaseHistoryByAsset = canonicalTransactions
+            .Where(x => x.Type == nameof(PortfolioTransactionType.Buy))
+            .SelectMany(transaction => transaction.Items.Select(item => item.AssetId))
+            .GroupBy(assetId => assetId)
+            .ToDictionary(group => group.Key, group => group.Count());
+        var recentPurchases = canonicalTransactions
             .Where(x => x.Type == nameof(PortfolioTransactionType.Buy) && x.OccurredAt >= recentSince)
             .ToList();
         var recentByAsset = recentPurchases.SelectMany(transaction => transaction.Items.Select(item => new
@@ -84,6 +90,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 var diversificationScore = sector.Length == 0 ? 0 : Math.Clamp(100m - sectorWeight, 0, 100);
                 var underweightScore = Math.Clamp(100m - (total == 0 ? 0 : x.CurrentValue!.Value / total * 100m), 0, 100);
                 var recentPenalty = recent is null ? 0 : Math.Clamp(25m + recent.Amount / Math.Max(total, 1m) * 100m, 0, 100);
+                var isEstablishing = recent is not null
+                    && purchaseHistoryByAsset.GetValueOrDefault(x.AssetId) <= 1
+                    && total > 0
+                    && x.CurrentValue!.Value / total * 100m < 2m;
                 return new GuidancePosition(x.AssetId, asset.Ticker, asset.AssetClass, x.CurrentValue!.Value,
                     total == 0 ? 0 : x.CurrentValue.Value / total * 100m, asset.AssetType, asset.Sector,
                     recent?.Amount ?? 0, recent?.Count ?? 0, recent?.LastOccurredAt, sectorWeight, true,
@@ -92,7 +102,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
                     asset.EconomicCurrencyExposureCoverage,
                     asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
-                    asset.ListingCountryCode, asset.TradingCurrency, DocumentFinancialQualityResolver.Resolve(asset));
+                    asset.ListingCountryCode, asset.TradingCurrency, DocumentFinancialQualityResolver.Resolve(asset))
+                {
+                    IsEstablishingPosition = isEstablishing
+                };
             }).ToList();
         var positionAssetIds = portfolio.Positions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
@@ -164,7 +177,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 position.AllocationNeedScore, position.DiversificationScore, position.UnderweightScore,
                 position.RecentContributionPenalty, position.SectorCategory, position.GeographicExposureCoverage,
                 position.GeographicExposures, position.EconomicCurrencyExposureCoverage, position.CurrencyExposures,
-                position.ListingCountryCode, position.TradingCurrency, position.FinancialSnapshot);
+                position.ListingCountryCode, position.TradingCurrency, position.FinancialSnapshot)
+            {
+                IsEstablishingPosition = position.IsEstablishingPosition
+            };
         }).ToArray();
 
         var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, intelligenceContextKey, ContributionEngineVersion, "pending-ai", "pending", "Pending", "Análise em andamento: o Prumo está avaliando os candidatos e os limites da carteira.", "{}");

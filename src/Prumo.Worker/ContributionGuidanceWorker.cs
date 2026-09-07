@@ -104,6 +104,9 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 promptVersion = selection.Metadata.PromptVersion,
                                 generatedAt = selection.Metadata.GeneratedAt,
                                 selectedScenarioKey = selected.ScenarioKey,
+                                selectedScenarioDeviationBefore = selected.DeviationBefore,
+                                selectedScenarioDeviationAfter = selected.DeviationAfter,
+                                selectedScenarioImprovement = selected.Improvement,
                                 deterministicBaselineScenarioKey = deterministicOptions[0].ScenarioKey,
                                 usedFallback = false,
                                 selectionMode,
@@ -230,8 +233,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 .Where(x => candidateKeys.Contains(x.Key))
                 .ToArray();
             options.Add(baselineAllocations.Length > 0
-                ? new ContributionScenarioOption("scenario:baseline-partial", baselineAllocations, 0m, "DistribuiÃ§Ã£o parcial segura calculada pelas regras da carteira.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "Preserva apenas a parte do aporte que respeita os limites conhecidos." })
-                : new ContributionScenarioOption("scenario:no-action", Array.Empty<CandidateAllocation>(), 0m, "Nenhum aporte em ativo Ã© seguro com os dados e limites atuais.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "NÃ£o hÃ¡ benefÃ­cio mensurÃ¡vel suficiente para justificar um aporte." }));
+                ? new ContributionScenarioOption("scenario:baseline-partial", baselineAllocations, 0m, "DistribuiÃ§Ã£o parcial segura calculada pelas regras da carteira.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "Preserva apenas a parte do aporte que respeita os limites conhecidos." }, 0m, 0m)
+                : new ContributionScenarioOption("scenario:no-action", Array.Empty<CandidateAllocation>(), 0m, "Nenhum aporte em ativo Ã© seguro com os dados e limites atuais.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "NÃ£o hÃ¡ benefÃ­cio mensurÃ¡vel suficiente para justificar um aporte." }, 0m, 0m));
             return options.ToArray();
         }
         var primaryNeed = decision.PrimaryNeed?.AssetClass.ToString();
@@ -248,7 +251,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 .Select(x => $"Reduz a exposição conhecida em {x.Dimension} ({x.Key}).") ?? Array.Empty<string>())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        return new(key, scenario.Allocations, scenario.Improvement, summary, primaryNeed, structuralReasons);
+        return new(key, scenario.Allocations, scenario.Improvement, summary, primaryNeed, structuralReasons, scenario.DeviationBefore, scenario.DeviationAfter);
     }
 
     private async Task<(ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount)> SelectValidatedScenarioAsync(

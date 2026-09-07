@@ -101,6 +101,22 @@ public sealed class ContributionScenarioSelectionTests
     }
 
     [Fact]
+    public void Establishing_position_has_reduced_recent_contribution_penalty()
+    {
+        var recent = DateTimeOffset.UtcNow.AddDays(-10);
+        var established = Candidate("AAA3") with
+        {
+            CurrentWeight = 1m,
+            RecentContributionPenalty = 60m,
+            RecentContributionCount = 1,
+            LastContributionAt = recent
+        };
+        var establishing = established with { IsEstablishingPosition = true };
+
+        Assert.True(establishing.DecisionScore > established.DecisionScore);
+    }
+
+    [Fact]
     public void Ai_can_select_exact_prevalidated_split()
     {
         var first = Candidate("AAA3");
