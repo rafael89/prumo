@@ -73,6 +73,34 @@ public sealed class ContributionScenarioSelectionTests
     }
 
     [Fact]
+    public void Ai_can_select_a_safe_partial_scenario()
+    {
+        var candidate = Candidate("AAA3");
+        var partial = new ContributionScenarioOption("scenario:baseline-partial", new[]
+        {
+            new CandidateAllocation(candidate.AssetId, 40m)
+        }, 0m, "partial");
+
+        var selected = ContributionScenarioValidator.Select(
+            Selection(partial.ScenarioKey, "O restante ficou sem alocação por limite seguro.", "AI", "model-x"),
+            new[] { partial }, 100m, new[] { candidate });
+
+        Assert.Equal(40m, selected.Allocations.Single().Amount);
+    }
+
+    [Fact]
+    public void Ai_can_return_a_valid_no_action_scenario()
+    {
+        var noAction = new ContributionScenarioOption("scenario:no-action", Array.Empty<CandidateAllocation>(), 0m, "no safe allocation");
+
+        var selected = ContributionScenarioValidator.Select(
+            Selection(noAction.ScenarioKey, "Nenhum candidato atende aos limites atuais.", "AI", "model-x"),
+            new[] { noAction }, 100m, Array.Empty<ContributionCandidate>());
+
+        Assert.Empty(selected.Allocations);
+    }
+
+    [Fact]
     public void Ai_can_select_exact_prevalidated_split()
     {
         var first = Candidate("AAA3");
@@ -121,13 +149,20 @@ public sealed class ContributionScenarioSelectionTests
             LastContributionAt = DateTimeOffset.UtcNow.AddDays(-10),
             FinancialSnapshot = new CandidateFinancialSnapshot(DateOnly.FromDateTime(DateTime.UtcNow), FinancialPeriodType.Annual, DateTimeOffset.UtcNow, FinancialDataSource.Provider, PriceEarnings: 10m)
         };
-        var prompt = ContributionIntelligencePrompt.BuildScenarioSelection(Guid.NewGuid(), 100m, new[] { Option("scenario:deterministic", candidate, 100m) }, new[] { candidate });
+        var prompt = ContributionIntelligencePrompt.BuildScenarioSelection(Guid.NewGuid(), 100m, new[]
+        {
+            new ContributionScenarioOption("scenario:deterministic", new[] { new CandidateAllocation(candidate.AssetId, 100m) }, 10m,
+                "reference", "Fii", new[] { "Reduz o desvio da classe.", "Não amplia concentração severa." })
+        }, new[] { candidate });
         var contextJson = prompt[(prompt.IndexOf("Contexto JSON:\n", StringComparison.Ordinal) + "Contexto JSON:\n".Length)..];
 
         Assert.Contains("recentContributionCount", prompt);
         Assert.Contains("lastContributionAt", prompt);
         Assert.Contains("financialSnapshot", contextJson);
         Assert.Contains("priceEarnings", contextJson);
+        Assert.Contains("primaryNeed", contextJson);
+        Assert.Contains("structuralReasons", contextJson);
+        Assert.Contains("concentra", contextJson);
     }
 
     private static ContributionCandidate Candidate(string ticker)

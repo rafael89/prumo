@@ -9,6 +9,7 @@ public sealed class WorkerMetrics
     private readonly Meter meter = new("Prumo.Worker", "1.0");
     private readonly Counter<long> completed;
     private readonly Counter<long> failed;
+    private readonly Counter<long> aiOutcomes;
     private readonly Histogram<double> durationMilliseconds;
     private readonly Dictionary<string, long> backlog = [];
     private readonly object backlogLock = new();
@@ -17,6 +18,7 @@ public sealed class WorkerMetrics
     {
         completed = meter.CreateCounter<long>("prumo.worker.jobs.completed");
         failed = meter.CreateCounter<long>("prumo.worker.jobs.failed");
+        aiOutcomes = meter.CreateCounter<long>("prumo.worker.ai.outcomes");
         durationMilliseconds = meter.CreateHistogram<double>("prumo.worker.job.duration", "ms");
         meter.CreateObservableGauge("prumo.worker.jobs.backlog", ObserveBacklog);
     }
@@ -38,6 +40,9 @@ public sealed class WorkerMetrics
         => RecordFailed(type.ToString(), duration);
 
     public void RecordFailed(string type, TimeSpan duration) => Record(failed, type, duration);
+
+    public void RecordAiOutcome(string outcome)
+        => aiOutcomes.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
 
     private void Record(Counter<long> counter, string type, TimeSpan duration)
     {

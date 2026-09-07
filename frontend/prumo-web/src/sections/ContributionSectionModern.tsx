@@ -7,7 +7,7 @@ import { apiBaseUrl } from '../api/client'
 
 type Allocation = { assetId?: string | null; origin?: string; candidateKey?: string | null; ticker: string; assetClass: number; amount: number; reason: string }
 type AvoidedCandidate = { assetId: string; ticker: string; assetClass: number; reason: string }
-type AnalysisTrace = { generatedAt?: string; engineVersion?: string; provider?: string; model?: string; policyVersion?: string; assessmentVersions?: string[]; evidenceCount?: number; fallbackReason?: string | null }
+type AnalysisTrace = { generatedAt?: string; engineVersion?: string; provider?: string; model?: string; policyVersion?: string; assessmentVersions?: string[]; evidenceCount?: number; fallbackReason?: string | null; selectionMode?: string | null; selectedScenarioKey?: string | null; retryCount?: number }
 type ClassAllocation = { assetClass: number; amount: number; reason: string }
 type DecisionNeed = { type: string; dimension: string; key?: string | null; severity: number; confidence: string; coverage: string; reasons: string[] }
 type FinancialEvaluation = { assetId: string; quality: { category: string; freshness: string; signals: string[]; concerns: string[] }; valuation: { assessment: string; metrics: { metric: string; value: number }[] } }
@@ -58,8 +58,22 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
   const pending = generate.isPending || Boolean(current?.jobStatus && !['Completed', 'Failed'].includes(current.jobStatus))
   const completed = current?.jobStatus === 'Completed' && current.guidanceId !== confirmedGuidanceId ? current : null
   const isFallback = completed?.intelligenceAvailability === 'InsufficientIntelligence'
-  const isAiAssisted = completed?.intelligenceAvailability === 'IntelligenceAvailable' && completed.analysis?.provider !== 'deterministic'
+  const isAiAssisted = completed?.intelligenceAvailability === 'IntelligenceAvailable' && completed.analysis?.provider !== 'deterministic' && !['scenario:no-action', 'scenario:baseline-partial'].includes(completed.analysis?.selectedScenarioKey ?? '')
+  const isNoAction = Boolean(completed && completed.allocations.length === 0 && completed.classAllocations?.length === 0)
+  const isPartial = Boolean(completed && completed.allocatedAmount > 0 && completed.allocatedAmount < completed.requestedAmount)
+  const contextMessage = isFallback
+    ? completed?.analysis?.fallbackReason ?? 'A análise por IA não foi concluída; o motor determinístico preservou a distribuição segura.'
+    : isNoAction
+      ? 'A IA analisou os candidatos e concluiu que nenhum aporte em ativo atende aos limites atuais com segurança.'
+      : isPartial
+        ? 'A IA analisou a distribuição parcial segura; o valor restante permaneceu sem alocação porque não havia outra alternativa elegível.'
+        : completed?.analysis?.selectionMode === 'single-safe-scenario'
+          ? 'Havia apenas um cenário seguro pré-validado; ele foi aplicado diretamente pelo motor de regras.'
+          : isAiAssisted
+            ? 'O Prumo analisou os cenários válidos e selecionou esta alternativa com assistência de IA.'
+            : 'A recomendação foi calculada pelo motor determinístico do Prumo.'
   const failed = current?.jobStatus === 'Failed'
+  void contextMessage
 
   const confirm = useMutation({
     mutationFn: (value: { quantity: number; unitPrice: number }) => api(`/api/portfolios/${portfolioId}/contributions`, { guidanceId: completed?.guidanceId, items: completed?.decision?.decisionType === 'SplitContribution' ? completed.allocations.map(allocation => ({ assetId: allocation.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: allocation.candidateKey, quantity: allocation.amount / value.unitPrice, unitPrice: value.unitPrice })) : [{ assetId: selected?.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: selected?.candidateKey, ...value }] }),

@@ -32,14 +32,22 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var guidance = await db.ContributionGuidances.Include(x => x.Allocations).SingleAsync(x => x.Id == job.ContributionGuidanceId, stoppingToken);
                     var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson)
                         ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
-                    var intelligenceProvider = scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>();
                     var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates);
                     var usedFallback = false;
-                    var deterministicOptions = BuildScenarioOptions(deterministicDecision);
+                    var deterministicOptions = BuildScenarioOptions(deterministicDecision, workItem.Baseline, workItem.Candidates);
                     if (deterministicOptions.Length == 0)
                     {
                         try
                         {
+                            // An empty safe set is a deterministic outcome, not an AI
+                            // selection problem. Never send an empty scenarios list.
+                            usedFallback = true;
+                            ApplyFallback(
+                                guidance,
+                                workItem.Baseline,
+                                deterministicDecision.Reasons.FirstOrDefault() ?? "NÃ£o hÃ¡ um cenÃ¡rio completo que respeite os limites atuais; a distribuiÃ§Ã£o parcial segura foi preservada.",
+                                "deterministic-partial-allocation");
+                            /*
                             // The AI is consulted even when there is no complete safe
                             // scenario. Its response cannot invent an allocation, but it
                             // can still provide contextual reasoning for the fallback.
@@ -67,6 +75,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                     generatedAt = DateTimeOffset.UtcNow,
                                     classAllocations = workItem.Baseline.ClassAllocations
                                 }));
+                            */
                         }
                         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                         {
@@ -83,8 +92,11 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     {
                         try
                         {
-                            var selection = await intelligenceProvider.SelectScenarioAsync(job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, stoppingToken);
-                            var selected = ContributionScenarioValidator.Select(selection, deterministicOptions, guidance.RequestedAmount, workItem.Candidates);
+                            var (selection, selected, retryCount) = deterministicOptions.Length == 1
+                                ? SingleScenarioSelection(deterministicOptions[0])
+                                : await SelectValidatedScenarioAsync(scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, stoppingToken);
+                            var selectionMode = deterministicOptions.Length == 1 ? "single-safe-scenario" : "ai-scenario-selection";
+                            if (deterministicOptions.Length == 1) metrics.RecordAiOutcome("single-safe-scenario");
                             guidance.UpdateIntelligence(selection.Metadata.Provider, selection.Metadata.Model, selection.Availability.ToString(), selection.Reason, JsonSerializer.Serialize(new
                             {
                                 engineVersion = selection.Metadata.EngineVersion,
@@ -94,6 +106,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 selectedScenarioKey = selected.ScenarioKey,
                                 deterministicBaselineScenarioKey = deterministicOptions[0].ScenarioKey,
                                 usedFallback = false,
+                                selectionMode,
+                                retryCount,
                                 decisionType = deterministicDecision.DecisionType.ToString(),
                                 primaryNeed = deterministicDecision.PrimaryNeed,
                                 structuralNeeds = deterministicDecision.StructuralNeeds,
@@ -204,16 +218,99 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         return new(guidanceId, identity.Key.Value, external.Provider, candidate.Ticker, candidate.ExternalName ?? candidate.Ticker, candidate.AssetClass, candidate.AssetType, external.Exchange, candidate.TradingCurrency, candidate.Sector, candidate.ExternalSourceReference, allocation.Amount, candidate.Ticker, confidence, "[]");
     }
 
-    private static ContributionScenarioOption[] BuildScenarioOptions(PortfolioDecision decision)
+    private static ContributionScenarioOption[] BuildScenarioOptions(PortfolioDecision decision, ContributionGuidance baseline, IReadOnlyList<ContributionCandidate> candidates)
     {
-        if (decision.RecommendedScenario is null) return Array.Empty<ContributionScenarioOption>();
-        var options = new List<ContributionScenarioOption>
+        var options = new List<ContributionScenarioOption>();
+        if (decision.RecommendedScenario is null)
         {
-            new("scenario:deterministic", decision.RecommendedScenario.Allocations, decision.RecommendedScenario.Improvement, "Cenário determinístico de referência.")
-        };
-        options.AddRange(decision.AlternativeScenarios.Select((scenario, index) => new ContributionScenarioOption(
-            $"scenario:alternative:{index + 1}", scenario.Allocations, scenario.Improvement, "Alternativa determinística válida.")));
+            var candidateKeys = candidates.Select(x => x.CandidateKey).ToHashSet();
+            var baselineAllocations = baseline.Allocations
+                .Where(x => x.AssetId is not null)
+                .Select(x => new CandidateAllocation(CandidateIdentity.Known(x.AssetId!.Value), x.Amount))
+                .Where(x => candidateKeys.Contains(x.Key))
+                .ToArray();
+            options.Add(baselineAllocations.Length > 0
+                ? new ContributionScenarioOption("scenario:baseline-partial", baselineAllocations, 0m, "DistribuiÃ§Ã£o parcial segura calculada pelas regras da carteira.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "Preserva apenas a parte do aporte que respeita os limites conhecidos." })
+                : new ContributionScenarioOption("scenario:no-action", Array.Empty<CandidateAllocation>(), 0m, "Nenhum aporte em ativo Ã© seguro com os dados e limites atuais.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "NÃ£o hÃ¡ benefÃ­cio mensurÃ¡vel suficiente para justificar um aporte." }));
+            return options.ToArray();
+        }
+        var primaryNeed = decision.PrimaryNeed?.AssetClass.ToString();
+        options.Add(ToScenarioOption("scenario:deterministic", decision.RecommendedScenario, "Cenário determinístico de referência.", primaryNeed));
+        options.AddRange(decision.AlternativeScenarios.Select((scenario, index) =>
+            ToScenarioOption($"scenario:alternative:{index + 1}", scenario, "Alternativa determinística válida.", primaryNeed)));
         return options.ToArray();
+    }
+
+    private static ContributionScenarioOption ToScenarioOption(string key, ContributionScenario scenario, string summary, string? primaryNeed)
+    {
+        var structuralReasons = scenario.Reasons
+            .Concat(scenario.ExposureImpacts?.Where(x => x.AfterPercentage < x.BeforePercentage)
+                .Select(x => $"Reduz a exposição conhecida em {x.Dimension} ({x.Key}).") ?? Array.Empty<string>())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return new(key, scenario.Allocations, scenario.Improvement, summary, primaryNeed, structuralReasons);
+    }
+
+    private async Task<(ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount)> SelectValidatedScenarioAsync(
+        IContributionIntelligenceProvider provider,
+        Guid portfolioId,
+        decimal amount,
+        IReadOnlyList<ContributionScenarioOption> scenarios,
+        IReadOnlyList<ContributionCandidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        Exception? last = null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var selection = await provider.SelectScenarioAsync(portfolioId, amount, scenarios, candidates, cancellationToken);
+                var selected = ContributionScenarioValidator.Select(selection, scenarios, amount, candidates);
+                if (!HasGroundedReason(selection, selected))
+                    throw new InvalidOperationException("A IA retornou uma justificativa insuficiente para o cenário selecionado.");
+                if (selected.Improvement + 0.01m < scenarios[0].Improvement)
+                    throw new InvalidOperationException("A IA retornou um cenário inferior ao cenário-base seguro.");
+
+                if (attempt > 0) metrics.RecordAiOutcome("retry-succeeded");
+                else metrics.RecordAiOutcome("selected");
+                return (selection, selected, attempt);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                last = exception;
+                if (attempt == 0)
+                {
+                    metrics.RecordAiOutcome("retry");
+                    logger.LogWarning(exception, "Resposta da IA não passou na validação; uma nova tentativa será feita");
+                }
+            }
+        }
+
+        metrics.RecordAiOutcome("fallback");
+        throw last ?? new InvalidOperationException("A IA não retornou um cenário válido.");
+    }
+
+    private static (ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount) SingleScenarioSelection(ContributionScenarioOption scenario)
+    {
+        var selection = new ContributionScenarioSelection(
+            scenario.ScenarioKey,
+            scenario.Summary,
+            Array.Empty<string>(),
+            ContributionIntelligenceAvailability.PartialIntelligence,
+            new("R17.8", "portfolio-rules", ContributionIntelligencePrompt.Version, "deterministic-single-scenario", "none", DateTimeOffset.UtcNow));
+        return (selection, scenario, 0);
+    }
+
+    private static bool HasGroundedReason(ContributionScenarioSelection selection, ContributionScenarioOption scenario)
+    {
+        var text = $"{selection.Reason} {string.Join(" ", selection.Considerations)} {scenario.Summary}".Trim().ToLowerInvariant();
+        if (text.Length < 12) return false;
+        var criteria = new[] { "classe", "target", "desvio", "divers", "concent", "aporte", "assessment", "bloque", "exposi", "segur", "candidat" };
+        return criteria.Any(text.Contains);
     }
 
     private static PersistedContributionGuidanceAllocation[] ToPersistedAllocations(Guid guidanceId, ContributionScenarioOption scenario, IReadOnlyList<ContributionCandidate> candidates)

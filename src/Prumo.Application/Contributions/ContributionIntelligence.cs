@@ -57,7 +57,13 @@ public sealed record ContributionCandidateEvaluation(CandidateKey CandidateKey, 
 }
 public sealed record ContributionIntelligenceMetadata(string EngineVersion, string PolicyVersion, string PromptVersion, string Provider, string Model, DateTimeOffset GeneratedAt);
 public sealed record ContributionIntelligenceResult(IReadOnlyList<ContributionCandidateEvaluation> CandidateEvaluations, string OverallReasoning, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
-public sealed record ContributionScenarioOption(string ScenarioKey, IReadOnlyList<CandidateAllocation> Allocations, decimal Improvement, string Summary);
+public sealed record ContributionScenarioOption(
+    string ScenarioKey,
+    IReadOnlyList<CandidateAllocation> Allocations,
+    decimal Improvement,
+    string Summary,
+    string? PrimaryNeed = null,
+    IReadOnlyList<string>? StructuralReasons = null);
 public sealed record ContributionScenarioSelection(string SelectedScenarioKey, string Reason, IReadOnlyList<string> Considerations, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
 public sealed record ContributionGuidanceWorkItem(ContributionGuidance Baseline, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<ContributionCandidate> Candidates);
 
@@ -68,7 +74,7 @@ public static class ContributionScenarioValidator
         var scenario = scenarios.SingleOrDefault(x => x.ScenarioKey == selection.SelectedScenarioKey)
             ?? throw new InvalidOperationException($"A IA selecionou um cenário fora do conjunto seguro: '{selection.SelectedScenarioKey}'.");
         var byKey = candidates.ToDictionary(x => x.CandidateKey);
-        if (scenario.Allocations.Count == 0)
+        if (scenario.Allocations.Count == 0 && scenario.ScenarioKey != "scenario:no-action")
             throw new InvalidOperationException("A IA retornou um cenário sem alocações.");
         if (scenario.Allocations.Any(x => !byKey.TryGetValue(x.Identity.Key, out var candidate) || candidate.HasBlock))
             throw new InvalidOperationException("A IA retornou um cenário com candidato inexistente ou bloqueado.");
@@ -78,7 +84,7 @@ public static class ContributionScenarioValidator
             throw new InvalidOperationException("A IA retornou um cenário com o mesmo candidato mais de uma vez.");
         if (scenario.Allocations.GroupBy(x => byKey[x.Identity.Key].AssetClass).Any(group => group.Sum(x => x.Amount) > byKey[group.First().Identity.Key].ClassBudget))
             throw new InvalidOperationException("A IA retornou um cenário acima do orçamento de uma classe de ativos.");
-        if (decimal.Round(scenario.Allocations.Sum(x => x.Amount), 2) != decimal.Round(contributionAmount, 2))
+        if (decimal.Round(scenario.Allocations.Sum(x => x.Amount), 2) > decimal.Round(contributionAmount, 2))
             throw new InvalidOperationException("A IA retornou um cenário cuja soma não corresponde ao valor do aporte.");
         return scenario;
     }

@@ -40,7 +40,7 @@ public sealed class ContributionGuidanceControllerTests
     }
 
     [Fact]
-    public async Task GenerateReusesCompletedGuidanceFromCurrentEngineVersion()
+    public async Task GenerateCreatesNewGuidanceEvenWhenCurrentVersionIsCompleted()
     {
         await using var db = CreateDbContext();
         var (portfolio, targets) = await SeedPortfolioAsync(db);
@@ -49,9 +49,16 @@ public sealed class ContributionGuidanceControllerTests
 
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
 
-        Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Single(await db.ContributionGuidances.ToListAsync());
-        Assert.Equal(currentGuidance.Id, await db.ContributionGuidances.Select(x => x.Id).SingleAsync());
+        Assert.IsType<AcceptedResult>(result.Result);
+        var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync();
+        Assert.Equal(2, guidances.Count);
+        Assert.Equal(currentGuidance.Id, guidances[0].Id);
+        Assert.Equal("R4-9.0", guidances[1].EngineVersion);
+        Assert.Equal("pending-ai", guidances[1].Provider);
+        Assert.Equal(ContributionGuidanceJobStatus.Queued, await db.ContributionGuidanceJobs
+            .Where(x => x.ContributionGuidanceId == guidances[1].Id)
+            .Select(x => x.Status)
+            .SingleAsync());
     }
 
     [Fact]

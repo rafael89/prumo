@@ -298,7 +298,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 policyVersion = ExtractPolicyVersion(item.MetadataJson),
                 assessmentVersions = ExtractAssessmentVersions(item.MetadataJson),
                 evidenceCount = ExtractEvidenceCount(item.MetadataJson, allocations.SelectMany(x => x.evidence).Distinct().Count()),
-                fallbackReason = ExtractFallbackReason(item.MetadataJson)
+                fallbackReason = ExtractFallbackReason(item.MetadataJson),
+                selectionMode = ExtractSelectionMode(item.MetadataJson),
+                selectedScenarioKey = ExtractMetadataString(item.MetadataJson, "selectedScenarioKey")
             },
             item.IntelligenceAvailability,
             reasoning = ContributionText.NormalizeAssetClassNames(item.Reasoning),
@@ -421,7 +423,15 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         try
         {
             var root = JsonSerializer.Deserialize<JsonElement>(json);
-            if (!TryGet(root, "fallbackReason", "FallbackReason", out var value) || value.ValueKind != JsonValueKind.String) return null;
+            if (!TryGet(root, "fallbackReason", "FallbackReason", out var value) || value.ValueKind != JsonValueKind.String)
+            {
+                var mode = ExtractSelectionMode(json);
+                var scenario = ExtractMetadataString(json, "selectedScenarioKey");
+                return mode == "single-safe-scenario" ? "Havia apenas um cenário seguro pré-validado; ele foi aplicado diretamente pelo motor de regras."
+                    : scenario == "scenario:no-action" ? "A IA analisou os candidatos e concluiu que nenhum aporte em ativo atende aos limites atuais com segurança."
+                    : scenario == "scenario:baseline-partial" ? "A IA analisou a distribuição parcial segura; o valor restante permaneceu sem alocação porque não havia outra alternativa elegível."
+                    : null;
+            }
             return value.GetString() switch
             {
                 "ai-quota-exceeded" => "O limite de cota da IA foi atingido.",
@@ -431,6 +441,26 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 "deterministic-partial-allocation" => "A IA foi consultada, mas não havia um cenário completo que respeitasse os limites das classes; foi usada a distribuição parcial segura.",
                 _ => null
             };
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static string? ExtractSelectionMode(string json)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            return TryGet(root, "selectionMode", "SelectionMode", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static string? ExtractMetadataString(string json, string property)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            return TryGet(root, property, property[..1].ToUpperInvariant() + property[1..], out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
         }
         catch (JsonException) { return null; }
     }
