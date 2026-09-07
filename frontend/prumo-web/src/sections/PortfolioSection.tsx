@@ -137,7 +137,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                           <div className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
                             <div className="col-span-2 min-w-0 md:col-span-1">
                               <p className="truncate text-sm font-semibold">{position.ticker}</p>
-                              <p className="break-words text-xs text-slate-500">{position.name}</p>
+                              <p className="wrap-break-word text-xs text-slate-500">{position.name}</p>
                             </div>
                             <div className="min-w-0 text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
                             <div className="min-w-0 text-right text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span>{formatNumber(position.quantity)}</div>

@@ -24,7 +24,7 @@ function TimelineList({ items }: { items: TimelineItem[] }) {
 
 export function HistorySection({ portfolioId, positions: initialPositions, assetId, page = 1, before, onPageInfo }: { portfolioId: string; positions: Position[]; assetId: string | null; page?: number; before?: string | null; onPageInfo?: (hasMore: boolean, nextBefore: string | null) => void }) {
   const timeline = useQuery({ queryKey: ['history-timeline', portfolioId, page, before], queryFn: () => getJson<TimelineResponse>(`/api/portfolios/${portfolioId}/timeline?pageSize=20${before ? `&before=${encodeURIComponent(before)}` : ''}`), enabled: !assetId })
-  useEffect(() => { if (!assetId && timeline.data) onPageInfo?.(timeline.data.hasMore, timeline.data.nextBefore) }, [assetId, timeline.data])
+  useEffect(() => { if (!assetId && timeline.data) onPageInfo?.(timeline.data.hasMore, timeline.data.nextBefore) }, [assetId, onPageInfo, timeline.data])
   const allPositions = useQuery({ queryKey: ['history-positions', portfolioId], queryFn: () => getJson<DashboardPositions>(`/api/portfolios/${portfolioId}/dashboard?page=1&pageSize=100`) })
   const positions = allPositions.data?.positions ?? initialPositions
   const selected = positions.find(position => position.assetId === assetId)
