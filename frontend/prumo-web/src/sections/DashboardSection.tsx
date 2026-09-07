@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 type Position = { id: string; assetId: string; assetClass: number; ticker: string; portfolioWeight: number; currentValue: number | null }
 type Dashboard = { totalValue: number; positionCount: number; positions: Position[] }
 
-const classLabels: Record<number, string> = { 0: 'Ações brasileiras', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros' }
+const classLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros' }
 
 function money(value: number | null, hidden: boolean) {
   if (hidden) return 'R$ ••••••'

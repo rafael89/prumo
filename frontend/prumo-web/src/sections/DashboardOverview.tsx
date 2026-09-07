@@ -172,11 +172,12 @@ function healthScore(status: string | undefined) {
 }
 
 function healthLabel(status: string | undefined) {
-  if (status === 'Aligned' || status === 'SlightlyUnbalanced') return 'Boa'
-  if (status === 'Unbalanced') return 'Atencao'
+  if (status === 'Aligned') return 'Alinhada'
+  if (status === 'SlightlyUnbalanced') return 'Boa'
+  if (status === 'Unbalanced') return 'Atenção'
   if (status === 'StronglyUnbalanced') return 'Desbalanceada'
-  if (status === 'EmptyPortfolio') return 'Sem posicoes'
-  return 'Nao configurada'
+  if (status === 'EmptyPortfolio') return 'Sem posições'
+  return 'Não configurada'
 }
 
 function PortfolioHealthCard({ data }: { data: Dashboard }) {
@@ -186,10 +187,10 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
     .sort((left, right) => Math.abs(right.deviationPercentagePoints) - Math.abs(left.deviationPercentagePoints))
     .slice(0, 3)
   const score = healthScore(health?.status)
-  const scoreColor = score >= 80 ? '#f59e0b' : score >= 60 ? '#f97316' : '#ef4444'
+  const scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#f97316' : '#ef4444'
 
   return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Saude da carteira</p>
+    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Saúde da carteira</p>
     <div className="mt-5 grid gap-5 md:grid-cols-[minmax(150px,0.72fr)_minmax(0,1.28fr)] md:gap-7">
       <div className="flex flex-col items-center justify-center border-b border-slate-100 pb-5 md:border-b-0 md:border-r md:pb-0 md:pr-7">
         <div className="relative grid h-32 w-32 place-items-center rounded-full" style={{ background: `conic-gradient(${scoreColor} ${score * 3.6}deg, #f1f5f9 0deg)` }}>
@@ -328,8 +329,8 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
       {!analysis.isLoading && !analysis.isError && !analysis.data && <p className="mt-5 rounded-xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">Nenhuma análise validada foi encontrada para este documento ainda.</p>}
       {analysis.data && <div className="mt-5 space-y-5 text-sm text-slate-700"><div className="grid gap-4 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Importância</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Classificação</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.classification}</p></div></div><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Resumo</p><p className="mt-2 leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto</p><p className="mt-2 leading-7">{analysis.data.impact}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto na minha carteira</p><p className="mt-2 leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p></article><div className="grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ação sugerida</p><p className="mt-1 font-semibold text-slate-950">{analysis.data.suggestedAction}{analysis.data.requiresAction ? ' · Requer atenção' : ''}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Confiança</p><p className="mt-1 font-semibold text-slate-950">{Math.round(analysis.data.confidence * 100)}%</p></div></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ativos afetados</p><div className="mt-2 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map(asset => <span key={asset} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span>Nenhum ativo listado.</span>}</div></div></div>}
       </div>
-      <div data-radar-actions="true" className="mt-6 flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-white pt-4">
-        {onMarkSeen && !isResolved && !isSeen && <button type="button" onClick={() => { onMarkSeen(); setMarkedSeen(true) }} disabled={actionPending || markedSeen} className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"><FontAwesomeIcon icon={faEye} />{markedSeen ? 'Visto' : 'Marcar como visto'}</button>}
+      <div data-radar-actions="true" className="mt-6 grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white pt-4 sm:flex sm:flex-wrap">
+        {onMarkSeen && !isResolved && !isSeen && <button type="button" onClick={() => { onMarkSeen(); setMarkedSeen(true) }} disabled={actionPending || markedSeen} className="inline-flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-2.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 sm:px-4 sm:text-sm"><FontAwesomeIcon icon={faEye} />{markedSeen ? 'Visto' : 'Marcar como visto'}</button>}
         {!isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
         {isResolved && onReopen && <button type="button" onClick={onReopen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faRotate} />Reabrir</button>}
       </div>
@@ -365,7 +366,7 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
 
   return <section className="mx-auto max-w-358 px-4 pb-16 pt-3 sm:px-6">
     <header className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-      <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1><p className="mt-2 text-sm text-slate-600">Aqui está o que importa sobre sua carteira agora.</p></div>
+      <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1></div>
       {data.portfolioOverview?.lastPortfolioUpdate && <p className="text-xs text-slate-500">Carteira atualizada em {formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}</p>}
     </header>
     <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[7fr_3fr]">

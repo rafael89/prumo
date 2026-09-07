@@ -93,6 +93,15 @@ public sealed class RadarController : ControllerBase
         assessment.MarkSeen(); await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
     }
 
+    [HttpPatch("seen-all")]
+    public async Task<ActionResult<RadarBulkUpdateResponse>> MarkAllSeen([FromQuery] Guid portfolioId, CancellationToken ct)
+    {
+        var assessments = await db.PortfolioAssessments.Where(x => x.PortfolioId == portfolioId && x.UserState == AssessmentUserState.Unread).ToListAsync(ct);
+        foreach (var assessment in assessments) assessment.MarkSeen();
+        await db.SaveChangesAsync(ct);
+        return Ok(new RadarBulkUpdateResponse(assessments.Count));
+    }
+
     [HttpPatch("{assessmentId:guid}/status")]
     public async Task<ActionResult<RadarItemDto>> SetStatus(Guid assessmentId, [FromQuery] Guid portfolioId, [FromBody] SetRadarStatusRequest request, CancellationToken ct)
     {
@@ -100,6 +109,15 @@ public sealed class RadarController : ControllerBase
         var assessment = await db.PortfolioAssessments.AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).SingleOrDefaultAsync(x => x.Id == assessmentId && x.PortfolioId == portfolioId, ct);
         if (assessment is null) return NotFound();
         assessment.SetStatus(status); await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
+    }
+
+    [HttpPatch("status-all")]
+    public async Task<ActionResult<RadarBulkUpdateResponse>> ResolveAll([FromQuery] Guid portfolioId, CancellationToken ct)
+    {
+        var assessments = await db.PortfolioAssessments.Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed).ToListAsync(ct);
+        foreach (var assessment in assessments) assessment.SetStatus(AssessmentStatus.Closed);
+        await db.SaveChangesAsync(ct);
+        return Ok(new RadarBulkUpdateResponse(assessments.Count));
     }
 
     private static RadarItemDto ToDto(PortfolioAssessment x)
@@ -115,5 +133,6 @@ public sealed class RadarController : ControllerBase
 public sealed record SetRadarStatusRequest(string Status);
 public sealed record RadarResponse(IReadOnlyList<RadarItemDto> AttentionNow, IReadOnlyList<RadarItemDto> RecentUpdates, int RequiresAttention, int Unread, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0);
 public sealed record RadarRepairResponse(int QueuedCount);
+public sealed record RadarBulkUpdateResponse(int UpdatedCount);
 public sealed record RadarEvidenceDto(Guid DocumentId, Guid DocumentAnalysisId, string Reference);
 public sealed record RadarItemDto(Guid AssessmentId, Guid InvestmentEventId, Guid DocumentAnalysisId, IReadOnlyList<string> AffectedAssets, InvestmentEventType EventType, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, bool RequiresAttention, string EventSummary, string Summary, string WhyItMatters, string SuggestedBehavior, IntelligenceConfidence Confidence, DateTimeOffset GeneratedAt, IReadOnlyList<RadarEvidenceDto> Evidence, FreshnessStatus Freshness = FreshnessStatus.Fresh, IReadOnlyList<FreshnessReason>? FreshnessReasons = null, IReadOnlyList<EvidenceReference>? EvidenceReferences = null);

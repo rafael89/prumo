@@ -14,3 +14,6 @@
 .document-job-details { margin-top: 2rem; }
 .nav-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .nav-scroll::-webkit-scrollbar { display: none; }
+@media (max-width: 639px) {
+  [data-radar-actions] button { min-width: 0; gap: .375rem; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; justify-content: center; }
+}

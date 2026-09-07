@@ -17,7 +17,7 @@ type Position = { id: string }
 
 const money = (value: number, hidden: boolean) => hidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 const parse = (value: string) => Number(value.replace(/\./g, '').replace(',', '.'))
-const classLabels: Record<number, string> = { 0: 'Ações brasileiras', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros' }
+const classLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros' }
 
 async function api<T>(path: string, body?: unknown) {
   const response = await fetch(apiBaseUrl + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined)

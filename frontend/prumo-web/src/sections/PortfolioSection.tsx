@@ -2,7 +2,7 @@ import { useState, type Dispatch, type FormEvent, type SetStateAction } from 're
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faEye, faEyeSlash, faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
+import { faBan, faCheck, faEye, faEyeSlash, faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
 import { Link } from 'react-router-dom'
 type AssetType = 0 | 1 | 2 | 3
@@ -57,7 +57,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
         <section className="order-3 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-2">
           <div className="flex items-center justify-between gap-4">
-            <div><h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Posi&ccedil;&otilde;es</h2><p className="mt-1 text-xs text-slate-500">A edi&ccedil;&atilde;o manual &eacute; uma op&ccedil;&atilde;o avan&ccedil;ada. Prefira atualizar pela importa&ccedil;&atilde;o da B3.</p></div>
+            <div><h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Posi&ccedil;&otilde;es</h2></div>
             <div className="flex items-center gap-3"><span className="text-xs text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span></div>
           </div>
 
@@ -128,9 +128,9 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                             <input value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" />
                             <div className="text-right text-sm text-slate-500">{formatCurrency(position.currentValue, privacyHidden)}</div>
                             <div className="text-right text-sm text-slate-500">{position.portfolioWeight.toFixed(2)}%</div>
-                            <div className="flex flex-col items-stretch gap-1">
-                              <button type="submit" disabled={updatePosition.isPending} className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60">Salvar</button>
-                              <button type="button" onClick={() => setEditingPositionId(null)} className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">Cancelar</button>
+                            <div className="flex items-center justify-end gap-2 md:justify-center">
+                              <button type="submit" aria-label="Salvar posição" title="Salvar posição" disabled={updatePosition.isPending} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"><FontAwesomeIcon icon={faCheck} /></button>
+                              <button type="button" aria-label="Cancelar edição" title="Cancelar edição" onClick={() => setEditingPositionId(null)} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"><FontAwesomeIcon icon={faBan} /></button>
                             </div>
                           </form>
                         ) : (
