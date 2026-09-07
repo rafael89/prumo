@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
@@ -8,9 +8,9 @@ import { PortfolioSection } from './sections/PortfolioSection'
 import { DocumentsSection } from './sections/DocumentsSection'
 import { AboutSection } from './sections/AboutSection'
 import { HistorySection } from './sections/HistorySection'
-import { DashboardOverview, type Dashboard } from './sections/DashboardOverview'
+import { DashboardOverview, RecentAnalysisModal, type Dashboard, type DashboardAssessment } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUp, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
+import { faArrowUp, faBell, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
 import { apiBaseUrl } from './api/client'
 import { Pagination } from './components/Pagination'
 
@@ -19,6 +19,26 @@ const apiUrl = apiBaseUrl
 type AssetType = 0 | 1 | 2 | 3
 type Feedback = { tone: 'success' | 'error'; message: string } | null
 type ThemePreference = 'system' | 'light' | 'dark'
+type RadarNotificationItem = {
+  assessmentId: string
+  documentId?: string | null
+  evidence?: Array<{ documentId: string }>
+  attentionPriority: number | string
+  actionRequirement: number
+  capitalDecisionImpact: number
+  status: number | string
+  userState: number
+  summary: string
+  whyItMatters: string
+  suggestedBehavior: string
+  occurredAt: string | null
+  eventSummary: string
+  affectedAssets: string[]
+}
+type RadarNotificationResponse = {
+  attentionNow: RadarNotificationItem[]
+  unread: number
+}
 
 type PortfolioSummary = { id: string; name: string; totalValue: number; positionCount: number }
 type ProcessingStatus = { status: 'Pending' | 'Processing' | 'Completed' | 'Failed'; activeCount: number; failedCount: number; message: string }
@@ -204,6 +224,77 @@ function App() {
     enabled: Boolean(activePortfolio),
     refetchInterval: query => query.state.data?.status === 'Pending' || query.state.data?.status === 'Processing' ? 2000 : false,
   })
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const [notificationPanelMounted, setNotificationPanelMounted] = useState(false)
+  const [notificationToast, setNotificationToast] = useState<RadarNotificationItem | null>(null)
+  const [selectedNotification, setSelectedNotification] = useState<RadarNotificationItem | null>(null)
+  const notificationPanelRef = useRef<HTMLDivElement>(null)
+  const notificationCloseTimerRef = useRef<number | null>(null)
+  const closeNotificationPanel = () => {
+    setNotificationPanelOpen(false)
+    if (notificationCloseTimerRef.current !== null) window.clearTimeout(notificationCloseTimerRef.current)
+    notificationCloseTimerRef.current = window.setTimeout(() => setNotificationPanelMounted(false), 160)
+  }
+  const toggleNotificationPanel = () => {
+    if (notificationPanelOpen) {
+      closeNotificationPanel()
+      return
+    }
+    if (notificationCloseTimerRef.current !== null) window.clearTimeout(notificationCloseTimerRef.current)
+    setNotificationPanelMounted(true)
+    setNotificationPanelOpen(true)
+  }
+  useEffect(() => {
+    if (!notificationPanelOpen) return
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!notificationPanelRef.current?.contains(event.target as Node)) closeNotificationPanel()
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  })
+  const radarNotifications = useQuery({
+    queryKey: ['radar-notifications', activePortfolio?.id],
+    queryFn: () => getJson<RadarNotificationResponse>(`/api/radar?portfolioId=${activePortfolio!.id}&page=1&pageSize=100&requiresAttention=true&userState=Unread`),
+    enabled: Boolean(activePortfolio),
+    refetchInterval: 20000,
+  })
+  const markNotificationSeen = useMutation({
+    mutationFn: (assessmentId: string) => sendJson<unknown, object>(`/api/radar/${assessmentId}/seen?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] })
+      await queryClient.invalidateQueries({ queryKey: ['radar', activePortfolio?.id] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard', activePortfolio?.id] })
+    },
+    onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
+  })
+  const openNotification = (item: RadarNotificationItem) => {
+    closeNotificationPanel()
+    setSelectedNotification({ ...item, documentId: item.documentId ?? item.evidence?.[0]?.documentId ?? null, userState: 1 })
+    if (item.userState === 0) markNotificationSeen.mutate(item.assessmentId)
+  }
+  useEffect(() => {
+    const items = radarNotifications.data?.attentionNow ?? []
+    if (!activePortfolio || !radarNotifications.data) return
+    const storageKey = `prumo.radar-notifications.${activePortfolio.id}`
+    let notified = new Set<string>()
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) ?? '[]')
+      if (Array.isArray(saved)) notified = new Set(saved.filter((value): value is string => typeof value === 'string'))
+    } catch {
+      notified = new Set()
+    }
+    const next = items.find(item => !notified.has(item.assessmentId))
+    if (!next) return
+    notified.add(next.assessmentId)
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(Array.from(notified).slice(-200)))
+    } catch {
+      // The persistent Radar state remains authoritative when storage is unavailable.
+    }
+    setNotificationToast(next)
+    const timeout = window.setTimeout(() => setNotificationToast(null), 6000)
+    return () => window.clearTimeout(timeout)
+  }, [activePortfolio, radarNotifications.data])
   const reprocessFailed = useMutation({
     mutationFn: () => sendJson<{ requeuedCount: number }, { errorContains: string | null }>(`/api/portfolios/${activePortfolio!.id}/documents/reprocess-failed`, 'POST', { errorContains: null }),
     onSuccess: async () => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: false }); localStorage.removeItem(`prumo.failed-notice.${activePortfolio.id}`) } await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }); await queryClient.invalidateQueries({ queryKey: ['documents'] }) },
@@ -211,6 +302,20 @@ function App() {
   })
 
   const selectedAsset = dashboard.data?.positions.find((position) => position.assetId === selectedAssetId) ?? null
+  const selectedNotificationAssessment: DashboardAssessment | null = selectedNotification ? {
+    assessmentId: selectedNotification.assessmentId,
+    documentId: selectedNotification.documentId ?? null,
+    asset: selectedNotification.affectedAssets[0] ?? 'Carteira',
+    eventSummary: selectedNotification.eventSummary || selectedNotification.summary,
+    whyItMatters: selectedNotification.whyItMatters,
+    suggestedBehavior: selectedNotification.suggestedBehavior,
+    occurredAt: selectedNotification.occurredAt,
+    attentionPriority: typeof selectedNotification.attentionPriority === 'number' ? selectedNotification.attentionPriority : 0,
+    actionRequirement: selectedNotification.actionRequirement,
+    capitalDecisionImpact: selectedNotification.capitalDecisionImpact,
+    status: selectedNotification.status,
+    userState: selectedNotification.userState,
+  } : null
   const createPortfolio = useMutation({
     mutationFn: (request: CreatePortfolioRequest) => sendJson<PortfolioSummary, CreatePortfolioRequest>('/api/portfolios', 'POST', request),
     onSuccess: async (created) => {
@@ -360,9 +465,19 @@ function App() {
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">prumo<span className="text-amber-600">.</span></Link>
             <div className="nav-scroll order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Dashboard</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aporte</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents')}>Documentos</Link></div>
             <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.failedCount > 0 && !failedNoticeDismissed && <div role="status" className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"><span>{processingStatus.data.failedCount} documento(s) com erro</span><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="underline">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar'}</button><button type="button" aria-label="Marcar aviso como visto" onClick={() => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: true }); localStorage.setItem(`prumo.failed-notice.${activePortfolio.id}`, '1') } }} className="text-base leading-none">×</button></div>}{processingStatus.data && processingStatus.data.status !== 'Completed' && processingStatus.data.status !== 'Failed' && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{processingStatus.data.status === 'Processing' ? 'Analisando seus documentos...' : 'Seus documentos serão analisados em instantes.'}</span>}</div>
+            {activePortfolio && <div ref={notificationPanelRef} className="relative order-2 md:order-3">
+              <button type="button" aria-label={radarNotifications.data?.unread ? `${radarNotifications.data.unread} alertas não vistas` : 'Notificações do Radar'} aria-expanded={notificationPanelOpen} title="Notificações do Radar" onClick={toggleNotificationPanel} className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 ${radarNotifications.data?.unread ? 'border-amber-400' : 'border-slate-300'}`}><FontAwesomeIcon icon={faBell} />{Boolean(radarNotifications.data?.unread) && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-4 text-white">{(radarNotifications.data?.unread ?? 0) > 99 ? '99+' : radarNotifications.data?.unread}</span>}</button>
+              {notificationPanelMounted && <div className={`absolute right-0 top-11 z-50 w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-xl max-sm:fixed max-sm:inset-x-2 max-sm:top-16 max-sm:w-auto ${notificationPanelOpen ? 'notification-panel-enter' : 'notification-panel-exit'}`}>
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">Radar</p><p className="text-xs text-slate-500">Itens relevantes ainda não vistos</p></div><Link to="/radar" onClick={closeNotificationPanel} className="text-xs font-semibold text-amber-700 hover:text-amber-800">Ver Radar</Link></div>
+                {(radarNotifications.data?.attentionNow.length ?? 0) === 0 && <p className="px-4 py-6 text-sm text-slate-500">Nenhuma nova atenção no Radar.</p>}
+                <div className="max-h-80 overflow-y-auto">{radarNotifications.data?.attentionNow.map(item => <button key={item.assessmentId} type="button" onClick={() => openNotification(item)} className="block w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-stone-50 last:border-b-0"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{item.affectedAssets[0] ?? 'Carteira'}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.eventSummary || item.summary}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{item.summary}</p></button>)}</div>
+              </div>}
+            </div>}
             <button type="button" aria-label={themePreference === 'system' ? 'Personalizar tema' : 'Seguir tema do sistema'} title={themePreference === 'system' ? `Tema do sistema: ${darkMode ? 'dark' : 'claro'}` : 'Seguir tema do sistema'} onClick={() => setThemePreference(current => current === 'system' ? (darkMode ? 'light' : 'dark') : 'system')} className="theme-toggle order-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 md:order-3"><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /></button>
           </div>
         </nav>
+        {notificationToast && <div role="status" className="fixed right-5 top-20 z-40 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg"><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={() => setNotificationToast(null)} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={() => setNotificationToast(null)} className="text-lg leading-none text-amber-800">×</button></div></div>}
+        {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} />}
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}

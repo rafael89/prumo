@@ -112,6 +112,10 @@ const classificationLabels: Record<string, string> = { CorporateAction: 'Ação 
 
 void capitalImpactLabels
 
+function hasCapitalImpact(value: number | string) {
+  return value !== 1 && value !== 'None'
+}
+
 function formatPercentage(value: number) {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)
 }
@@ -177,11 +181,19 @@ function healthScore(status: string | undefined) {
 
 function healthLabel(status: string | undefined) {
   if (status === 'Aligned') return 'Alinhada'
-  if (status === 'SlightlyUnbalanced') return 'Boa'
-  if (status === 'Unbalanced') return 'Atenção'
-  if (status === 'StronglyUnbalanced') return 'Desbalanceada'
+  if (status === 'SlightlyUnbalanced') return 'Levemente desbalanceada'
+  if (status === 'Unbalanced') return 'Desbalanceada'
+  if (status === 'StronglyUnbalanced') return 'Fortemente desbalanceada'
   if (status === 'EmptyPortfolio') return 'Sem posições'
   return 'Não configurada'
+}
+
+function healthTone(status: string | undefined) {
+  if (status === 'Aligned') return { ring: '#10b981', badge: 'bg-emerald-50 text-emerald-700' }
+  if (status === 'SlightlyUnbalanced') return { ring: '#eab308', badge: 'bg-yellow-50 text-yellow-700' }
+  if (status === 'Unbalanced') return { ring: '#f97316', badge: 'bg-orange-50 text-orange-700' }
+  if (status === 'StronglyUnbalanced') return { ring: '#ef4444', badge: 'bg-rose-50 text-rose-700' }
+  return { ring: '#94a3b8', badge: 'bg-slate-100 text-slate-600' }
 }
 
 function PortfolioHealthCard({ data }: { data: Dashboard }) {
@@ -191,18 +203,18 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
     .sort((left, right) => Math.abs(right.deviationPercentagePoints) - Math.abs(left.deviationPercentagePoints))
     .slice(0, 3)
   const score = healthScore(health?.status)
-  const scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#f97316' : '#ef4444'
+  const tone = healthTone(health?.status)
 
   return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Saúde da carteira</p>
     <div className="mt-5 grid gap-5 md:grid-cols-[minmax(150px,0.72fr)_minmax(0,1.28fr)] md:gap-7">
       <div className="flex flex-col items-center justify-center border-b border-slate-100 pb-5 md:border-b-0 md:border-r md:pb-0 md:pr-7">
-        <div className="relative grid h-32 w-32 place-items-center rounded-full" style={{ background: `conic-gradient(${scoreColor} ${score * 3.6}deg, #f1f5f9 0deg)` }}>
+        <div className="relative grid h-32 w-32 place-items-center rounded-full" style={{ background: `conic-gradient(${tone.ring} ${score * 3.6}deg, #f1f5f9 0deg)` }}>
           <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center">
             <div><strong className="block text-3xl leading-none text-slate-950">{score}</strong><span className="text-xs font-semibold text-slate-500">/100</span></div>
           </div>
         </div>
-        <span className={`mt-4 rounded-xl px-6 py-2 text-sm font-semibold ${score >= 80 ? 'bg-amber-50 text-amber-700' : score >= 60 ? 'bg-orange-50 text-orange-700' : score > 0 ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{healthLabel(health?.status)}</span>
+        <span className={`mt-4 rounded-xl px-6 py-2 text-sm font-semibold ${tone.badge}`}>{healthLabel(health?.status)}</span>
       </div>
       <div className="min-w-0">
         <h2 className="text-sm font-semibold text-slate-950">Resumo</h2>
@@ -259,6 +271,10 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
   }, [])
 
   const [markedSeen, setMarkedSeen] = useState(false)
+  if (!hasCapitalImpact(item.capitalDecisionImpact)) {
+    onResolve = undefined
+    onReopen = undefined
+  }
   const analysis = useQuery({
     queryKey: ['dashboard-document-analysis', item.documentId, portfolioId],
     queryFn: async () => {
@@ -333,7 +349,7 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
       {analysis.data && <div className="mt-5 space-y-5 text-sm text-slate-700"><div className="grid gap-4 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Importância</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Classificação</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.classification}</p></div></div><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Resumo</p><p className="mt-2 leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto</p><p className="mt-2 leading-7">{analysis.data.impact}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto na minha carteira</p><p className="mt-2 leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p></article><div className="grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ação sugerida</p><p className="mt-1 font-semibold text-slate-950">{analysis.data.suggestedAction}{analysis.data.requiresAction ? ' · Requer atenção' : ''}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Confiança</p><p className="mt-1 font-semibold text-slate-950">{Math.round(analysis.data.confidence * 100)}%</p></div></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ativos afetados</p><div className="mt-2 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map(asset => <span key={asset} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span>Nenhum ativo listado.</span>}</div></div></div>}
       </div>
       <div data-radar-actions="true" className="mt-6 grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white pt-4 sm:flex sm:flex-wrap">
-        {onMarkSeen && !isResolved && !isSeen && <button type="button" onClick={() => { onMarkSeen(); setMarkedSeen(true) }} disabled={actionPending || markedSeen} className="inline-flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-2.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 sm:px-4 sm:text-sm"><FontAwesomeIcon icon={faEye} />{markedSeen ? 'Visto' : 'Marcar como visto'}</button>}
+        {onMarkSeen && !isResolved && <button type="button" onClick={() => { onMarkSeen(); setMarkedSeen(true) }} disabled={actionPending || isSeen || markedSeen} className="inline-flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-2.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 sm:px-4 sm:text-sm"><FontAwesomeIcon icon={faEye} />{isSeen || markedSeen ? 'Visto' : 'Marcar como visto'}</button>}
         {!isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
         {isResolved && onReopen && <button type="button" onClick={onReopen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faRotate} />Reabrir</button>}
       </div>
