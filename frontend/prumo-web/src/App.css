@@ -45,7 +45,7 @@
   nav > div:first-child > .theme-toggle { grid-column: 3; grid-row: 1; justify-self: end; }
   [data-radar-actions] { margin-top: .5rem; }
   [data-radar-actions] button { min-width: 0; gap: .375rem; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; justify-content: center; }
-  #radar > div:nth-child(3) { margin-top: 4.5rem; }
+  #radar > div:nth-child(3) { margin-top: .75rem; }
   div:has(> #b3-file) { gap: .5rem; }
   div:has(> #b3-file) > label,
   div:has(> #b3-file) > button { min-width: 0; flex: 1 1 0%; justify-content: center; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; white-space: nowrap; }
