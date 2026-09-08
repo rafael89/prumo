@@ -83,6 +83,7 @@ public sealed class PortfolioImportsController : ControllerBase
             if (position is null) { position = new PortfolioPosition(portfolio.Id, asset.Id, item.Quantity, item.AveragePrice ?? 0, item.CurrentPrice); db.PortfolioPositions.Add(position); portfolio.Positions.Add(position); addedToPortfolio++; addedAssetIds.Add(asset.Id); }
             else { position.Update(item.Quantity, item.AveragePrice ?? position.AveragePrice, item.CurrentPrice ?? position.CurrentPrice); updated++; }
         }
+        PortfolioCalculator.RecalculateWeights(portfolio.Positions);
         await db.SaveChangesAsync(ct);
         var assetsByTicker = await db.Assets.Where(a => normalized.Transactions.Select(t => t.Ticker).Contains(a.Ticker)).ToDictionaryAsync(a => a.Ticker, ct);
         var importedTransactions = 0;
@@ -104,7 +105,6 @@ public sealed class PortfolioImportsController : ControllerBase
             db.PortfolioTransactions.Add(transactionRecord);
             importedTransactions++;
         }
-        PortfolioCalculator.RecalculateWeights(portfolio.Positions);
         session.MarkConfirmed(); session.SetPortfolioSnapshotKey(PortfolioSnapshotKeyCalculator.Calculate(portfolio)); session.MarkCompleted(); await db.SaveChangesAsync(ct);
         var autoReconciled = await reconciliation.AutoResolveDeterministic(portfolioId, ct);
         await transaction.CommitAsync(ct);

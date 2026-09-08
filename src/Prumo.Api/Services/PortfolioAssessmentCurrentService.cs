@@ -49,6 +49,12 @@ public sealed class PortfolioAssessmentCurrentService
             var key = $"{assessment.InvestmentEventId}|{snapshot}|{targetKey}|{impactService.Version}";
             if (freshness.Status == FreshnessStatus.Fresh)
             {
+                var affectedAssetIds = assessment.InvestmentEvent?.AffectedAssets.Select(x => x.Id).ToHashSet() ?? new HashSet<Guid>();
+                var hasAffectedPosition = portfolio.Positions.Any(x => affectedAssetIds.Contains(x.AssetId));
+                if (assessment.InvestmentEvent?.EventType == InvestmentEventType.Liquidation && hasAffectedPosition)
+                    assessment.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
+                else if (assessment.InvestmentEvent?.DocumentAnalysis?.Importance == AnalysisImportance.Critical && hasAffectedPosition && assessment.CapitalDecisionImpact < CapitalDecisionImpact.Caution)
+                    assessment.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Caution);
                 current.Add(assessment);
                 keys.Add(key);
                 continue;

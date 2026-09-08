@@ -8,9 +8,11 @@ public sealed class RadarPriorityCalculator
 {
     public RadarPriorityResult Calculate(DocumentAnalysis analysis)
     {
+        // Importance is an explicit product signal: a critical document must
+        // remain critical even when the event has few additional signals.
         var score = analysis.Importance switch
         {
-            AnalysisImportance.Critical => 40,
+            AnalysisImportance.Critical => 80,
             AnalysisImportance.Relevant => 20,
             _ => 0
         };

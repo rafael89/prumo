@@ -130,6 +130,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var ids = positions.Select(x => x.AssetId).ToHashSet();
         var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery()
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
             .Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed && x.InvestmentEvent!.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
         assessments = (await current.EnsureFreshAsync(portfolio, targets, assessments, ct)).ToList();
@@ -170,7 +171,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 new[] { new EvidenceReference("assessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) })).ToArray();
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
             return new ContributionCandidate(CandidateIdentity.Known(position.AssetId), position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
-                deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, classBudgets.GetValueOrDefault(position.AssetClass),
+                deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, classBudgets.GetValueOrDefault(position.AssetClass, amount),
                 inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts,
                 position.AssetType, position.Sector, position.RecentContributionAmount, position.RecentContributionCount,
                 position.LastContributionAt, position.SectorWeightWithinClass, position.HasPosition,

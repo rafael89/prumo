@@ -3,6 +3,8 @@
 [data-theme='dark'] .bg-stone-50,
 [data-theme='dark'] .bg-stone-50\/95 { background-color: #0f172a; }
 [data-theme='dark'] .bg-white { background-color: #1e293b; }
+[data-theme='dark'] .bg-white\/70,
+[data-theme='dark'] .app-footer { background-color: #111827; }
 [data-theme='dark'] .bg-slate-50 { background-color: #172033; }
 [data-theme='dark'] .bg-slate-100 { background-color: #263449; }
 [data-theme='dark'] .bg-slate-200 { background-color: #334155; }

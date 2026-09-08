@@ -34,6 +34,7 @@ type RadarNotificationItem = {
   occurredAt: string | null
   eventSummary: string
   affectedAssets: string[]
+  documentImportance?: string
 }
 type RadarNotificationResponse = {
   attentionNow: RadarNotificationItem[]
@@ -267,6 +268,16 @@ function App() {
     },
     onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
+  const resolveNotification = useMutation({
+    mutationFn: (assessmentId: string) => sendJson<unknown, { status: string }>(`/api/radar/${assessmentId}/status?portfolioId=${activePortfolio!.id}`, 'PATCH', { status: 'Closed' }),
+    onSuccess: async () => {
+      setSelectedNotification(null)
+      await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] })
+      await queryClient.invalidateQueries({ queryKey: ['radar', activePortfolio?.id] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard', activePortfolio?.id] })
+    },
+    onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
+  })
   const openNotification = (item: RadarNotificationItem) => {
     closeNotificationPanel()
     setSelectedNotification({ ...item, documentId: item.documentId ?? item.evidence?.[0]?.documentId ?? null, userState: 1 })
@@ -315,6 +326,7 @@ function App() {
     capitalDecisionImpact: selectedNotification.capitalDecisionImpact,
     status: selectedNotification.status,
     userState: selectedNotification.userState,
+    documentImportance: selectedNotification.documentImportance,
   } : null
   const createPortfolio = useMutation({
     mutationFn: (request: CreatePortfolioRequest) => sendJson<PortfolioSummary, CreatePortfolioRequest>('/api/portfolios', 'POST', request),
@@ -477,11 +489,11 @@ function App() {
           </div>
         </nav>
         {notificationToast && <div role="status" className="fixed right-5 top-20 z-40 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg"><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={() => setNotificationToast(null)} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={() => setNotificationToast(null)} className="text-lg leading-none text-amber-800">×</button></div></div>}
-        {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} />}
+        {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}
-        {route === '/history' && activePortfolio && <><div className="-mt-5"><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={(hasMore, nextBefore) => { setHistoryTotalPages(hasMore ? positionPage + 1 : positionPage); if (nextBefore) setHistoryCursors(current => ({ ...current, [positionPage + 1]: nextBefore })) }} /></div>{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
+        {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={(hasMore, nextBefore) => { setHistoryTotalPages(hasMore ? positionPage + 1 : positionPage); if (nextBefore) setHistoryCursors(current => ({ ...current, [positionPage + 1]: nextBefore })) }} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') || route === '/radar' ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>
@@ -502,7 +514,7 @@ function App() {
         </section>
         {route === '/radar' && activePortfolio && <div className="mx-auto grid w-full max-w-358 gap-8 px-6 pb-24 pt-3"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
-        <footer className="mt-auto h-14 border-t border-slate-200 bg-white/70 px-6 py-0">
+        <footer className="app-footer mt-auto h-14 border-t border-slate-200 bg-white/70 px-6 py-0">
           <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-3 text-sm text-slate-500">
             <p>prumo<span className="text-amber-600">.</span></p>
             <Link to="/about" aria-current={route === '/about' ? 'page' : undefined} className="font-semibold text-slate-700 transition hover:text-amber-700">Sobre</Link>

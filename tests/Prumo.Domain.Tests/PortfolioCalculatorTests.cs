@@ -41,6 +41,16 @@ public sealed class PortfolioCalculatorTests
     }
 
     [Fact]
+    public void Uma_unica_posicao_com_valor_tem_peso_de_cem_porcento()
+    {
+        var position = new PortfolioPosition(Guid.NewGuid(), Guid.NewGuid(), 30, 80, 80);
+
+        PortfolioCalculator.RecalculateWeights(new[] { position });
+
+        Assert.Equal(100m, position.PortfolioWeight);
+    }
+
+    [Fact]
     public void Quantidade_zero_produz_valor_zero()
     {
         var position = new PortfolioPosition(Guid.NewGuid(), Guid.NewGuid(), 0, 20, 25);

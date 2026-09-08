@@ -9,6 +9,8 @@ using Prumo.Application.Abstractions;
 using Prumo.Application.Intelligence;
 using Prumo.Api.Services;
 using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.PortfolioImports;
+using Microsoft.Extensions.Logging;
 
 namespace Prumo.Api.Controllers;
 
@@ -20,12 +22,16 @@ public sealed class PortfoliosController : ControllerBase
     private readonly PortfolioHealthCalculator portfolioHealthCalculator = new();
     private readonly IPortfolioAssessmentFreshnessEvaluator freshnessEvaluator = new PortfolioAssessmentFreshnessEvaluator();
     private readonly PortfolioAssessmentCurrentService currentAssessmentService;
+    private readonly NewAssetBootstrapService? documentBootstrap;
+    private readonly ILogger<PortfoliosController>? logger;
 
-    public PortfoliosController(PrumoDbContext dbContext, PortfolioAssessmentCurrentService? currentAssessmentService = null)
+    public PortfoliosController(PrumoDbContext dbContext, PortfolioAssessmentCurrentService? currentAssessmentService = null, NewAssetBootstrapService? documentBootstrap = null, ILogger<PortfoliosController>? logger = null)
     {
         this.dbContext = dbContext;
         var evaluator = new PortfolioAssessmentFreshnessEvaluator();
         this.currentAssessmentService = currentAssessmentService ?? new PortfolioAssessmentCurrentService(dbContext, new PortfolioImpactAssessmentService(), evaluator, Microsoft.Extensions.Logging.Abstractions.NullLogger<PortfolioAssessmentCurrentService>.Instance);
+        this.documentBootstrap = documentBootstrap;
+        this.logger = logger;
     }
 
     [HttpGet]
@@ -62,6 +68,7 @@ public sealed class PortfoliosController : ControllerBase
         CancellationToken cancellationToken)
     {
         var portfolio = await LoadPortfolio(portfolioId, cancellationToken);
+        if (portfolio is not null) PortfolioCalculator.RecalculateWeights(portfolio.Positions);
         return portfolio is null ? NotFound() : Ok(CreateDetail(portfolio));
     }
 
@@ -104,16 +111,20 @@ public sealed class PortfoliosController : ControllerBase
         var portfolio = await dbContext.Portfolios.AsNoTracking().SingleOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
         if (portfolio is null) return NotFound();
         var positionsQuery = dbContext.PortfolioPositions.AsNoTracking().Where(position => position.PortfolioId == portfolioId);
-        var positionCount = await positionsQuery.CountAsync(cancellationToken);
-        var totalValue = await positionsQuery.SumAsync(position => position.CurrentPrice.HasValue ? position.Quantity * position.CurrentPrice.Value : 0m, cancellationToken);
-        var positions = await positionsQuery.Include(position => position.Asset).OrderBy(position => position.Asset!.Ticker).ThenBy(position => position.Id)
-            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        var allPositions = await positionsQuery.Include(position => position.Asset).OrderBy(position => position.Asset!.Ticker).ThenBy(position => position.Id).ToListAsync(cancellationToken);
+        PortfolioCalculator.RecalculateWeights(allPositions);
+        var positionCount = allPositions.Count;
+        var totalValue = allPositions.Sum(position => position.CurrentValue ?? 0m);
+        var positions = allPositions.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         var targets = await dbContext.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(cancellationToken);
         var health = await LoadHealthForDashboard(portfolioId, targets, cancellationToken);
         var snapshotPortfolio = await dbContext.Portfolios.AsNoTracking().Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, cancellationToken);
+        PortfolioCalculator.RecalculateWeights(snapshotPortfolio.Positions);
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
-        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed).ToListAsync(cancellationToken);
+        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed).ToListAsync(cancellationToken);
         var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
+        foreach (var assessment in assessments.Where(x => x.InvestmentEvent?.DocumentAnalysis?.Importance == AnalysisImportance.Critical))
+            assessment.OverrideAttentionPriority(AttentionPriority.Critical);
         assessments = assessments
             .GroupBy(a => a.InvestmentEventId)
             .Select(group => group
@@ -140,11 +151,12 @@ public sealed class PortfoliosController : ControllerBase
     private async Task<PortfolioHealthResult> LoadHealthForDashboard(Guid portfolioId, IReadOnlyList<TargetAllocation> targets, CancellationToken cancellationToken)
     {
         var portfolio = await dbContext.Portfolios.Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, cancellationToken);
+        PortfolioCalculator.RecalculateWeights(portfolio.Positions);
         return portfolioHealthCalculator.Calculate(portfolio, targets);
     }
 
     private static DashboardAssessment CreateDashboardAssessment(PortfolioAssessment assessment)
-        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Status, assessment.UserState);
+        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Status, assessment.UserState, assessment.InvestmentEvent?.DocumentAnalysis?.Importance.ToString() ?? "Unknown");
 
     private static string HealthLabel(PortfolioHealthStatus status) => status switch
     {
@@ -199,6 +211,17 @@ public sealed class PortfoliosController : ControllerBase
         portfolio.Positions.Add(position);
         Recalculate(portfolio);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (documentBootstrap is not null)
+        {
+            try
+            {
+                await documentBootstrap.DiscoverLatestOnlyAsync(new[] { asset.Id }, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                logger?.LogError(exception, "Falha no discovery após adição manual: PortfolioId={PortfolioId}, AssetId={AssetId}", portfolioId, asset.Id);
+            }
+        }
 
         return CreatedAtAction(nameof(GetPortfolio), new { portfolioId }, CreatePositionResponse(position));
     }
@@ -312,7 +335,7 @@ public enum DashboardState { Ready, FirstUse, Processing, StrategyNotConfigured 
 public enum ContributionPreviewStatus { Available, NotConfigured, NoNeeds, EmptyPortfolio }
 public sealed record PortfolioOverview(Guid PortfolioId, string PortfolioName, decimal CurrentValue, string HealthStatus, string HealthSummary, string? MainDeviationSummary, DateTimeOffset? LastPortfolioUpdate);
 public sealed record ContributionPreview(ContributionPreviewStatus Status, AssetClass? PrimaryCapitalNeed, string Summary);
-public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState);
+public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, string DocumentImportance = "Unknown");
 public sealed record PortfolioHealthSummary(string Status, string Summary, IReadOnlyList<AllocationDeviation> AllocationDeviations, MainDeviation? MainDeviation);
 public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0, DashboardState State = DashboardState.Ready, PortfolioOverview? PortfolioOverview = null, IReadOnlyList<DashboardAssessment>? AttentionNow = null, ContributionPreview? ContributionPreview = null, PortfolioHealthSummary? PortfolioHealthSummary = null, IReadOnlyList<DashboardAssessment>? RecentUpdates = null, DateTimeOffset? GeneratedAt = null);
 public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight, ExposureMetadataResponse? Exposure = null);

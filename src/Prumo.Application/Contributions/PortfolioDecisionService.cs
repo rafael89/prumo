@@ -188,7 +188,7 @@ public sealed class PortfolioDecisionService
                     new CandidateAllocation(dominant.Identity, dominantAmount),
                     new CandidateAllocation(alternative.Identity, alternativeAmount)
                 },
-                $"Divide o aporte entre {dominant.Ticker} e {alternative.Ticker} para corrigir a classe sem ampliar excessivamente a concentraÃ§Ã£o.");
+                $"Divide o aporte entre {dominant.Ticker} e {alternative.Ticker} para corrigir a classe sem ampliar excessivamente a concentração.");
         }
     }
 

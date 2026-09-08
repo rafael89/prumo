@@ -36,6 +36,7 @@ export type DashboardAssessment = {
   capitalDecisionImpact: number
   status: number | string
   userState: number | string
+  documentImportance?: string
 }
 
 type RecentDocumentAnalysis = {
@@ -108,6 +109,7 @@ const priorityLabels = ['Baixa', 'Média', 'Alta', 'Crítica']
 const suggestedActionLabels: Record<string, string> = { Maintain: 'Manter', IncreasePosition: 'Aumentar posição', ReduceExposure: 'Reduzir exposição', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem ação', OpenPosition: 'Abrir posição' }
 const capitalImpactLabels = ['Favorável a aumentar exposição', 'Sem impacto relevante', 'Cautela ao aumentar exposição', 'Evitar aumentar exposição agora']
 const importanceLabels: Record<string, string> = { Critical: 'Crítico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem ação' }
+const documentImportanceLabels: Record<string, string> = { Critical: 'Crítica', Relevant: 'Relevante', Informative: 'Informativa', NoAction: 'Sem ação', Unknown: 'Não classificada' }
 const classificationLabels: Record<string, string> = { CorporateAction: 'Ação corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribuição', CapitalRaise: 'Captação', AssetTransaction: 'Transação de ativos', Governance: 'Governança', Operational: 'Operacional', Liquidation: 'Liquidação', Other: 'Outro' }
 
 void capitalImpactLabels
@@ -251,13 +253,13 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
     </div> : <div className="mt-4 divide-y divide-slate-100">
       {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 grid-cols-2 cursor-pointer gap-3 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
-        <span className={`order-1 w-fit rounded-full px-3 py-1.5 text-xs font-semibold sm:order-1 ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span>
+        <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>Prioridade: {priorityLabels[item.attentionPriority] ?? 'Baixa'}</span>{item.documentImportance && <span className="w-fit rounded-full border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600">Documento: {documentImportanceLabels[item.documentImportance] ?? item.documentImportance}</span>}</div>
         <div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1">
           <h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
         </div>
         {formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </button> : <div key={item.assessmentId} className="grid min-w-0 grid-cols-2 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
-        <span className={`order-1 w-fit rounded-full px-3 py-1.5 text-xs font-semibold sm:order-1 ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span><div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
+        <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>Prioridade: {priorityLabels[item.attentionPriority] ?? 'Baixa'}</span>{item.documentImportance && <span className="w-fit rounded-full border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600">Documento: {documentImportanceLabels[item.documentImportance] ?? item.documentImportance}</span>}</div><div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
     </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isSeen={selectedItem.userState === 1 || selectedItem.userState === 'Seen'} isResolved={selectedItem.status === 3 || selectedItem.status === 'Closed'} onClose={() => setSelectedItem(null)} onMarkSeen={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: false })} onResolve={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: true })} actionPending={statusMutation.isPending} />}
   </article>

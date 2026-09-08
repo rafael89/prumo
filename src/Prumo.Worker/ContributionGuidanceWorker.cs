@@ -46,7 +46,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                             ApplyFallback(
                                 guidance,
                                 workItem.Baseline,
-                                deterministicDecision.Reasons.FirstOrDefault() ?? "NÃ£o hÃ¡ um cenÃ¡rio completo que respeite os limites atuais; a distribuiÃ§Ã£o parcial segura foi preservada.",
+                                deterministicDecision.Reasons.FirstOrDefault() ?? "Não há um cenário completo que respeite os limites atuais; a distribuição parcial segura foi preservada.",
                                 "deterministic-partial-allocation");
                             /*
                             // The AI is consulted even when there is no complete safe
@@ -230,14 +230,30 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         if (decision.RecommendedScenario is null)
         {
             var candidateKeys = candidates.Select(x => x.CandidateKey).ToHashSet();
-            var baselineAllocations = baseline.Allocations
-                .Where(x => x.AssetId is not null)
-                .Select(x => new CandidateAllocation(CandidateIdentity.Known(x.AssetId!.Value), x.Amount))
-                .Where(x => candidateKeys.Contains(x.Key))
-                .ToArray();
-            options.Add(baselineAllocations.Length > 0
-                ? new ContributionScenarioOption("scenario:baseline-partial", baselineAllocations, 0m, "DistribuiÃ§Ã£o parcial segura calculada pelas regras da carteira.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "Preserva apenas a parte do aporte que respeita os limites conhecidos." }, 0m, 0m)
-                : new ContributionScenarioOption("scenario:no-action", Array.Empty<CandidateAllocation>(), 0m, "Nenhum aporte em ativo Ã© seguro com os dados e limites atuais.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "NÃ£o hÃ¡ benefÃ­cio mensurÃ¡vel suficiente para justificar um aporte." }, 0m, 0m));
+            var eligible = candidates.Where(x => !x.HasBlock && x.ClassBudget >= baseline.ContributionAmount)
+                .OrderByDescending(x => x.DecisionScore).ThenBy(x => x.RecentContributionCount).ThenBy(x => x.Ticker, StringComparer.Ordinal)
+                .Take(3).ToArray();
+            options.AddRange(eligible.Select((candidate, index) => new ContributionScenarioOption(
+                $"scenario:candidate:{index + 1}",
+                new[] { new CandidateAllocation(candidate.Identity, baseline.ContributionAmount) },
+                0m,
+                $"{candidate.Ticker} é um candidato elegível para o aporte dentro dos limites conhecidos.",
+                decision.PrimaryNeed?.AssetClass.ToString(),
+                new[] { "A seleção considera os candidatos válidos, os bloqueios do Radar e os limites da carteira." },
+                0m,
+                0m)));
+            if (options.Count == 0)
+            {
+                var baselineAllocations = baseline.Allocations
+                    .Where(x => x.AssetId is not null)
+                    .Select(x => new CandidateAllocation(CandidateIdentity.Known(x.AssetId!.Value), x.Amount))
+                    .Where(x => candidateKeys.Contains(x.Key))
+                    .ToArray();
+                if (baselineAllocations.Length > 0)
+                    options.Add(new ContributionScenarioOption("scenario:baseline-partial", baselineAllocations, 0m, "Distribuição parcial segura calculada pelas regras da carteira.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "Preserva apenas a parte do aporte que respeita os limites conhecidos." }, 0m, 0m));
+            }
+            if (options.Count == 0)
+                options.Add(new ContributionScenarioOption("scenario:no-action", Array.Empty<CandidateAllocation>(), 0m, "Não há candidato elegível para este aporte.", decision.PrimaryNeed?.AssetClass.ToString(), new[] { "Não existem ativos válidos e desbloqueados para recomendar." }, 0m, 0m));
             return options.ToArray();
         }
         var primaryNeed = decision.PrimaryNeed?.AssetClass.ToString();

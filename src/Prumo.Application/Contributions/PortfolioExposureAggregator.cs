@@ -113,7 +113,7 @@ public static class PortfolioExposureAggregator
                 need.Key!,
                 need.Severity,
                 candidatesThatReduceConcentration,
-                $"A carteira tem concentraÃ§Ã£o estrutural em {need.Key} ({need.Severity:0.##}%), e estes candidatos reduzem essa exposiÃ§Ã£o conhecida."));
+                $"A carteira tem concentração estrutural em {need.Key} ({need.Severity:0.##}%), e estes candidatos reduzem essa exposição conhecida."));
         }
         return result;
     }

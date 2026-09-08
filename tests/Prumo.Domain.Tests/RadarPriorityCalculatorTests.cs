@@ -27,6 +27,10 @@ public sealed class RadarPriorityCalculatorTests
     public void Low_analysis_without_action_is_low() => Assert.Equal(RadarPriority.Low, new RadarPriorityCalculator().Calculate(Analysis()).Priority);
 
     [Fact]
+    public void Critical_importance_is_critical_without_other_signals()
+        => Assert.Equal(RadarPriority.Critical, new RadarPriorityCalculator().Calculate(Analysis(AnalysisImportance.Critical)).Priority);
+
+    [Fact]
     public void Relevant_analysis_is_medium_and_action_raises_score() 
     {
         var result = new RadarPriorityCalculator().Calculate(Analysis(AnalysisImportance.Relevant, true));
