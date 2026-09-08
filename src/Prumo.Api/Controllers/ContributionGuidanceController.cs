@@ -19,7 +19,7 @@ namespace Prumo.Api.Controllers;
 public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioAssessmentCurrentService current, TransactionReconciliationService? canonical = null) : ControllerBase
 {
     private static readonly JsonSerializerOptions PersistedJson = new() { PropertyNameCaseInsensitive = true };
-    private const string ContributionEngineVersion = "R4-9.0";
+    private const string ContributionEngineVersion = "R4-9.2";
     private static readonly TimeSpan RecentContributionWindow = TimeSpan.FromDays(90);
 
     [HttpPost]
@@ -72,6 +72,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             .ToDictionary(x => x.Key, x => x.Sum(position => position.CurrentValue!.Value));
 
         var health = new PortfolioHealthCalculator().Calculate(portfolio, targets);
+        var requiresRebalance = health.AllocationDeviations.Any(x => x.Direction == AllocationDeviationDirection.Underweight);
         var total = portfolio.Positions.Sum(x => x.CurrentValue ?? 0);
         // Posições zeradas permanecem no cadastro/histórico, mas não podem
         // receber novos aportes até que uma importação as reative.
@@ -86,7 +87,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     ? 100
                     : sectorValue / classTotals[asset.AssetClass] * 100m;
                 var deviation = health.AllocationDeviations.FirstOrDefault(x => x.AssetClass == asset.AssetClass);
-                var allocationNeedScore = ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0);
+                var allocationNeedScore = requiresRebalance ? ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0) : 0m;
                 var diversificationScore = sector.Length == 0 ? 0 : Math.Clamp(100m - sectorWeight, 0, 100);
                 var underweightScore = Math.Clamp(100m - (total == 0 ? 0 : x.CurrentValue!.Value / total * 100m), 0, 100);
                 var recentPenalty = recent is null ? 0 : Math.Clamp(25m + recent.Amount / Math.Max(total, 1m) * 100m, 0, 100);
@@ -119,7 +120,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             var deviation = health.AllocationDeviations.FirstOrDefault(x => x.AssetClass == asset.AssetClass);
             var assetClass = asset.AssetType == AssetType.Etf ? AssetClass.International : asset.AssetClass;
             return new GuidancePosition(asset.Id, asset.Ticker, assetClass, 0, 0, asset.AssetType, asset.Sector,
-                HasPosition: false, AllocationNeedScore: ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0),
+                HasPosition: false, AllocationNeedScore: requiresRebalance ? ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0) : 0m,
                 UnderweightScore: 100, SectorCategory: asset.SectorCategory,
                 GeographicExposureCoverage: asset.GeographicExposureCoverage,
                 GeographicExposures: asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
@@ -174,7 +175,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 new[] { new EvidenceReference("assessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) })).ToArray();
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
             return new ContributionCandidate(CandidateIdentity.Known(position.AssetId), position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
-                deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, classBudgets.GetValueOrDefault(position.AssetClass, amount),
+                deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, requiresRebalance ? classBudgets.GetValueOrDefault(position.AssetClass) : amount,
                 inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts,
                 position.AssetType, position.Sector, position.RecentContributionAmount, position.RecentContributionCount,
                 position.LastContributionAt, position.SectorWeightWithinClass, position.HasPosition,
@@ -307,6 +308,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             decision = decision is null ? null : new
             {
                 decisionType = effectiveDecisionType,
+                rebalanceMode = decision.RebalanceMode,
                 contributionAmount = item.RequestedAmount,
                 primaryNeed = decision.PrimaryNeed is null ? null : new
                 {
@@ -400,11 +402,13 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         "SecondaryExposure" => "Entre alternativas equivalentes, esta melhora a diversificação da carteira.",
         "FinancialQuality" => "Entre alternativas estruturalmente equivalentes, esta apresentou melhor qualidade financeira.",
         "RecentContribution" => "Entre alternativas equivalentes, esta evita repetir um aporte recente.",
+        "MaintenanceMarginalBenefit" => "A carteira está dentro da tolerância entre classes; este destino apresentou o melhor benefício marginal entre as alternativas elegíveis.",
+        "MaintenanceDiversification" => "A carteira está dentro da tolerância entre classes; a divisão reduziu a concentração individual entre alternativas praticamente equivalentes.",
         "StableTieBreaker" => "As alternativas avaliadas ficaram equivalentes pelos critérios disponíveis.",
         _ => null
     };
 
-    private sealed record PersistedDecision(string DecisionType, PersistedNeed? PrimaryNeed, IntegratedDecisionEvidence? DecisionEvidence);
+    private sealed record PersistedDecision(string DecisionType, PersistedNeed? PrimaryNeed, IntegratedDecisionEvidence? DecisionEvidence, string? RebalanceMode);
     private sealed record PersistedNeed(string AssetClass, decimal CurrentPercentage, decimal TargetPercentage, decimal GapPercentagePoints);
 
     private static PersistedDecision? DeserializeDecision(string json)
@@ -419,7 +423,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             IntegratedDecisionEvidence? evidence = null;
             if (TryGet(root, "decisionEvidence", "DecisionEvidence", out value) && value.ValueKind != JsonValueKind.Null)
                 evidence = JsonSerializer.Deserialize<IntegratedDecisionEvidence>(value.GetRawText(), PersistedJson);
-            return new(type.GetString() ?? "NoAction", need, evidence);
+            var rebalanceMode = TryGet(root, "rebalanceMode", "RebalanceMode", out value) ? value.GetString() : null;
+            return new(type.GetString() ?? "NoAction", need, evidence, rebalanceMode);
         }
         catch (JsonException) { return null; }
     }

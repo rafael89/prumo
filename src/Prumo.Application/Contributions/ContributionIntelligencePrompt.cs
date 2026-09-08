@@ -5,7 +5,7 @@ namespace Prumo.Application.Contributions;
 
 public static class ContributionIntelligencePrompt
 {
-    public const string Version = "r4-contribution-v11";
+    public const string Version = "r4-contribution-v12";
 
     public static string BuildScenarioSelection(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null)
     {
@@ -70,6 +70,7 @@ public static class ContributionIntelligencePrompt
             Quando isEstablishingPosition=true, trate o ativo como uma posição em fase inicial: reduza a penalização por aporte recente se a classe ainda estiver abaixo do target, mas respeite integralmente bloqueios, eventos e limites.
             Considere a diversificação marginal em relação a esta carteira, não a qualidade isolada do ativo. Considere pendingEvents e assessments como contexto de eventos em andamento; um ativo afetado por evento não deve receber novo aporte automaticamente quando a exposição projetada ou a orientação do evento recomendar cautela.
             A ordem de decisão é obrigatória: (1) atender a maior necessidade de classe e reduzir o desvio agregado; (2) evitar concentração severa; (3) melhorar exposições secundárias; (4) favorecer diversificação quando o benefício marginal justificar; (5) penalizar aportes recentes quando houver alternativa equivalente; (6) usar qualidade financeira e valuation somente como desempate com evidência explícita.
+            Quando primaryNeed for null, o aporte está em modo de manutenção: não alegue necessidade de classe ou desvio. Compare somente concentração, exposições conhecidas, aportes recentes, assessments e a preferência da policy como desempate. Se esses dados não diferenciarem os cenários, reconheça a equivalência e preserve o cenário-base determinístico.
             O primeiro cenário é o cenário-base determinístico. Escolha outro somente se houver uma razão estrutural específica. Não divida o aporte automaticamente. Prefira uma distribuição parcial segura a uma distribuição completa estruturalmente pior e escolha scenario:no-action quando nenhum benefício mensurável puder ser justificado.
             Se escolher uma alternativa diferente do cenário-base, a reason deve mencionar o critério estrutural que justificou a troca. A reason deve mencionar pelo menos um fato real entre necessidade de classe, desvio, concentração, diversificação, exposição secundária, aporte recente ou assessment; não use justificativas genéricas.
             Você escolhe um cenário pré-calculado; não redistribua valores nem altere alocações.

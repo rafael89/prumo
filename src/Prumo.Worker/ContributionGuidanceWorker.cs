@@ -95,7 +95,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         {
                             var (selection, selected, retryCount) = deterministicOptions.Length == 1
                                 ? SingleScenarioSelection(deterministicOptions[0])
-                                : await SelectValidatedScenarioAsync(scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, investorPolicy, stoppingToken);
+                                : await SelectValidatedScenarioAsync(scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, investorPolicy, deterministicDecision.RebalanceMode, stoppingToken);
                             var selectionMode = deterministicOptions.Length == 1 ? "single-safe-scenario" : "ai-scenario-selection";
                             if (deterministicOptions.Length == 1) metrics.RecordAiOutcome("single-safe-scenario");
                             guidance.UpdateIntelligence(selection.Metadata.Provider, selection.Metadata.Model, selection.Availability.ToString(), selection.Reason, JsonSerializer.Serialize(new
@@ -115,6 +115,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 investorPolicyId = investorPolicy.PolicyId,
                                 investorPolicyVersion = investorPolicy.PolicyVersion,
                                 decisionType = deterministicDecision.DecisionType.ToString(),
+                                rebalanceMode = deterministicDecision.RebalanceMode.ToString(),
                                 primaryNeed = deterministicDecision.PrimaryNeed,
                                 structuralNeeds = deterministicDecision.StructuralNeeds,
                                 decisionEvidence = deterministicDecision.DecisionEvidence,
@@ -229,6 +230,20 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         var options = new List<ContributionScenarioOption>();
         if (decision.RecommendedScenario is null)
         {
+            if (decision.DecisionType == PortfolioDecisionType.NoAction)
+                return new[]
+                {
+                    new ContributionScenarioOption(
+                        "scenario:no-action",
+                        Array.Empty<CandidateAllocation>(),
+                        0m,
+                        decision.Reasons.FirstOrDefault() ?? "Não há uma necessidade de alocação suficientemente relevante agora.",
+                        null,
+                        new[] { "A carteira está dentro da tolerância definida para as alocações-alvo." },
+                        0m,
+                        0m)
+                };
+
             var candidateKeys = candidates.Select(x => x.CandidateKey).ToHashSet();
             var eligible = candidates.Where(x => !x.HasBlock && x.ClassBudget >= baseline.ContributionAmount)
                 .OrderByDescending(x => x.DecisionScore).ThenBy(x => x.RecentContributionCount).ThenBy(x => x.Ticker, StringComparer.Ordinal)
@@ -257,7 +272,10 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             return options.ToArray();
         }
         var primaryNeed = decision.PrimaryNeed?.AssetClass.ToString();
-        options.Add(ToScenarioOption("scenario:deterministic", decision.RecommendedScenario, "Cenário determinístico de referência.", primaryNeed));
+        var summary = decision.RebalanceMode == ContributionRebalanceMode.Maintenance
+            ? "Cenário de manutenção: não há classe prioritária; compara benefícios marginais entre destinos elegíveis."
+            : "Cenário determinístico de referência.";
+        options.Add(ToScenarioOption("scenario:deterministic", decision.RecommendedScenario, summary, primaryNeed));
         options.AddRange(decision.AlternativeScenarios.Select((scenario, index) =>
             ToScenarioOption($"scenario:alternative:{index + 1}", scenario, "Alternativa determinística válida.", primaryNeed)));
         return options.ToArray();
@@ -280,6 +298,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         IReadOnlyList<ContributionScenarioOption> scenarios,
         IReadOnlyList<ContributionCandidate> candidates,
         InvestorPolicy investorPolicy,
+        ContributionRebalanceMode rebalanceMode,
         CancellationToken cancellationToken)
     {
         Exception? last = null;
@@ -291,7 +310,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 var selected = ContributionScenarioValidator.Select(selection, scenarios, amount, candidates);
                 if (!HasGroundedReason(selection, selected))
                     throw new InvalidOperationException("A IA retornou uma justificativa insuficiente para o cenário selecionado.");
-                if (selected.Improvement + 0.01m < scenarios[0].Improvement)
+                if (rebalanceMode == ContributionRebalanceMode.Required && selected.Improvement + 0.01m < scenarios[0].Improvement)
                     throw new InvalidOperationException("A IA retornou um cenário inferior ao cenário-base seguro.");
 
                 if (attempt > 0) metrics.RecordAiOutcome("retry-succeeded");

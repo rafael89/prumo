@@ -35,6 +35,43 @@ public sealed class PortfolioDecisionServiceTests
     }
 
     [Fact]
+    public void Uses_maintenance_mode_when_classes_are_within_tolerance_and_capital_was_provided()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var result = new PortfolioDecisionService().DecideDeterministically(100, new[]
+        {
+            new ContributionCandidate(CandidateIdentity.Known(first), "VGIP11", AssetClass.Fii, 79, 4, 79, 80, 100, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 5, UnderweightScore: 96),
+            new ContributionCandidate(CandidateIdentity.Known(second), "BBSE3", AssetClass.BrazilianStock, 21, 3, 21, 20, 100, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 0, UnderweightScore: 97)
+        });
+
+        Assert.Equal(ContributionRebalanceMode.Maintenance, result.RebalanceMode);
+        Assert.NotEqual(PortfolioDecisionType.NoAction, result.DecisionType);
+        Assert.Null(result.PrimaryNeed);
+        Assert.Equal(second, result.RecommendedScenario!.Allocations.Single().AssetId);
+    }
+
+    [Fact]
+    public void Splits_a_maintenance_contribution_between_near_equivalent_candidates_when_it_reduces_concentration()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var stock = Guid.NewGuid();
+        var result = new PortfolioDecisionService().DecideDeterministically(100, new[]
+        {
+            new ContributionCandidate(CandidateIdentity.Known(first), "AAA", AssetClass.Fii, 39, 4, 76, 77, 100, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 0, UnderweightScore: 96),
+            new ContributionCandidate(CandidateIdentity.Known(second), "BBB", AssetClass.Fii, 37, 4, 76, 77, 100, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 0, UnderweightScore: 96),
+            new ContributionCandidate(CandidateIdentity.Known(stock), "CCC", AssetClass.BrazilianStock, 24, 24, 24, 23, 100, false, Array.Empty<ContributionAssessmentContext>(), AllocationNeedScore: 0, UnderweightScore: 76)
+        });
+
+        Assert.Equal(ContributionRebalanceMode.Maintenance, result.RebalanceMode);
+        Assert.Equal(PortfolioDecisionType.SplitContribution, result.DecisionType);
+        Assert.Equal(100m, result.RecommendedScenario!.Allocations.Sum(x => x.Amount));
+        Assert.Equal(50m, result.RecommendedScenario.Allocations.Single(x => x.AssetId == first).Amount);
+        Assert.Equal(50m, result.RecommendedScenario.Allocations.Single(x => x.AssetId == second).Amount);
+    }
+
+    [Fact]
     public void Chooses_split_when_recommended_allocations_have_two_assets()
     {
         var first = Guid.NewGuid(); var second = Guid.NewGuid();

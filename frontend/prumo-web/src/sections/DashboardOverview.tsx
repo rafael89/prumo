@@ -113,10 +113,6 @@ const classificationLabels: Record<string, string> = { CorporateAction: 'Ação 
 
 void capitalImpactLabels
 
-function hasCapitalImpact(value: number | string) {
-  return value !== 1 && value !== 'None'
-}
-
 function formatPercentage(value: number) {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)
 }
@@ -251,13 +247,14 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
     {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
     </div> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 grid-cols-2 cursor-pointer gap-3 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
-        <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div>
-        <div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1">
-          <h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
+      {items.slice(0, visibleCount).map(item => item.documentId ? <div key={item.assessmentId} role="button" tabIndex={0} onClick={() => setSelectedItem(item)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedItem(item) } }} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
+        <div className="shrink-0"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
         </div>
-        {formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
-      </button> : <div key={item.assessmentId} className="grid min-w-0 grid-cols-2 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
+        {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
+        {item.status !== 3 && item.status !== 'Closed' && <button type="button" aria-label="Fechar situação" title="Fechar situação" onClick={event => { event.stopPropagation(); statusMutation.mutate({ id: item.assessmentId, resolved: true }) }} disabled={statusMutation.isPending} className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} /></button>}
+      </div> : <div key={item.assessmentId} className="grid min-w-0 grid-cols-2 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
         <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div><div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
     </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isSeen={selectedItem.userState === 1 || selectedItem.userState === 'Seen'} isResolved={selectedItem.status === 3 || selectedItem.status === 'Closed'} onClose={() => setSelectedItem(null)} onMarkSeen={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: false })} onResolve={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: true })} actionPending={statusMutation.isPending} />}
@@ -272,10 +269,6 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
   }, [])
 
   const [markedSeen, setMarkedSeen] = useState(false)
-  if (!hasCapitalImpact(item.capitalDecisionImpact)) {
-    onResolve = undefined
-    onReopen = undefined
-  }
   const analysis = useQuery({
     queryKey: ['dashboard-document-analysis', item.documentId, portfolioId],
     queryFn: async () => {

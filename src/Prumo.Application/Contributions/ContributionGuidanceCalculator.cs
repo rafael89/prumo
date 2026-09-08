@@ -65,8 +65,9 @@ public sealed class ContributionGuidanceCalculator
 
         var targetDeviations = input.Health.AllocationDeviations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.First());
         if (targetDeviations.Count == 0) return Empty(input, ContributionGuidanceStatus.NoNeeds, "Não há alocações-alvo válidas para orientar este aporte.");
-
         var impacts = input.Assessments.Where(a => a.Status != AssessmentStatus.Closed).GroupBy(a => a.AssetId).ToDictionary(g => g.Key, EffectiveImpact);
+        if (targetDeviations.Count > 1 && !targetDeviations.Values.Any(x => x.Direction == AllocationDeviationDirection.Underweight))
+            return Maintenance(input, positions, impacts);
         var avoided = new List<AvoidedCandidate>();
         var reasons = new List<string>();
         var allocationsByAsset = new Dictionary<Guid, decimal>();
@@ -175,6 +176,23 @@ public sealed class ContributionGuidanceCalculator
         status, input.PortfolioId, Money(input.ContributionAmount), Array.Empty<ContributionAllocation>(), Array.Empty<AvoidedCandidate>(),
         Money(input.ContributionAmount), ContributionAllocationStyle.NoAllocation, new[] { reason }, Array.Empty<string>(),
         input.Health.PolicyVersion, Array.Empty<string>(), DateTimeOffset.UtcNow);
+
+    private static ContributionGuidance Maintenance(ContributionGuidanceInput input, IReadOnlyList<GuidancePosition> positions, IReadOnlyDictionary<Guid, CapitalDecisionImpact> impacts)
+    {
+        var ranked = RankedCandidates(positions, impacts);
+        if (ranked.Count == 0)
+            return Empty(input, ContributionGuidanceStatus.NoEligibleCandidates, "Não existe candidato elegível para receber este aporte com segurança.");
+        var selected = ranked[0];
+        var evidence = EvidenceFor(selected.AssetId, input.Assessments);
+        var allocation = new ContributionAllocation(selected.AssetId, selected.Ticker, selected.AssetClass, Money(input.ContributionAmount),
+            "A carteira está dentro da tolerância entre classes; a posição foi priorizada pelos critérios marginais disponíveis.", evidence);
+        var avoided = ranked.Skip(1).Select(candidate => new AvoidedCandidate(candidate.AssetId, candidate.Ticker, candidate.AssetClass, ContributionAvoidanceReasonType.LowerPriority,
+            "Não foi priorizado no cenário de manutenção; outra alternativa elegível apresentou melhor critério marginal disponível.", EvidenceFor(candidate.AssetId, input.Assessments))).ToArray();
+        return new ContributionGuidance(ContributionGuidanceStatus.Calculated, input.PortfolioId, Money(input.ContributionAmount), new[] { allocation }, avoided, 0m,
+            ContributionAllocationStyle.Concentrated,
+            new[] { "Nenhuma classe possui necessidade material de rebalanceamento; o aporte foi calculado em modo de manutenção." },
+            evidence, input.Health.PolicyVersion, input.Assessments.Select(x => x.AssessmentVersion).Distinct().ToArray(), DateTimeOffset.UtcNow);
+    }
 
     private static decimal Money(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 

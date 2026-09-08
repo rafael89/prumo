@@ -48,7 +48,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         var confidence = context.RelevantPositions.Count == 0 ? IntelligenceConfidence.Low
             : context.PortfolioHealth is null ? IntelligenceConfidence.Medium : IntelligenceConfidence.High;
         var exposureText = hasExposure
-            ? $"A carteira possui exposição agregada de {totalExposure:0.##}% aos ativos afetados."
+            ? $"Exposição aos ativos afetados: {totalExposure:0.##}%. Impacto potencial perceptível."
             : "Não foi identificada posição atual nos ativos afetados.";
         var behavior = action == ActionRequirement.Review
             ? "Revisar o evento no contexto da carteira antes de alterar posições."
@@ -57,6 +57,6 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
                 : "Nenhuma ação específica necessária neste momento.";
 
         return new(attention, action, capitalImpact, context.InvestmentEvent.Summary,
-            $"{exposureText} Avaliação contextual para {context.Portfolio.Name}.", behavior, confidence);
+            exposureText, behavior, confidence);
     }
 }

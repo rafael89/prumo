@@ -31,7 +31,7 @@ public sealed class ContributionGuidanceControllerTests
         var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync();
         Assert.Equal(2, guidances.Count);
         Assert.Equal(oldGuidance.Id, guidances[0].Id);
-        Assert.Equal("R4-9.0", guidances[1].EngineVersion);
+        Assert.Equal("R4-9.2", guidances[1].EngineVersion);
         Assert.Equal("pending-ai", guidances[1].Provider);
         Assert.Equal(ContributionGuidanceJobStatus.Queued, await db.ContributionGuidanceJobs
             .Where(x => x.ContributionGuidanceId == guidances[1].Id)
@@ -44,7 +44,7 @@ public sealed class ContributionGuidanceControllerTests
     {
         await using var db = CreateDbContext();
         var (portfolio, targets) = await SeedPortfolioAsync(db);
-        var currentGuidance = AddCompletedGuidance(db, portfolio, targets, "R4-9.0");
+        var currentGuidance = AddCompletedGuidance(db, portfolio, targets, "R4-9.2");
         await db.SaveChangesAsync();
 
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
@@ -53,7 +53,7 @@ public sealed class ContributionGuidanceControllerTests
         var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync();
         Assert.Equal(2, guidances.Count);
         Assert.Equal(currentGuidance.Id, guidances[0].Id);
-        Assert.Equal("R4-9.0", guidances[1].EngineVersion);
+        Assert.Equal("R4-9.2", guidances[1].EngineVersion);
         Assert.Equal("pending-ai", guidances[1].Provider);
         Assert.Equal(ContributionGuidanceJobStatus.Queued, await db.ContributionGuidanceJobs
             .Where(x => x.ContributionGuidanceId == guidances[1].Id)

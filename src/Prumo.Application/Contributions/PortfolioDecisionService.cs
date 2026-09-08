@@ -4,6 +4,7 @@ using Prumo.Domain.Enums;
 namespace Prumo.Application.Contributions;
 
 public enum PortfolioDecisionType { ReinforceExisting, AddNewAsset, SplitContribution, NoAction }
+public enum ContributionRebalanceMode { Required, Maintenance }
 public sealed record PortfolioNeed(AssetClass AssetClass, decimal CurrentPercentage, decimal TargetPercentage, decimal GapPercentagePoints);
 public enum CandidateStructuralFit { DirectlyAddressesPrimaryNeed, AddressesPrimaryNeedButWorsensConcentration, AddressesSecondaryNeedOnly, Neutral, StructurallyInferior, InsufficientExposureContext }
 public sealed record IntegratedDecisionEvidence(string PrimaryNeed, decimal PrimaryNeedImprovement, CandidateStructuralFit StructuralFit, string ConcentrationEffect, string SecondaryExposureEffect, string QualityContext, string ValuationContext, string RecentContributionContext, string DecisiveFactor, string? AlternativeComparisonReason);
@@ -11,10 +12,12 @@ public sealed record ContributionScenario(IReadOnlyList<CandidateAllocation> All
 public sealed record PortfolioDecision(PortfolioDecisionType DecisionType, decimal ContributionAmount, PortfolioNeed? PrimaryNeed, ContributionScenario? RecommendedScenario, IReadOnlyList<ContributionScenario> AlternativeScenarios, IReadOnlyList<string> Reasons, IReadOnlyList<string> MissingData, IReadOnlyList<MultidimensionalPortfolioNeed>? SecondaryNeeds = null, PortfolioExposureSummary? ExposureSummary = null, IReadOnlyList<CandidateFinancialEvaluation>? FinancialEvaluations = null, IntegratedDecisionEvidence? DecisionEvidence = null)
 {
     public IReadOnlyList<PortfolioStructuralNeed> StructuralNeeds { get; init; } = Array.Empty<PortfolioStructuralNeed>();
+    public ContributionRebalanceMode RebalanceMode { get; init; } = ContributionRebalanceMode.Required;
 }
 
 public sealed class PortfolioDecisionService
 {
+    private const decimal MaintenanceSplitScoreTolerance = .25m;
     public PortfolioDecision DecideDeterministically(decimal amount, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null)
     {
         candidates ??= Array.Empty<ContributionCandidate>();
@@ -26,7 +29,7 @@ public sealed class PortfolioDecisionService
         var needs = candidates.GroupBy(x => x.AssetClass)
             .Select(g => { var first = g.First(); return new PortfolioNeed(g.Key, first.CurrentClassWeight, first.TargetClassWeight, first.TargetClassWeight - first.CurrentClassWeight); })
             .Where(x => x.GapPercentagePoints > 2m).OrderByDescending(x => x.GapPercentagePoints).ThenBy(x => x.AssetClass.ToString(), StringComparer.Ordinal).ToArray();
-        if (needs.Length == 0) return NoAction(amount, "Não há uma necessidade de alocação suficientemente relevante agora.", secondary, exposure, MissingData(exposure), financial) with { StructuralNeeds = structuralNeeds };
+        if (needs.Length == 0) return DecideMaintenance(amount, candidates, investorPolicy, secondary, exposure, structuralNeeds, financial);
         var eligible = candidates.Where(x => x.AssetClass == needs[0].AssetClass && !x.HasBlock).ToArray();
         var dominant = DominantHeldCandidate(eligible);
         var scenarios = eligible.Select(x => Scenario(candidates, new[] { new CandidateAllocation(x.Identity, amount) }, $"{x.Ticker} atende a necessidade primária de {needs[0].AssetClass}.")).ToArray();
@@ -70,6 +73,81 @@ public sealed class PortfolioDecisionService
             runner is null ? null : $"{candidates.Single(x => x.CandidateKey == runner.Allocations[0].Key).Ticker} perdeu em {factor}.");
         var type = winner.Allocations.Count > 1 ? PortfolioDecisionType.SplitContribution : candidate.HasPosition ? PortfolioDecisionType.ReinforceExisting : PortfolioDecisionType.AddNewAsset;
         return new PortfolioDecision(type, amount, needs[0], winner, runner is null ? Array.Empty<ContributionScenario>() : new[] { runner }, new[] { "O cenário foi selecionado por comparação determinística pós-aporte." }, MissingData(exposure), secondary, exposure, financial, evidence) with { StructuralNeeds = structuralNeeds };
+    }
+
+    private static PortfolioDecision DecideMaintenance(
+        decimal amount,
+        IReadOnlyList<ContributionCandidate> candidates,
+        InvestorPolicy policy,
+        IReadOnlyList<MultidimensionalPortfolioNeed> secondary,
+        PortfolioExposureSummary exposure,
+        IReadOnlyList<PortfolioStructuralNeed> structuralNeeds,
+        IReadOnlyList<CandidateFinancialEvaluation> financial)
+    {
+        var eligible = candidates.Where(x => !x.HasBlock && x.ClassBudget >= amount).ToArray();
+        if (eligible.Length == 0)
+            return NoAction(amount, "Não existe candidato elegível para receber este aporte com segurança.", secondary, exposure, MissingData(exposure), financial)
+                with { StructuralNeeds = structuralNeeds, RebalanceMode = ContributionRebalanceMode.Maintenance };
+
+        var ranked = eligible
+            .OrderBy(MaintenancePriority)
+            .ThenBy(x => WorsensSevereConcentration(candidates, new[] { new CandidateAllocation(x.Identity, amount) }))
+            .ThenByDescending(x => x.DecisionScore)
+            .ThenBy(x => x.RecentContributionCount)
+            .ThenBy(x => policy.PreferExistingPositionsWhenEquivalent && x.HasPosition ? 0 : 1)
+            .ThenBy(x => x.Ticker, StringComparer.Ordinal)
+            .ThenBy(x => x.CandidateKey.Value, StringComparer.Ordinal)
+            .ToArray();
+        var scenarios = ranked.Select(candidate => Scenario(candidates,
+            new[] { new CandidateAllocation(candidate.Identity, amount) },
+            $"A carteira está dentro da tolerância entre classes. {candidate.Ticker} é uma alternativa de manutenção elegível pelos critérios marginais disponíveis.")).ToArray();
+        var bestSingle = scenarios[0];
+        var splitCandidate = ranked.Skip(1).FirstOrDefault(candidate =>
+            MaintenancePriority(candidate) == MaintenancePriority(ranked[0])
+            && ranked[0].DecisionScore - candidate.DecisionScore <= MaintenanceSplitScoreTolerance);
+        var split = splitCandidate is null ? null : Scenario(candidates, new[]
+        {
+            new CandidateAllocation(ranked[0].Identity, Money(amount / 2m)),
+            new CandidateAllocation(splitCandidate.Identity, Money(amount - Money(amount / 2m)))
+        }, $"Divide o aporte entre {ranked[0].Ticker} e {splitCandidate.Ticker} porque os critérios marginais ficaram praticamente equivalentes e a divisão reduz a concentração individual resultante.");
+        var winner = split is not null && MaximumResultingPositionWeight(candidates, split.Allocations) + .01m < MaximumResultingPositionWeight(candidates, bestSingle.Allocations)
+            ? split
+            : bestSingle;
+        var candidate = ranked[0];
+        var runner = winner == split ? bestSingle : scenarios.Skip(1).FirstOrDefault();
+        var evidence = new IntegratedDecisionEvidence(
+            "Nenhuma classe está fora da tolerância de rebalanceamento.",
+            0m,
+            CandidateStructuralFit.Neutral,
+            WorsensSevereConcentration(candidates, winner.Allocations) ? "Aumenta concentração severa." : "Não aumenta concentração severa.",
+            SecondaryImprovement(winner) > 0 ? "Melhora exposição secundária conhecida." : "Sem melhoria secundária comprovada.",
+            financial.FirstOrDefault(x => x.AssetId == candidate.Identity.AssetId)?.Quality.Category ?? "InsufficientData",
+            "NotUsed",
+            candidate.RecentContributionCount > 0 ? "Recebeu aporte recentemente; contexto considerado." : "Sem aporte recente relevante.",
+            winner.Allocations.Count > 1 ? "MaintenanceDiversification" : "MaintenanceMarginalBenefit",
+            runner is null ? null : "Alternativa de manutenção elegível avaliada e não selecionada.");
+        var type = winner.Allocations.Count > 1 ? PortfolioDecisionType.SplitContribution : candidate.HasPosition ? PortfolioDecisionType.ReinforceExisting : PortfolioDecisionType.AddNewAsset;
+        return new PortfolioDecision(type, amount, null, winner, runner is null ? Array.Empty<ContributionScenario>() : new[] { runner },
+            new[] { "Nenhuma classe possui necessidade material de rebalanceamento; o aporte foi avaliado em modo de manutenção." },
+            MissingData(exposure), secondary, exposure, financial, evidence)
+        {
+            StructuralNeeds = structuralNeeds,
+            RebalanceMode = ContributionRebalanceMode.Maintenance
+        };
+    }
+
+    private static int MaintenancePriority(ContributionCandidate candidate)
+        => candidate.CurrentAssessments.Any(a => a.CapitalDecisionImpact == "Favor") ? 0
+            : candidate.CurrentAssessments.Any(a => a.CapitalDecisionImpact == "Caution") ? 2
+            : 1;
+
+    private static decimal MaximumResultingPositionWeight(IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<CandidateAllocation> allocations)
+    {
+        var total = candidates.Sum(x => x.CurrentValue);
+        var amount = allocations.Sum(x => x.Amount);
+        if (total + amount <= 0) return 100m;
+        var additions = allocations.GroupBy(x => x.Key).ToDictionary(x => x.Key, x => x.Sum(y => y.Amount));
+        return candidates.Max(x => (x.CurrentValue + additions.GetValueOrDefault(x.CandidateKey)) / (total + amount) * 100m);
     }
 
     private static bool IsWithinClassBudgets(ContributionScenario scenario, IReadOnlyList<ContributionCandidate> candidates)
