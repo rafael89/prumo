@@ -186,7 +186,7 @@ function healthLabel(status: string | undefined) {
 }
 
 function healthTone(status: string | undefined) {
-  if (status === 'Aligned') return { ring: '#10b981', badge: 'bg-emerald-50 text-emerald-700' }
+  if (status === 'Aligned') return { ring: '#334155', badge: 'bg-slate-100 text-slate-700' }
   if (status === 'SlightlyUnbalanced') return { ring: '#eab308', badge: 'bg-yellow-50 text-yellow-700' }
   if (status === 'Unbalanced') return { ring: '#f97316', badge: 'bg-orange-50 text-orange-700' }
   if (status === 'StronglyUnbalanced') return { ring: '#ef4444', badge: 'bg-rose-50 text-rose-700' }
@@ -250,10 +250,9 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
       {items.slice(0, visibleCount).map(item => item.documentId ? <div key={item.assessmentId} role="button" tabIndex={0} onClick={() => setSelectedItem(item)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedItem(item) } }} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
         <div className="shrink-0"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
+          <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3>
         </div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
-        {item.status !== 3 && item.status !== 'Closed' && <button type="button" aria-label="Fechar situação" title="Fechar situação" onClick={event => { event.stopPropagation(); statusMutation.mutate({ id: item.assessmentId, resolved: true }) }} disabled={statusMutation.isPending} className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} /></button>}
       </div> : <div key={item.assessmentId} className="grid min-w-0 grid-cols-2 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
         <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div><div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
@@ -357,19 +356,19 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
   return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="grid w-full min-w-0 cursor-pointer gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
-        {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
-      </button> : <div key={item.assessmentId} className="grid min-w-0 gap-2 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="min-w-0"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
-        {formatRelativeDate(item.occurredAt) && <span className="text-xs text-slate-500 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
+      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
+        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
+        {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
+      </button> : <div key={item.assessmentId} className="flex min-w-0 items-center gap-2 py-3 first:pt-0">
+        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
+        {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
     </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
   </article>
 }
 
 function ContributionWidget() {
-  return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm sm:p-6 lg:col-span-2"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Próximo passo</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Planeje seu próximo aporte.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Simule uma distribuição usando suas alocações-alvo, posições atuais e a inteligência da carteira.</p></div><Link to="/contributions" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700">Abrir aportes <FontAwesomeIcon icon={faArrowRight} /></Link></div></article>
+  return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm sm:p-6 lg:col-span-2"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Próximo passo</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Planeje seu próximo aporte.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Simule uma distribuição usando suas alocações-alvo, posições atuais e a inteligência da carteira.</p></div><Link to="/contributions" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700">Ir para aportes <FontAwesomeIcon icon={faArrowRight} /></Link></div></article>
 }
 
 export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false }: DashboardOverviewProps) {

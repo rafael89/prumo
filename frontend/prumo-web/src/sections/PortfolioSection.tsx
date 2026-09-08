@@ -69,7 +69,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
           {activePortfolio && (
             <>
-              <form onSubmit={handleCreatePosition} className="mt-4 grid gap-3 md:grid-cols-5 md:items-end">
+              <form onSubmit={handleCreatePosition} className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5 md:items-end">
                 <div>
                   <label htmlFor="ticker" className="text-sm font-medium text-slate-700">Ticker</label>
                   <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />
@@ -88,7 +88,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                   <label htmlFor="current-price" className="text-sm font-medium text-slate-700">Pre&ccedil;o de refer&ecirc;ncia</label>
                   <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
                 </div>
-                <div className="flex items-end">
+                <div className="col-span-2 flex items-end md:col-span-1">
                   <button type="submit" disabled={createPosition.isPending} className="h-11.5 w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                     <FontAwesomeIcon icon={faPlus} className="mr-2" />{createPosition.isPending ? 'Salvando...' : 'Adicionar'}
                   </button>

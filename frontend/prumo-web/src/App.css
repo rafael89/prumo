@@ -45,6 +45,8 @@
   nav > div:first-child > .theme-toggle { grid-column: 3; grid-row: 1; justify-self: end; }
   [data-radar-actions] { margin-top: .5rem; }
   [data-radar-actions] button { min-width: 0; gap: .375rem; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; justify-content: center; }
+  [data-radar-actions="bulk"] button:last-child { border: 1px solid #a7f3d0; background-color: #ecfdf5; color: #047857; }
+  [data-radar-actions="bulk"] button:last-child:hover { border-color: #6ee7b7; background-color: #d1fae5; }
   #radar > div:nth-child(3) { margin-top: .75rem; }
   div:has(> #b3-file) { gap: .5rem; }
   div:has(> #b3-file) > label,
