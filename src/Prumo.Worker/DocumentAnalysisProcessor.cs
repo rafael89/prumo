@@ -156,7 +156,7 @@ public sealed class DocumentAnalysisProcessor
 
         try
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await PostgresTransientFailure.SaveChangesWithDeadlockRetryAsync(dbContext, cancellationToken);
         }
         catch (DbUpdateException exception) when (IsPortfolioAssessmentUniqueViolation(exception))
         {
@@ -170,7 +170,9 @@ public sealed class DocumentAnalysisProcessor
             foreach (var assessment in pendingAssessments) dbContext.Entry(assessment).State = EntityState.Detached;
             foreach (var assessment in pendingAssessments
                          .GroupBy(item => new { item.PortfolioId, item.InvestmentEventId, item.PortfolioSnapshotKey, item.TargetAllocationKey, item.AssessmentVersion })
-                         .Select(group => group.First()))
+                         .Select(group => group.First())
+                         .OrderBy(item => item.PortfolioId)
+                         .ThenBy(item => item.InvestmentEventId))
             {
                 var alreadyPersisted = await dbContext.PortfolioAssessments.AnyAsync(item =>
                     item.PortfolioId == assessment.PortfolioId
@@ -181,7 +183,7 @@ public sealed class DocumentAnalysisProcessor
                 if (!alreadyPersisted) dbContext.PortfolioAssessments.Add(assessment);
             }
             logger.LogInformation("Avaliação de carteira concorrente ignorada; o registro já existente foi preservado.");
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await PostgresTransientFailure.SaveChangesWithDeadlockRetryAsync(dbContext, cancellationToken);
         }
     }
 
@@ -231,7 +233,7 @@ public sealed class DocumentAnalysisProcessor
         var assetIds = investmentEvent.AffectedAssets.Select(asset => asset.Id).ToArray();
         if (assetIds.Length == 0) return;
         var portfolios = await dbContext.Portfolios.Include(portfolio => portfolio.Positions).ThenInclude(position => position.Asset).Where(portfolio => portfolio.Positions.Any(position => assetIds.Contains(position.AssetId) && position.Quantity > 0)).ToListAsync(cancellationToken);
-        foreach (var portfolio in portfolios)
+        foreach (var portfolio in portfolios.OrderBy(x => x.Id))
         {
             var targets = await dbContext.TargetAllocations.Where(target => target.PortfolioId == portfolio.Id).ToListAsync(cancellationToken);
             var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
@@ -275,7 +277,7 @@ public sealed class DocumentAnalysisProcessor
             var assetIds = investmentEvent.AffectedAssets.Select(x => x.Id).ToArray();
             if (assetIds.Length == 0) continue;
             var portfolios = await dbContext.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).Where(x => x.Positions.Any(p => assetIds.Contains(p.AssetId) && p.Quantity > 0)).ToListAsync(cancellationToken);
-            foreach (var portfolio in portfolios)
+            foreach (var portfolio in portfolios.OrderBy(x => x.Id))
             {
                 var targets = await dbContext.TargetAllocations.Where(x => x.PortfolioId == portfolio.Id).ToListAsync(cancellationToken);
                 var targetKey = TargetAllocationKeyCalculator.Calculate(targets);

@@ -121,10 +121,8 @@ public sealed class PortfoliosController : ControllerBase
         var snapshotPortfolio = await dbContext.Portfolios.AsNoTracking().Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, cancellationToken);
         PortfolioCalculator.RecalculateWeights(snapshotPortfolio.Positions);
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
-        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed).ToListAsync(cancellationToken);
+        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed && (a.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical || a.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant)).ToListAsync(cancellationToken);
         var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
-        foreach (var assessment in assessments.Where(x => x.InvestmentEvent?.DocumentAnalysis?.Importance == AnalysisImportance.Critical))
-            assessment.OverrideAttentionPriority(AttentionPriority.Critical);
         assessments = assessments
             .GroupBy(a => a.InvestmentEventId)
             .Select(group => group

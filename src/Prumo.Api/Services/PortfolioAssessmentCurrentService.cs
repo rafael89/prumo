@@ -39,7 +39,11 @@ public sealed class PortfolioAssessmentCurrentService
         var keys = new HashSet<string>();
         var pending = new List<PortfolioAssessment>();
 
-        foreach (var assessment in assessments.Where(x => x.Status != AssessmentStatus.Closed))
+        // Keep the acquisition order stable across API requests and the worker.
+        foreach (var assessment in assessments
+                     .Where(x => x.Status != AssessmentStatus.Closed)
+                     .OrderBy(x => x.InvestmentEventId)
+                     .ThenBy(x => x.Id))
         {
             var freshness = freshnessEvaluator.Evaluate(assessment, snapshot, targetKey, assessment.InvestmentEvent, impactService.Version);
             logger.LogInformation(
@@ -53,8 +57,6 @@ public sealed class PortfolioAssessmentCurrentService
                 var hasAffectedPosition = portfolio.Positions.Any(x => affectedAssetIds.Contains(x.AssetId));
                 if (assessment.InvestmentEvent?.EventType == InvestmentEventType.Liquidation && hasAffectedPosition)
                     assessment.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
-                else if (assessment.InvestmentEvent?.DocumentAnalysis?.Importance == AnalysisImportance.Critical && hasAffectedPosition && assessment.CapitalDecisionImpact < CapitalDecisionImpact.Caution)
-                    assessment.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Caution);
                 current.Add(assessment);
                 keys.Add(key);
                 continue;
@@ -128,7 +130,7 @@ public sealed class PortfolioAssessmentCurrentService
 
         try
         {
-            await db.SaveChangesAsync(ct);
+            await PostgresTransientFailure.SaveChangesWithDeadlockRetryAsync(db, ct);
         }
         catch (DbUpdateException exception) when (IsUniqueConstraintViolation(exception))
         {

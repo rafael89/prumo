@@ -132,7 +132,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
-            .Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed && x.InvestmentEvent!.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
+            .Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed
+                && (x.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical
+                    || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant)
+                && x.InvestmentEvent.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
         assessments = (await current.EnsureFreshAsync(portfolio, targets, assessments, ct)).ToList();
 
         var inputs = assessments.Where(x => x.InvestmentEvent is not null)
@@ -277,6 +280,18 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         }
         var decision = DeserializeDecision(item.MetadataJson);
         var allocated = allocations.Sum(x => x.Amount) + classAllocations.Sum(x => x.Amount);
+        // The persisted decision describes the deterministic baseline, while the
+        // worker may have selected a valid scenario afterwards. Never expose the
+        // baseline NoAction label when the published guidance has allocations.
+        var effectiveDecisionType = decision?.DecisionType;
+        if (allocations.Length > 0 && string.Equals(effectiveDecisionType, "NoAction", StringComparison.OrdinalIgnoreCase))
+        {
+            effectiveDecisionType = allocations.Length > 1
+                ? "SplitContribution"
+                : allocations[0].AssetId is Guid assetId && positions.TryGetValue(assetId, out var position) && position.CurrentValue > 0
+                    ? "ReinforceExisting"
+                    : "AddNewAsset";
+        }
         return new
         {
             guidanceId = item.Id,
@@ -291,7 +306,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             avoidedCandidates,
             decision = decision is null ? null : new
             {
-                decisionType = decision.DecisionType,
+                decisionType = effectiveDecisionType,
                 contributionAmount = item.RequestedAmount,
                 primaryNeed = decision.PrimaryNeed is null ? null : new
                 {

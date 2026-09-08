@@ -23,48 +23,73 @@ public sealed class PortfolioImpactAssessmentServiceTests
     }
 
     [Fact]
-    public void Relevant_held_position_is_monitored_without_percentage_threshold()
+    public void Relevant_held_position_below_threshold_is_low()
     {
         var result = Assess(InvestmentEventType.Other, 0.01m, AnalysisImportance.Relevant);
 
         Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
-        Assert.Equal(ActionRequirement.Monitor, result.ActionRequirement);
+        Assert.Equal(ActionRequirement.None, result.ActionRequirement);
     }
 
     [Fact]
-    public void Corporate_action_on_held_position_requires_caution_regardless_of_weight()
+    public void Corporate_action_below_exposure_threshold_is_low()
     {
         var result = Assess(InvestmentEventType.CorporateAction, 0.01m);
 
-        Assert.Equal(AttentionPriority.Medium, result.AttentionPriority);
-        Assert.Equal(CapitalDecisionImpact.Caution, result.CapitalDecisionImpact);
+        Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
     }
 
     [Fact]
-    public void Capital_raise_on_held_position_requires_caution_regardless_of_weight()
+    public void Balanced_portfolio_marks_five_percent_asset_as_high()
+    {
+        var result = Assess(InvestmentEventType.Other, 5m);
+
+        Assert.Equal(AttentionPriority.High, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+    }
+
+    [Fact]
+    public void Three_percent_asset_remains_low()
+    {
+        var result = Assess(InvestmentEventType.Other, 3m);
+
+        Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
+    }
+
+    [Fact]
+    public void Ten_percent_asset_is_critical()
+    {
+        var result = Assess(InvestmentEventType.Other, 10m);
+
+        Assert.Equal(AttentionPriority.Critical, result.AttentionPriority);
+    }
+
+    [Fact]
+    public void Capital_raise_below_exposure_threshold_is_low()
     {
         var result = Assess(InvestmentEventType.CapitalRaise, 0.01m);
 
-        Assert.Equal(AttentionPriority.Medium, result.AttentionPriority);
-        Assert.Equal(CapitalDecisionImpact.Caution, result.CapitalDecisionImpact);
+        Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
     }
 
     [Fact]
-    public void Critical_document_on_held_position_requires_caution()
+    public void Critical_document_still_uses_exposure_thresholds()
     {
         var result = Assess(InvestmentEventType.Other, 0.01m, AnalysisImportance.Critical);
 
-        Assert.Equal(AttentionPriority.Critical, result.AttentionPriority);
-        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
-        Assert.Equal(CapitalDecisionImpact.Caution, result.CapitalDecisionImpact);
+        Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.None, result.ActionRequirement);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
     }
 
     [Fact]
-    public void Liquidation_on_held_position_is_blocked_regardless_of_weight()
+    public void Liquidation_below_exposure_threshold_is_low()
     {
         var result = Assess(InvestmentEventType.Liquidation, 0.01m);
-        Assert.Equal(AttentionPriority.Critical, result.AttentionPriority);
-        Assert.Equal(CapitalDecisionImpact.Block, result.CapitalDecisionImpact);
+        Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
     }
 
     [Fact]
@@ -91,7 +116,7 @@ public sealed class PortfolioImpactAssessmentServiceTests
         var current = await service.EnsureFreshAsync(portfolio, Array.Empty<TargetAllocation>(), new[] { first, second }, CancellationToken.None);
 
         Assert.Single(current);
-        Assert.Equal("portfolio-impact-v4", current[0].AssessmentVersion);
+        Assert.Equal("portfolio-impact-v5", current[0].AssessmentVersion);
         Assert.Equal(1, await db.PortfolioAssessments.CountAsync());
     }
 

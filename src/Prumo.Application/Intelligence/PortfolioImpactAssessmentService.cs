@@ -5,7 +5,12 @@ namespace Prumo.Application.Intelligence;
 
 public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmentService
 {
-    public const string CurrentVersion = "portfolio-impact-v4";
+    // v5 reaplica a regra percentual com os limites balanceados de 3%, 5% e 10%.
+    // v4 usou a regra de existência de posição e não deve ser reutilizada.
+    public const string CurrentVersion = "portfolio-impact-v5";
+    private const decimal MediumExposureThreshold = 3m;
+    private const decimal HighExposureThreshold = 5m;
+    private const decimal CriticalExposureThreshold = 10m;
 
     public string Version => CurrentVersion;
 
@@ -14,36 +19,36 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         if (context.InvestmentEvent.Id == Guid.Empty || context.Portfolio.Id == Guid.Empty)
             throw new ArgumentException("Evento e carteira são obrigatórios.");
 
-        var hasAffectedPosition = context.RelevantPositions.Count > 0;
-        var criticalDocument = context.InvestmentEvent.DocumentAnalysis?.Importance == AnalysisImportance.Critical;
+        var totalExposure = context.RelevantPositions.Sum(x => x.PortfolioWeight);
+        var largestExposure = context.RelevantPositions.Count == 0 ? 0 : context.RelevantPositions.Max(x => x.PortfolioWeight);
+        var hasExposure = context.RelevantPositions.Count > 0 && totalExposure > 0;
+        var usesMaterialEventThreshold = context.InvestmentEvent.EventType is InvestmentEventType.CorporateAction;
 
-        var materialEvent = context.InvestmentEvent.EventType is InvestmentEventType.Liquidation
-            or InvestmentEventType.CapitalRaise
-            or InvestmentEventType.CorporateAction;
-        var action = hasAffectedPosition && (criticalDocument || materialEvent)
-            ? ActionRequirement.Review
-            : hasAffectedPosition && context.InvestmentEvent.DocumentAnalysis?.Importance == AnalysisImportance.Relevant
-                ? ActionRequirement.Monitor
-                : materialEvent && !hasAffectedPosition ? ActionRequirement.Monitor : ActionRequirement.None;
+        var action = context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
+            ? hasExposure && largestExposure >= HighExposureThreshold ? ActionRequirement.Review : ActionRequirement.Monitor
+            : largestExposure >= HighExposureThreshold ? ActionRequirement.Review
+            : hasExposure && largestExposure > MediumExposureThreshold ? ActionRequirement.Monitor
+            : ActionRequirement.None;
 
         var capitalImpact = context.InvestmentEvent.EventType switch
         {
-            InvestmentEventType.Liquidation when hasAffectedPosition => CapitalDecisionImpact.Block,
-            InvestmentEventType.CorporateAction when hasAffectedPosition => CapitalDecisionImpact.Caution,
-            InvestmentEventType.CapitalRaise when hasAffectedPosition => CapitalDecisionImpact.Caution,
-            _ when criticalDocument && hasAffectedPosition => CapitalDecisionImpact.Caution,
+            InvestmentEventType.Liquidation when largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Block,
+            InvestmentEventType.CorporateAction when hasExposure && largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Caution,
+            InvestmentEventType.CapitalRaise when hasExposure && largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Caution,
             _ => CapitalDecisionImpact.None
         };
 
-        var attention = criticalDocument || capitalImpact == CapitalDecisionImpact.Block ? AttentionPriority.Critical
-            : capitalImpact == CapitalDecisionImpact.Caution || action is ActionRequirement.Review or ActionRequirement.Act
+        var attentionExposureThreshold = usesMaterialEventThreshold ? HighExposureThreshold : MediumExposureThreshold;
+        var attention = largestExposure >= CriticalExposureThreshold ? AttentionPriority.Critical
+            : largestExposure >= HighExposureThreshold ? AttentionPriority.High
+            : largestExposure > attentionExposureThreshold || action is ActionRequirement.Review or ActionRequirement.Act || capitalImpact >= CapitalDecisionImpact.Caution
                 ? AttentionPriority.Medium
                 : AttentionPriority.Low;
 
         var confidence = context.RelevantPositions.Count == 0 ? IntelligenceConfidence.Low
             : context.PortfolioHealth is null ? IntelligenceConfidence.Medium : IntelligenceConfidence.High;
-        var portfolioText = hasAffectedPosition
-            ? "A carteira possui posição em pelo menos um dos ativos afetados."
+        var exposureText = hasExposure
+            ? $"A carteira possui exposição agregada de {totalExposure:0.##}% aos ativos afetados."
             : "Não foi identificada posição atual nos ativos afetados.";
         var behavior = action == ActionRequirement.Review
             ? "Revisar o evento no contexto da carteira antes de alterar posições."
@@ -52,6 +57,6 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
                 : "Nenhuma ação específica necessária neste momento.";
 
         return new(attention, action, capitalImpact, context.InvestmentEvent.Summary,
-            $"{portfolioText} Avaliação contextual para {context.Portfolio.Name}.", behavior, confidence);
+            $"{exposureText} Avaliação contextual para {context.Portfolio.Name}.", behavior, confidence);
     }
 }

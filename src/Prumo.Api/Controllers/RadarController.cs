@@ -28,15 +28,15 @@ public sealed class RadarController : ControllerBase
         if (portfolioId == Guid.Empty) return BadRequest("PortfolioId é obrigatório.");
         var query = db.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis)
-            .Where(x => x.PortfolioId == portfolioId);
+            .Where(x => x.PortfolioId == portfolioId
+                && (x.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical
+                    || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant));
         if (!string.IsNullOrWhiteSpace(asset)) query = query.Where(x => x.InvestmentEvent!.AffectedAssets.Any(a => EF.Functions.ILike(a.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Name, $"%{asset.Trim()}%")));
         var portfolio = await db.Portfolios.AsNoTracking().Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
         var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var loadedAssessments = await query.ToListAsync(ct);
         var currentAssessments = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct);
-        foreach (var assessment in currentAssessments.Where(x => x.InvestmentEvent?.DocumentAnalysis?.Importance == AnalysisImportance.Critical))
-            assessment.OverrideAttentionPriority(AttentionPriority.Critical);
         var assessments = currentAssessments
             .Concat(loadedAssessments.Where(x => x.Status == AssessmentStatus.Closed))
             .GroupBy(x => x.InvestmentEventId)

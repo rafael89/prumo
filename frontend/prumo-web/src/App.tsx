@@ -268,6 +268,15 @@ function App() {
     },
     onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
+  const markAllNotificationsSeen = useMutation({
+    mutationFn: () => sendJson<{ updatedCount: number }, object>(`/api/radar/seen-all?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] })
+      await queryClient.invalidateQueries({ queryKey: ['radar', activePortfolio?.id] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard', activePortfolio?.id] })
+    },
+    onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
+  })
   const resolveNotification = useMutation({
     mutationFn: (assessmentId: string) => sendJson<unknown, { status: string }>(`/api/radar/${assessmentId}/status?portfolioId=${activePortfolio!.id}`, 'PATCH', { status: 'Closed' }),
     onSuccess: async () => {
@@ -480,7 +489,7 @@ function App() {
             {activePortfolio && <div ref={notificationPanelRef} className="relative order-2 md:order-3">
               <button type="button" aria-label={radarNotifications.data?.unread ? `${radarNotifications.data.unread} alertas não vistas` : 'Notificações do Radar'} aria-expanded={notificationPanelOpen} title="Notificações do Radar" onClick={toggleNotificationPanel} className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 ${radarNotifications.data?.unread ? 'border-amber-400' : 'border-slate-300'}`}><FontAwesomeIcon icon={faBell} />{Boolean(radarNotifications.data?.unread) && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-4 text-white">{(radarNotifications.data?.unread ?? 0) > 99 ? '99+' : radarNotifications.data?.unread}</span>}</button>
               {notificationPanelMounted && <div className={`absolute right-0 top-11 z-50 w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-xl max-sm:fixed max-sm:inset-x-2 max-sm:top-16 max-sm:w-auto ${notificationPanelOpen ? 'notification-panel-enter' : 'notification-panel-exit'}`}>
-                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">Radar</p><p className="text-xs text-slate-500">Itens relevantes ainda não vistos</p></div><Link to="/radar" onClick={closeNotificationPanel} className="text-xs font-semibold text-amber-700 hover:text-amber-800">Ver Radar</Link></div>
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">Radar</p><p className="text-xs text-slate-500">Itens relevantes ainda não vistos</p></div><div className="flex shrink-0 items-center gap-3"><button type="button" disabled={markAllNotificationsSeen.isPending || (radarNotifications.data?.unread ?? 0) === 0} onClick={() => markAllNotificationsSeen.mutate()} className="text-xs font-semibold text-slate-600 hover:text-amber-700 disabled:opacity-50">Ler todos</button><Link to="/radar" onClick={closeNotificationPanel} className="text-xs font-semibold text-amber-700 hover:text-amber-800">Ver Radar</Link></div></div>
                 {(radarNotifications.data?.attentionNow.length ?? 0) === 0 && <p className="px-4 py-6 text-sm text-slate-500">Nenhuma nova atenção no Radar.</p>}
                 <div className="max-h-80 overflow-y-auto">{radarNotifications.data?.attentionNow.map(item => <button key={item.assessmentId} type="button" onClick={() => openNotification(item)} className="block w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-stone-50 last:border-b-0"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{item.affectedAssets[0] ?? 'Carteira'}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.eventSummary || item.summary}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{item.summary}</p></button>)}</div>
               </div>}
