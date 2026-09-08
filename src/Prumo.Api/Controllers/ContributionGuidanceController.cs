@@ -330,6 +330,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 policyVersion = ExtractPolicyVersion(item.MetadataJson),
                 assessmentVersions = ExtractAssessmentVersions(item.MetadataJson),
                 evidenceCount = ExtractEvidenceCount(item.MetadataJson, allocations.SelectMany(x => x.evidence).Distinct().Count()),
+                criteriaJson = FormatJson(jobCandidates ?? item.MetadataJson),
                 fallbackReason = ExtractFallbackReason(item.MetadataJson),
                 selectionMode = ExtractSelectionMode(item.MetadataJson),
                 selectedScenarioKey = ExtractMetadataString(item.MetadataJson, "selectedScenarioKey"),
@@ -376,6 +377,20 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     {
         try { return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>(); }
         catch (JsonException) { return Array.Empty<string>(); }
+    }
+
+    private static string FormatJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "{}";
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
     }
 
     private static string? DecisionReason(IntegratedDecisionEvidence? evidence) => evidence?.DecisiveFactor switch

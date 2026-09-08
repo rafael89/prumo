@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
@@ -10,7 +10,7 @@ import { AboutSection } from './sections/AboutSection'
 import { HistorySection } from './sections/HistorySection'
 import { DashboardOverview, RecentAnalysisModal, type Dashboard, type DashboardAssessment } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUp, faBell, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
+import { faArrowUp, faBell, faCheckDouble, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
 import { apiBaseUrl } from './api/client'
 import { Pagination } from './components/Pagination'
 
@@ -152,6 +152,10 @@ function App() {
   const [systemDarkMode, setSystemDarkMode] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const darkMode = themePreference === 'dark' || (themePreference === 'system' && systemDarkMode)
   const [positionPage, setPositionPage] = useState(1)
+  const handleHistoryPageInfo = useCallback((hasMore: boolean, nextBefore: string | null) => {
+    setHistoryTotalPages(hasMore ? positionPage + 1 : positionPage)
+    if (nextBefore) setHistoryCursors(current => ({ ...current, [positionPage + 1]: nextBefore }))
+  }, [positionPage])
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     const onSystemThemeChange = (event: MediaQueryListEvent) => setSystemDarkMode(event.matches)
@@ -489,7 +493,7 @@ function App() {
             {activePortfolio && <div ref={notificationPanelRef} className="relative order-2 md:order-3">
               <button type="button" aria-label={radarNotifications.data?.unread ? `${radarNotifications.data.unread} alertas não vistas` : 'Notificações do Radar'} aria-expanded={notificationPanelOpen} title="Notificações do Radar" onClick={toggleNotificationPanel} className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 ${radarNotifications.data?.unread ? 'border-amber-400' : 'border-slate-300'}`}><FontAwesomeIcon icon={faBell} />{Boolean(radarNotifications.data?.unread) && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-4 text-white">{(radarNotifications.data?.unread ?? 0) > 99 ? '99+' : radarNotifications.data?.unread}</span>}</button>
               {notificationPanelMounted && <div className={`absolute right-0 top-11 z-50 w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-xl max-sm:fixed max-sm:inset-x-2 max-sm:top-16 max-sm:w-auto ${notificationPanelOpen ? 'notification-panel-enter' : 'notification-panel-exit'}`}>
-                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">Radar</p><p className="text-xs text-slate-500">Itens relevantes ainda não vistos</p></div><div className="flex shrink-0 items-center gap-3"><button type="button" disabled={markAllNotificationsSeen.isPending || (radarNotifications.data?.unread ?? 0) === 0} onClick={() => markAllNotificationsSeen.mutate()} className="text-xs font-semibold text-slate-600 hover:text-amber-700 disabled:opacity-50">Ler todos</button><Link to="/radar" onClick={closeNotificationPanel} className="text-xs font-semibold text-amber-700 hover:text-amber-800">Ver Radar</Link></div></div>
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">Radar</p><p className="text-xs text-slate-500">Itens relevantes ainda não vistos</p></div><div className="flex shrink-0 items-center gap-2"><button type="button" aria-label="Marcar todos os itens como lidos" title="Marcar todos como lidos" disabled={markAllNotificationsSeen.isPending || (radarNotifications.data?.unread ?? 0) === 0} onClick={() => markAllNotificationsSeen.mutate()} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-stone-50 px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"><FontAwesomeIcon icon={faCheckDouble} className="text-[10px]" />{markAllNotificationsSeen.isPending ? 'Lendo...' : 'Ler todos'}</button><Link to="/radar" onClick={closeNotificationPanel} className="rounded-full px-2 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 hover:text-amber-800">Ver Radar</Link></div></div>
                 {(radarNotifications.data?.attentionNow.length ?? 0) === 0 && <p className="px-4 py-6 text-sm text-slate-500">Nenhuma nova atenção no Radar.</p>}
                 <div className="max-h-80 overflow-y-auto">{radarNotifications.data?.attentionNow.map(item => <button key={item.assessmentId} type="button" onClick={() => openNotification(item)} className="block w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-stone-50 last:border-b-0"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{item.affectedAssets[0] ?? 'Carteira'}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.eventSummary || item.summary}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{item.summary}</p></button>)}</div>
               </div>}
@@ -502,7 +506,7 @@ function App() {
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
         {route === '/about' && <AboutSection />}
-        {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={(hasMore, nextBefore) => { setHistoryTotalPages(hasMore ? positionPage + 1 : positionPage); if (nextBefore) setHistoryCursors(current => ({ ...current, [positionPage + 1]: nextBefore })) }} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
+        {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={handleHistoryPageInfo} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') || route === '/radar' ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>

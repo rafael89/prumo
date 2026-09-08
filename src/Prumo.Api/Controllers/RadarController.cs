@@ -39,9 +39,15 @@ public sealed class RadarController : ControllerBase
         var currentAssessments = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct);
         var assessments = currentAssessments
             .Concat(loadedAssessments.Where(x => x.Status == AssessmentStatus.Closed))
-            .GroupBy(x => x.InvestmentEventId)
+            // The user-facing Radar is document-oriented. A single document may
+            // contain several extracted events, but it must not create several
+            // cards for the same asset/document.
+            .GroupBy(x => x.InvestmentEvent!.DocumentAnalysisId)
             .Select(group => group
-                .OrderByDescending(x => x.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
+                .OrderByDescending(x => x.Status != AssessmentStatus.Closed)
+                .ThenByDescending(x => x.UserState == AssessmentUserState.Unread)
+                .ThenByDescending(x => x.AttentionPriority)
+                .ThenByDescending(x => x.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
                 .ThenByDescending(x => x.GeneratedAt)
                 .ThenByDescending(x => x.Id)
                 .First())
@@ -93,7 +99,12 @@ public sealed class RadarController : ControllerBase
     {
         var assessment = await db.PortfolioAssessments.AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis).SingleOrDefaultAsync(x => x.Id == assessmentId && x.PortfolioId == portfolioId, ct);
         if (assessment is null) return NotFound();
-        assessment.MarkSeen(); await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
+        var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
+        var relatedAssessments = await db.PortfolioAssessments
+            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
+            .ToListAsync(ct);
+        foreach (var related in relatedAssessments) related.MarkSeen();
+        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
     }
 
     [HttpPatch("seen-all")]
@@ -111,7 +122,12 @@ public sealed class RadarController : ControllerBase
         if (!Enum.TryParse<AssessmentStatus>(request.Status, true, out var status)) return BadRequest("Status inválido.");
         var assessment = await db.PortfolioAssessments.AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis).SingleOrDefaultAsync(x => x.Id == assessmentId && x.PortfolioId == portfolioId, ct);
         if (assessment is null) return NotFound();
-        assessment.SetStatus(status); await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
+        var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
+        var relatedAssessments = await db.PortfolioAssessments
+            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
+            .ToListAsync(ct);
+        foreach (var related in relatedAssessments) related.SetStatus(status);
+        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
     }
 
     [HttpPatch("status-all")]

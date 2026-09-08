@@ -26,6 +26,8 @@ public static class ContributionText
         .Replace("currentClassWeight abaixo de targetClassWeight", "o peso atual da classe está abaixo da meta", StringComparison.OrdinalIgnoreCase)
         .Replace("currentClassWeight", "peso atual da classe", StringComparison.OrdinalIgnoreCase)
         .Replace("targetClassWeight", "meta da classe", StringComparison.OrdinalIgnoreCase)
+        .Replace("underweightScore elevado", "posição abaixo do peso ideal", StringComparison.OrdinalIgnoreCase)
+        .Replace("underweightScore", "necessidade de recompor o peso na carteira", StringComparison.OrdinalIgnoreCase)
         .Replace("classBudget", "limite calculado para a classe", StringComparison.OrdinalIgnoreCase)
         .Replace("candidato elegível", "ativo elegível", StringComparison.OrdinalIgnoreCase)
         .Replace("candidatos elegíveis", "ativos elegíveis", StringComparison.OrdinalIgnoreCase);

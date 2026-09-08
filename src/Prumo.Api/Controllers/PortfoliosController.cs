@@ -124,9 +124,14 @@ public sealed class PortfoliosController : ControllerBase
         var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed && (a.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical || a.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant)).ToListAsync(cancellationToken);
         var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
         assessments = assessments
-            .GroupBy(a => a.InvestmentEventId)
+            // Keep the dashboard aligned with the Radar: one card per analyzed
+            // document, even when the document contains multiple extracted events.
+            .GroupBy(a => a.InvestmentEvent!.DocumentAnalysisId)
             .Select(group => group
-                .OrderByDescending(a => a.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
+                .OrderByDescending(a => a.Status != AssessmentStatus.Closed)
+                .ThenByDescending(a => a.UserState == AssessmentUserState.Unread)
+                .ThenByDescending(a => a.AttentionPriority)
+                .ThenByDescending(a => a.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
                 .ThenByDescending(a => a.GeneratedAt)
                 .ThenByDescending(a => a.Id)
                 .First())
