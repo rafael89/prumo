@@ -331,6 +331,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             {
                 generatedAt = item.GeneratedAt,
                 engineVersion = item.EngineVersion,
+                decisionEngineVersion = ExtractMetadataString(item.MetadataJson, "engineVersion") ?? item.EngineVersion,
+                baselineEngineVersion = item.EngineVersion,
                 provider = item.Provider,
                 model = item.Model,
                 policyVersion = ExtractPolicyVersion(item.MetadataJson),

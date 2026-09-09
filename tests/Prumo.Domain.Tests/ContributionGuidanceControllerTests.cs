@@ -80,6 +80,24 @@ public sealed class ContributionGuidanceControllerTests
     }
 
     [Fact]
+    public async Task GetSeparatesR5DecisionEngineFromR4DeterministicBaseline()
+    {
+        await using var db = CreateDbContext();
+        var (portfolio, targets) = await SeedPortfolioAsync(db);
+        var guidance = AddCompletedGuidance(db, portfolio, targets, "R4-9.2");
+        guidance.UpdateIntelligence("AI", "model-x", "IntelligenceAvailable", "Aloca\u00e7\u00e3o R5.", "{\"engineVersion\":\"R5-ai-allocation\"}");
+        await db.SaveChangesAsync();
+
+        var result = await CreateController(db).Get(portfolio.Id, guidance.Id, CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result.Result);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(response.Value));
+        var analysis = document.RootElement.GetProperty("analysis");
+        Assert.Equal("R5-ai-allocation", analysis.GetProperty("decisionEngineVersion").GetString());
+        Assert.Equal("R4-9.2", analysis.GetProperty("baselineEngineVersion").GetString());
+    }
+
+    [Fact]
     public async Task GenerateIncludesKnownCatalogAssetWithoutCurrentPosition()
     {
         await using var db = CreateDbContext();

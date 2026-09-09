@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Prumo.Application.Contributions;
+using Prumo.Application.Explainability;
 using Prumo.Application.Portfolio;
 using Prumo.Domain.Enums;
 
@@ -306,6 +307,41 @@ public sealed class ContributionScenarioSelectionTests
         Assert.Contains("não há obrigação de priorizar ou consumir integralmente nenhuma classe", maintenancePrompt);
         Assert.Contains("\"rebalanceMode\":\"Required\"", requiredPrompt);
         Assert.Contains("Em Required, primaryNeed", requiredPrompt);
+    }
+
+    [Fact]
+    public void Allocation_prompt_compares_final_composition_and_keeps_qualitative_assessments_visible()
+    {
+        var fii = Candidate("FIIB11") with
+        {
+            AssetClass = AssetClass.Fii,
+            ClassBudget = 4_400m,
+            CurrentAssessments = new[]
+            {
+                new ContributionAssessmentContext("Medium", "Monitor", "None", "Renegocia\u00e7\u00e3o de contrato", "Pode afetar o fluxo de rendimentos.", "Acompanhar a evolu\u00e7\u00e3o.", 0.7m, Array.Empty<EvidenceReference>()),
+                new ContributionAssessmentContext("Medium", "Monitor", "None", "Inadimpl\u00eancia relevante", "Pode pressionar a distribui\u00e7\u00e3o.", "Acompanhar os pr\u00f3ximos relat\u00f3rios.", 0.7m, Array.Empty<EvidenceReference>())
+            }
+        };
+        var stock = Candidate("PETR4") with { ClassBudget = 4_400m };
+
+        var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 4_400m, new[] { fii, stock }, Array.Empty<ContributionScenarioOption>());
+        var context = prompt[(prompt.LastIndexOf("\n{") + 1)..];
+        using var document = JsonDocument.Parse(context);
+        var fiiContext = document.RootElement.GetProperty("eligibleCandidates").EnumerateArray()
+            .Single(candidate => candidate.GetProperty("ticker").GetString() == "FIIB11");
+
+        Assert.Contains("Avalie a composi\u00e7\u00e3o final, n\u00e3o apenas um ranking de candidatos.", prompt);
+        Assert.Contains("melhor candidato individual com combina\u00e7\u00f5es complementares eleg\u00edveis", prompt);
+        Assert.Contains("m\u00faltiplos assessments Medium/Monitor", prompt);
+        Assert.Equal("Maintenance", document.RootElement.GetProperty("rebalanceMode").GetString());
+        Assert.Equal(2, fiiContext.GetProperty("assessments").GetArrayLength());
+        var assessments = fiiContext.GetProperty("assessments").EnumerateArray().ToArray();
+        Assert.Equal("Renegocia\u00e7\u00e3o de contrato", assessments[0].GetProperty("summary").GetString());
+        Assert.Equal("Inadimpl\u00eancia relevante", assessments[1].GetProperty("summary").GetString());
+        Assert.Equal("Unavailable", fiiContext.GetProperty("geographicExposureCoverage").GetString());
+        Assert.Equal(JsonValueKind.Null, fiiContext.GetProperty("geographicExposures").ValueKind);
+        Assert.Equal("Unavailable", fiiContext.GetProperty("economicCurrencyExposureCoverage").GetString());
+        Assert.Equal(JsonValueKind.Null, fiiContext.GetProperty("currencyExposures").ValueKind);
     }
 
     [Fact]
