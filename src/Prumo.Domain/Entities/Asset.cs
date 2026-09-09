@@ -43,6 +43,55 @@ public sealed class Asset
         TradingCurrency = string.IsNullOrWhiteSpace(currency) ? null : currency.Trim().ToUpperInvariant();
     }
 
+    /// <summary>Applies missing facts from a versioned curated catalog without replacing richer existing data.</summary>
+    public bool ApplyCuratedMetadata(
+        string? sector,
+        EconomicSector? sectorCategory,
+        string? listingCountryCode,
+        string? tradingCurrency,
+        IReadOnlyList<(string Code, decimal Weight)>? geographicExposures,
+        IReadOnlyList<(string Code, decimal Weight)>? currencyExposures,
+        string sourceReference,
+        DateTimeOffset observedAt)
+    {
+        var changed = false;
+        if (string.IsNullOrWhiteSpace(Sector) && !string.IsNullOrWhiteSpace(sector))
+        {
+            Sector = sector.Trim();
+            changed = true;
+        }
+        if (SectorCategory is null && sectorCategory.HasValue)
+        {
+            SectorCategory = sectorCategory;
+            changed = true;
+        }
+        if (string.IsNullOrWhiteSpace(ListingCountryCode) && !string.IsNullOrWhiteSpace(listingCountryCode))
+        {
+            ListingCountryCode = listingCountryCode.Trim().ToUpperInvariant();
+            changed = true;
+        }
+        if (string.IsNullOrWhiteSpace(TradingCurrency) && !string.IsNullOrWhiteSpace(tradingCurrency))
+        {
+            TradingCurrency = tradingCurrency.Trim().ToUpperInvariant();
+            changed = true;
+        }
+        if (GeographicExposureCoverage == ExposureCoverage.Unavailable && GeographicExposures.Count == 0 && geographicExposures is { Count: > 0 })
+        {
+            foreach (var exposure in geographicExposures)
+                GeographicExposures.Add(new AssetGeographicExposure(Id, exposure.Code, exposure.Weight, ExposureSource.Manual, sourceReference, observedAt));
+            GeographicExposureCoverage = geographicExposures.Sum(x => x.Weight) == 100m ? ExposureCoverage.Complete : ExposureCoverage.Partial;
+            changed = true;
+        }
+        if (EconomicCurrencyExposureCoverage == ExposureCoverage.Unavailable && CurrencyExposures.Count == 0 && currencyExposures is { Count: > 0 })
+        {
+            foreach (var exposure in currencyExposures)
+                CurrencyExposures.Add(new AssetCurrencyExposure(Id, exposure.Code, exposure.Weight, ExposureSource.Manual, sourceReference, observedAt));
+            EconomicCurrencyExposureCoverage = currencyExposures.Sum(x => x.Weight) == 100m ? ExposureCoverage.Complete : ExposureCoverage.Partial;
+            changed = true;
+        }
+        return changed;
+    }
+
     public void Update(string ticker, string name, AssetType assetType, string? sector)
     {
         Ticker = ValidateText(ticker, nameof(ticker)).ToUpperInvariant();

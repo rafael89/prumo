@@ -7,6 +7,7 @@ using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.MarketData;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -97,6 +98,22 @@ public sealed class ContributionGuidanceControllerTests
     }
 
     [Fact]
+    public async Task GeneratePersistsCuratedStructuralMetadataBeforeCreatingCandidates()
+    {
+        await using var db = CreateDbContext();
+        var (portfolio, _) = await SeedPortfolioAsync(db);
+
+        var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
+
+        Assert.IsType<AcceptedResult>(result.Result);
+        var petr4 = await db.Assets.SingleAsync(asset => asset.Ticker == "PETR4");
+        Assert.Equal(EconomicSector.Energy, petr4.SectorCategory);
+        Assert.Equal("BR", petr4.ListingCountryCode);
+        Assert.Equal("BRL", petr4.TradingCurrency);
+        Assert.Empty(petr4.GeographicExposures);
+    }
+
+    [Fact]
     public async Task ConfirmCreatesPositionForKnownCatalogAsset()
     {
         await using var db = CreateDbContext();
@@ -167,6 +184,6 @@ public sealed class ContributionGuidanceControllerTests
             new PortfolioImpactAssessmentService(),
             new PortfolioAssessmentFreshnessEvaluator(),
             NullLogger<PortfolioAssessmentCurrentService>.Instance);
-        return new ContributionGuidanceController(db, current);
+        return new ContributionGuidanceController(db, current, assetMetadataCatalog: new AssetMetadataCatalogSyncService(db));
     }
 }

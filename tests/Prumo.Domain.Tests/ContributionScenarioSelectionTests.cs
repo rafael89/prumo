@@ -239,6 +239,28 @@ public sealed class ContributionScenarioSelectionTests
         Assert.Contains("candidateKey", prompt);
     }
 
+    [Fact]
+    public void Allocation_prompt_distinguishes_missing_sector_data_and_exposes_portfolio_impact()
+    {
+        var unknownSector = Candidate("AAA3") with { Sector = null, SectorWeightWithinClass = 100m };
+        var energy = Candidate("PETR4") with
+        {
+            Sector = "Energia",
+            SectorCategory = EconomicSector.Energy,
+            SectorWeightWithinClass = 100m,
+            GeographicExposures = new[] { new KnownGeographicExposure("BR", 100m) },
+            CurrencyExposures = new[] { new KnownCurrencyExposure("BRL", 100m) }
+        };
+        var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 100m, new[] { unknownSector, energy }, Array.Empty<ContributionScenarioOption>());
+        var context = prompt[(prompt.LastIndexOf("\n{") + 1)..];
+        using var document = JsonDocument.Parse(context);
+
+        var candidates = document.RootElement.GetProperty("eligibleCandidates").EnumerateArray().ToArray();
+        Assert.Equal(JsonValueKind.Null, candidates.Single(candidate => candidate.GetProperty("ticker").GetString() == "AAA3").GetProperty("sectorWeightWithinClass").ValueKind);
+        Assert.True(candidates.Single(candidate => candidate.GetProperty("ticker").GetString() == "PETR4").GetProperty("projectedPortfolioExposure").GetProperty("sector").GetArrayLength() > 0);
+        Assert.True(document.RootElement.GetProperty("portfolioState").GetProperty("exposure").GetProperty("geography").GetProperty("buckets").GetArrayLength() > 0);
+    }
+
     private static ContributionCandidate Candidate(string ticker)
         => new(CandidateIdentity.Known(Guid.NewGuid()), ticker, AssetClass.BrazilianStock, 100m, 50m, 50m, 100m, 100m, false, Array.Empty<ContributionAssessmentContext>());
 

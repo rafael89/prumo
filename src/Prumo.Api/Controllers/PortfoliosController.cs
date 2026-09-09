@@ -138,7 +138,15 @@ public sealed class PortfoliosController : ControllerBase
             .ToList();
         var attention = assessments.Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(CreateDashboardAssessment).ToList();
         var attentionIds = attention.Select(x => x.AssessmentId).ToHashSet();
-        var recent = assessments.Where(a => !attentionIds.Contains(a.Id)).OrderByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(CreateDashboardAssessment).ToList();
+        // The card displays the document publication date, so use that same
+        // date for the ordering shown to users.
+        var recent = assessments.Where(a => !attentionIds.Contains(a.Id))
+            .OrderByDescending(a => a.InvestmentEvent!.DocumentAnalysis!.Document!.PublishedAt)
+            .ThenByDescending(a => a.InvestmentEvent!.OccurredAt)
+            .ThenByDescending(a => a.GeneratedAt)
+            .ThenByDescending(a => a.Id)
+            .Select(CreateDashboardAssessment)
+            .ToList();
         var primaryNeed = health.CapitalNeeds.OrderBy(x => x.PriorityOrder).FirstOrDefault();
         return Ok(new DashboardResponse(
             portfolio.Id,

@@ -11,12 +11,13 @@ using Prumo.Domain.Enums;
 using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.Reconciliation;
+using Prumo.Infrastructure.MarketData;
 
 namespace Prumo.Api.Controllers;
 
 [ApiController]
 [Route("api/portfolios/{portfolioId:guid}/contribution-guidance")]
-public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioAssessmentCurrentService current, TransactionReconciliationService? canonical = null) : ControllerBase
+public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioAssessmentCurrentService current, TransactionReconciliationService? canonical = null, AssetMetadataCatalogSyncService? assetMetadataCatalog = null) : ControllerBase
 {
     private static readonly JsonSerializerOptions PersistedJson = new() { PropertyNameCaseInsensitive = true };
     private const string ContributionEngineVersion = "R4-9.2";
@@ -33,6 +34,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.DocumentFinancialFacts)
             .SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
+        if (assetMetadataCatalog is not null) await assetMetadataCatalog.ApplyAsync(ct);
 
         var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         if (targets.Count == 0) return Conflict(new { status = ContributionGuidanceStatus.NotConfigured.ToString() });
@@ -100,9 +102,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     recent?.Amount ?? 0, recent?.Count ?? 0, recent?.LastOccurredAt, sectorWeight, true,
                     allocationNeedScore, diversificationScore, underweightScore, recentPenalty,
                     asset.SectorCategory, asset.GeographicExposureCoverage,
-                    asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
+                    asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage, e.Source.ToString(), e.SourceReference, e.ObservedAt)).ToArray(),
                     asset.EconomicCurrencyExposureCoverage,
-                    asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
+                    asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage, e.Source.ToString(), e.SourceReference, e.ObservedAt)).ToArray(),
                     asset.ListingCountryCode, asset.TradingCurrency, DocumentFinancialQualityResolver.Resolve(asset))
                 {
                     IsEstablishingPosition = isEstablishing
@@ -111,6 +113,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var positionAssetIds = portfolio.Positions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
         var catalogCandidates = await db.Assets.AsNoTracking()
+            .Include(x => x.GeographicExposures).Include(x => x.CurrencyExposures)
             .Include(x => x.FundamentalSnapshots).Include(x => x.DocumentFinancialFacts)
             .Where(x => x.IsActive && (targetClasses.Contains(x.AssetClass) || targetClasses.Contains(AssetClass.International) && x.AssetType == AssetType.Etf) && !positionAssetIds.Contains(x.Id))
             .OrderBy(x => x.Ticker)
@@ -123,9 +126,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 HasPosition: false, AllocationNeedScore: requiresRebalance ? ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0) : 0m,
                 UnderweightScore: 100, SectorCategory: asset.SectorCategory,
                 GeographicExposureCoverage: asset.GeographicExposureCoverage,
-                GeographicExposures: asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage)).ToArray(),
+                GeographicExposures: asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage, e.Source.ToString(), e.SourceReference, e.ObservedAt)).ToArray(),
                 EconomicCurrencyExposureCoverage: asset.EconomicCurrencyExposureCoverage,
-                CurrencyExposures: asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage)).ToArray(),
+                CurrencyExposures: asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage, e.Source.ToString(), e.SourceReference, e.ObservedAt)).ToArray(),
                 ListingCountryCode: asset.ListingCountryCode, TradingCurrency: asset.TradingCurrency, FinancialSnapshot: DocumentFinancialQualityResolver.Resolve(asset));
         })).ToList();
         var ids = positions.Select(x => x.AssetId).ToHashSet();

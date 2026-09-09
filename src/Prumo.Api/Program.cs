@@ -26,6 +26,7 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<PortfolioHistoryService>();
 builder.Services.AddScoped<MarketDataService>();
 builder.Services.AddScoped<ExternalAssetMaterializer>();
+builder.Services.AddScoped<AssetMetadataCatalogSyncService>();
 builder.Services.AddScoped<PortfolioPerformanceService>();
 builder.Services.AddScoped<PortfolioIntelligenceService>();
 builder.Services.AddScoped<HistoricalAnchorService>();

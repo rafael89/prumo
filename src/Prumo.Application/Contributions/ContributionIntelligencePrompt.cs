@@ -13,6 +13,22 @@ public static class ContributionIntelligencePrompt
     public static string BuildAllocationProposal(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null)
     {
         var candidateByKey = candidates.ToDictionary(x => x.CandidateKey.Value);
+        var portfolioExposure = PortfolioExposureAggregator.Aggregate(candidates);
+        var projectedExposureByCandidate = candidates
+            .Where(candidate => !candidate.HasBlock && candidate.ClassBudget > 0)
+            .ToDictionary(candidate => candidate.CandidateKey, candidate =>
+            {
+                var simulatedAmount = Math.Min(contributionAmount, candidate.ClassBudget);
+                var after = PortfolioExposureAggregator.Aggregate(candidates, new[] { new CandidateAllocation(candidate.Identity, simulatedAmount) });
+                var impacts = PortfolioExposureAggregator.Compare(portfolioExposure, after);
+                return new
+                {
+                    simulatedAmount,
+                    sector = impacts.Where(impact => impact.Dimension == "Sector").ToArray(),
+                    geography = impacts.Where(impact => impact.Dimension == "Geography").ToArray(),
+                    currency = impacts.Where(impact => impact.Dimension == "Currency").ToArray()
+                };
+            });
         var eligibleCandidates = candidates.Where(x => !x.HasBlock && x.ClassBudget > 0).Select(candidate => new
         {
             candidateKey = candidate.CandidateKey.Value,
@@ -28,7 +44,9 @@ public static class ContributionIntelligencePrompt
             candidate.IsEstablishingPosition,
             candidate.Sector,
             candidate.SectorCategory,
-            candidate.SectorWeightWithinClass,
+            // A value of 100 for an asset with no sector is not concentration;
+            // it is missing metadata. Do not let the model mistake one for the other.
+            sectorWeightWithinClass = string.IsNullOrWhiteSpace(candidate.Sector) ? (decimal?)null : candidate.SectorWeightWithinClass,
             candidate.RecentContributionAmount,
             candidate.RecentContributionCount,
             candidate.LastContributionAt,
@@ -40,6 +58,7 @@ public static class ContributionIntelligencePrompt
             candidate.TradingCurrency,
             candidate.FinancialSnapshot,
             assessments = candidate.CurrentAssessments,
+            projectedPortfolioExposure = projectedExposureByCandidate.GetValueOrDefault(candidate.CandidateKey),
             deterministicReference = new
             {
                 decisionScore = candidate.DecisionScore,
@@ -78,6 +97,27 @@ public static class ContributionIntelligencePrompt
             contributionAmount,
             rebalanceMode = deterministicReferences.FirstOrDefault()?.PrimaryNeed is null ? "Maintenance" : "Required",
             investorPolicy = investorPolicy ?? InvestorPolicy.Current,
+            portfolioState = new
+            {
+                investedValue = portfolioExposure.InvestedPortfolioValue,
+                exposure = portfolioExposure,
+                classState = candidates.Where(candidate => candidate.CurrentValue > 0).GroupBy(candidate => candidate.AssetClass).Select(group => new
+                {
+                    assetClass = group.Key,
+                    currentValue = group.Sum(candidate => candidate.CurrentValue),
+                    currentWeight = group.First().CurrentClassWeight,
+                    targetWeight = group.First().TargetClassWeight,
+                    classBudget = group.First().ClassBudget
+                }),
+                recentContributions = candidates.Where(candidate => candidate.RecentContributionCount > 0).Select(candidate => new
+                {
+                    candidateKey = candidate.CandidateKey.Value,
+                    candidate.Ticker,
+                    candidate.RecentContributionAmount,
+                    candidate.RecentContributionCount,
+                    candidate.LastContributionAt
+                })
+            },
             eligibleCandidates,
             blockedCandidates,
             projection = deterministicReferences.Select(reference => new
@@ -96,7 +136,7 @@ public static class ContributionIntelligencePrompt
             O backend é dono das regras duras e vai validar a resposta. Você só pode alocar para candidateKey presente em eligibleCandidates. Nunca invente ticker, candidato, venda, preço, valuation, rentabilidade ou fatos externos. blockedCandidates são contexto e jamais podem receber aporte.
             A soma dos amounts não pode superar contributionAmount. A soma dentro de cada assetClass não pode superar o classBudget informado nos candidatos daquela classe. Use valores positivos, monetários, com no máximo duas casas; não repita candidateKey. "NoAction" deve ter allocations vazias e deve ser raro: use-o apenas se nenhum aporte responsável puder ser justificado pelos fatos fornecidos.
 
-            Compare o estado bruto da carteira: peso atual, target e desvio de classe; concentração por setor e posição; aportes recentes; posição nova ou em estabelecimento; exposições geográficas e de moeda; assessments e eventos. Priorize a necessidade estrutural, depois evite concentração severa e melhore diversificação/exposições; cooldown e qualidade financeira só diferenciam alternativas equivalentes. DecisionScore e os cenários determinísticos são referências auditáveis, não uma instrução nem uma verdade obrigatória.
+            Compare o estado bruto da carteira e portfolioState: peso atual, target e desvio de classe; concentração por setor e posição; aportes recentes; posição nova ou em estabelecimento; exposições geográficas e de moeda; assessments e eventos. projectedPortfolioExposure simula o efeito de alocar o máximo permitido a cada candidato individualmente. Só trate uma dimensão como diferenciadora quando sua coverage for Partial ou Complete; Unavailable e valores nulos significam ausência de dados, não concentração. Priorize a necessidade estrutural, depois evite concentração severa e melhore diversificação/exposições; cooldown e qualidade financeira só diferenciam alternativas equivalentes. DecisionScore e os cenários determinísticos são referências auditáveis, não uma instrução nem uma verdade obrigatória.
             Você pode reproduzir uma referência, alterá-la ou criar uma combinação própria. Não aloque automaticamente todo o aporte se os limites e fatos sustentarem apenas uma parte. A reason precisa citar fatos estruturados concretos. primaryFactors deve conter fatores curtos dentre concentration, diversification, class_gap, recent_contribution, assessment, exposure ou new_position. confidence deve ser low, medium ou high.
             Se rejectionReason estiver presente, corrija exatamente o problema relatado e retorne uma nova proposta válida.
             Responda exclusivamente no JSON do schema: decisionType, allocations, reason, primaryFactors, confidence.

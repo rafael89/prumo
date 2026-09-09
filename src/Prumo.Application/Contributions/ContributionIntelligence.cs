@@ -76,8 +76,8 @@ public sealed record ContributionCandidate(
         + UnderweightScore * 0.15m
         + (100m - ContributionRecency.Penalty(RecentContributionPenalty, RecentContributionCount, LastContributionAt, IsEstablishingPosition, CurrentWeight)) * 0.15m;
 }
-public sealed record KnownGeographicExposure(string CountryCode, decimal? Percentage);
-public sealed record KnownCurrencyExposure(string CurrencyCode, decimal? Percentage);
+public sealed record KnownGeographicExposure(string CountryCode, decimal? Percentage, string? Source = null, string? SourceReference = null, DateTimeOffset? ObservedAt = null);
+public sealed record KnownCurrencyExposure(string CurrencyCode, decimal? Percentage, string? Source = null, string? SourceReference = null, DateTimeOffset? ObservedAt = null);
 public sealed record ContributionAssessmentContext(string AttentionPriority, string ActionRequirement, string CapitalDecisionImpact, string Summary, string WhyItMatters, string SuggestedBehavior, decimal Confidence, IReadOnlyList<EvidenceReference> EvidenceReferences);
 public sealed record ContributionCandidateEvaluation(CandidateKey CandidateKey, int Rank, decimal SuggestedAmount, string Reason, decimal Confidence, IReadOnlyList<EvidenceReference> Evidence)
 {
