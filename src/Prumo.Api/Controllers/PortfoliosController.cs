@@ -121,7 +121,7 @@ public sealed class PortfoliosController : ControllerBase
         var snapshotPortfolio = await dbContext.Portfolios.AsNoTracking().Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, cancellationToken);
         PortfolioCalculator.RecalculateWeights(snapshotPortfolio.Positions);
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
-        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed && (a.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical || a.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant)).ToListAsync(cancellationToken);
+        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis!).ThenInclude(a => a.Document!).Where(a => a.PortfolioId == portfolioId && a.Status != AssessmentStatus.Closed && (a.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical || a.InvestmentEvent.DocumentAnalysis!.Importance == AnalysisImportance.Relevant)).ToListAsync(cancellationToken);
         var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
         assessments = assessments
             // Keep the dashboard aligned with the Radar: one card per analyzed
@@ -159,7 +159,9 @@ public sealed class PortfoliosController : ControllerBase
     }
 
     private static DashboardAssessment CreateDashboardAssessment(PortfolioAssessment assessment)
-        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Status, assessment.UserState, assessment.InvestmentEvent?.DocumentAnalysis?.Importance.ToString() ?? "Unknown");
+        // The overview is document-oriented. An extracted event can have a different
+        // occurrence date, so use the document publication date in its card.
+        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.DocumentAnalysis?.Document?.PublishedAt ?? assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Status, assessment.UserState, assessment.InvestmentEvent?.DocumentAnalysis?.Importance.ToString() ?? "Unknown");
 
     private static string HealthLabel(PortfolioHealthStatus status) => status switch
     {

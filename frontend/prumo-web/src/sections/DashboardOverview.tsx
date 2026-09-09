@@ -237,6 +237,11 @@ function priorityClasses(priority: number) {
   return 'bg-sky-50 text-sky-700'
 }
 
+function canManageSituation(item: DashboardAssessment) {
+  // Assessments with no capital-decision impact are informational only.
+  return item.capitalDecisionImpact !== 1
+}
+
 function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
   const [visibleCount, setVisibleCount] = useState(3)
@@ -343,8 +348,8 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
       </div>
       <div data-radar-actions="true" className="mt-6 grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white pt-4 sm:flex sm:flex-wrap">
         {onMarkSeen && !isResolved && <button type="button" onClick={() => { onMarkSeen(); setMarkedSeen(true) }} disabled={actionPending || isSeen || markedSeen} className="inline-flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-2.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 sm:px-4 sm:text-sm"><FontAwesomeIcon icon={faEye} />{isSeen || markedSeen ? 'Visto' : 'Marcar como visto'}</button>}
-        {!isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
-        {isResolved && onReopen && <button type="button" onClick={onReopen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faRotate} />Reabrir</button>}
+        {canManageSituation(item) && !isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
+        {canManageSituation(item) && isResolved && onReopen && <button type="button" onClick={onReopen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faRotate} />Reabrir</button>}
       </div>
     </div>
   </div>
