@@ -8,7 +8,8 @@ public static class ContributionIntelligencePrompt
     // Kept for the legacy evaluation/selection contract. R5 has its own prompt
     // version so historical R4 traces remain comparable.
     public const string Version = "r4-contribution-v12";
-    public const string AllocationVersion = "r5-constrained-allocation-v3";
+    public const string AllocationVersion = "r5-constrained-allocation-v4";
+    public const string AllocationReviewVersion = "r5-composition-review-v1";
 
     public static string BuildAllocationProposal(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null)
     {
@@ -154,6 +155,70 @@ public static class ContributionIntelligencePrompt
             Você pode reproduzir uma referência, alterá-la ou criar uma combinação própria. Não aloque automaticamente todo o aporte se os limites e fatos sustentarem apenas uma parte. A reason precisa explicar a composição escolhida com fatores que realmente diferenciaram as alternativas: se concentrar, explique por que alternativas complementares não oferecem benefício marginal superior; se dividir, explique o papel marginal de cada componente. Evite justificar uma escolha com uma característica compartilhada por várias alternativas. primaryFactors deve conter fatores curtos dentre concentration, diversification, class_gap, recent_contribution, assessment, exposure ou new_position. confidence deve ser low, medium ou high.
             Se rejectionReason estiver presente, corrija exatamente o problema relatado e retorne uma nova proposta válida.
             Responda exclusivamente no JSON do schema: decisionType, allocations, reason, primaryFactors, confidence.
+
+            Contexto JSON:
+            """;
+        return $"{instructions}\n{context}";
+    }
+
+    public static string BuildAllocationReview(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy investorPolicy, CompositionProjection projection)
+    {
+        var candidateByKey = candidates.ToDictionary(candidate => candidate.CandidateKey.Value);
+        var context = JsonSerializer.Serialize(new
+        {
+            portfolioId,
+            contributionAmount,
+            investorPolicy,
+            proposedAllocation = projection.ProposedAllocation,
+            portfolioBefore = projection.PortfolioBefore,
+            portfolioAfter = projection.PortfolioAfter,
+            impact = projection.Impact,
+            projectionConfidence = projection.ProjectionConfidence,
+            projectionWarnings = projection.ProjectionWarnings,
+            eligibleCandidates = candidates.Where(candidate => !candidate.HasBlock && candidate.ClassBudget > 0).Select(candidate => new
+            {
+                candidateKey = candidate.CandidateKey.Value,
+                candidate.Ticker,
+                candidate.AssetClass,
+                candidate.CurrentValue,
+                candidate.CurrentWeight,
+                candidate.CurrentClassWeight,
+                candidate.TargetClassWeight,
+                candidate.ClassBudget,
+                candidate.HasPosition,
+                candidate.IsEstablishingPosition,
+                candidate.Sector,
+                candidate.SectorCategory,
+                geographicExposureCoverage = candidate.GeographicExposureCoverage,
+                candidate.GeographicExposures,
+                economicCurrencyExposureCoverage = candidate.EconomicCurrencyExposureCoverage,
+                candidate.CurrencyExposures,
+                candidate.RecentContributionAmount,
+                candidate.RecentContributionCount,
+                candidate.LastContributionAt,
+                assessments = candidate.CurrentAssessments,
+                deterministicReference = new { decisionScore = candidate.DecisionScore }
+            }),
+            blockedCandidates = candidates.Where(candidate => candidate.HasBlock).Select(candidate => new { candidateKey = candidate.CandidateKey.Value, candidate.Ticker, candidate.AssetClass }),
+            deterministicReferences = deterministicReferences.Select(reference => new
+            {
+                reference.ScenarioKey,
+                reference.Summary,
+                reference.Improvement,
+                reference.PrimaryNeed,
+                reference.StructuralReasons,
+                allocations = reference.Allocations.Select(allocation => new { candidateKey = allocation.Key.Value, ticker = candidateByKey.GetValueOrDefault(allocation.Key.Value)?.Ticker, allocation.Amount })
+            })
+        }, JsonOptions);
+        const string instructions = """
+            Você revisa uma proposta R5 já validada pelo backend. A proposta original, o estado antes/depois e os impactos foram calculados deterministicamente para a composição inteira.
+
+            Responda à pergunta: agora que conhece o efeito real pós-aporte, esta continua sendo a melhor utilização marginal do aporte? Compare concentração em ativo, impacto por classe, setor/geografia/moeda somente quando houver cobertura, aportes recentes, posição em estabelecimento, assessments, eventos conhecidos e InvestorPolicy. Scores e referências determinísticas são contexto, não verdade obrigatória.
+            Em Maintenance, não invente necessidade de rebalanceamento por pequenos desvios: avalie o benefício marginal da composição final. Não favoreça concentração, divisão ou mistura de classes apenas pela forma. Uma composição concentrada permanece correta se alternativas complementares não trouxerem benefício marginal superior.
+            Coverage Unavailable, null ou warnings indicam informação indisponível. Nunca estime, complete ou transforme ausência em risco ou benefício. Assessments são dados qualitativos e múltiplos Medium/Monitor relacionados devem ser considerados em conjunto, sem criar bloqueio ou penalidade numérica.
+            Escolha exatamente uma decisão: Confirm mantém exatamente proposedAllocation e deve retornar allocations vazias. Revise substitui a proposta por uma nova composição usando somente candidateKey de eligibleCandidates. Para Revise, aplique os mesmos limites: valores positivos monetários com até duas casas, sem duplicidade, soma até contributionAmount e soma por classe até ClassBudget. Não crie tickers, candidatos, vendas, fatos externos ou projeções.
+            A reason deve explicar a composição FINAL com fatores concretos. Se confirmar uma concentração, explique por que as alternativas complementares não melhoram marginalmente a carteira; se revisar/dividir, explique o papel marginal de cada componente. Quando os dados não forem suficientes, declare essa limitação.
+            Responda exclusivamente no JSON do schema: decision, allocations, reason, considerations.
 
             Contexto JSON:
             """;

@@ -184,6 +184,8 @@ public interface IContributionIntelligenceProvider
         => throw new NotSupportedException("Este provider não oferece seleção de cenários.");
     Task<AllocationProposal> ProposeAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Este provider não oferece geração de alocação.");
+    Task<AllocationReview> ReviewAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy investorPolicy, CompositionProjection projection, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Este provider não oferece revisão de composição.");
 }
 
 public static class ContributionIntelligenceValidator
@@ -244,7 +246,10 @@ public static class ContributionIntelligenceApplier
 public sealed class DeterministicContributionIntelligenceProvider : IContributionIntelligenceProvider
 {
     public Task<AllocationProposal> ProposeAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null, CancellationToken cancellationToken = default)
-        => Task.FromResult(new AllocationProposal("NoAction", Array.Empty<AllocationProposalAllocation>(), "A IA não está configurada; foi aplicado o fallback determinístico.", Array.Empty<string>(), "low", ContributionIntelligenceAvailability.InsufficientIntelligence, new("R5-ai-allocation", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
+        => Task.FromResult(new AllocationProposal("NoAction", Array.Empty<AllocationProposalAllocation>(), "A IA não está configurada; foi aplicado o fallback determinístico.", Array.Empty<string>(), "low", ContributionIntelligenceAvailability.InsufficientIntelligence, new("R5-ai-allocation-v2", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
+
+    public Task<AllocationReview> ReviewAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy investorPolicy, CompositionProjection projection, CancellationToken cancellationToken = default)
+        => Task.FromResult(new AllocationReview("Confirm", Array.Empty<AllocationProposalAllocation>(), "A revisão por IA não está configurada; a proposta inicial válida foi preservada.", Array.Empty<string>(), ContributionIntelligenceAvailability.InsufficientIntelligence, new("R5-ai-allocation-v2", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
 
     public Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null, CancellationToken cancellationToken = default)
         => Task.FromResult(new ContributionScenarioSelection(string.Empty, "A IA não está configurada; foi aplicado o fallback determinístico.", Array.Empty<string>(), ContributionIntelligenceAvailability.InsufficientIntelligence, new("R17.8", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));

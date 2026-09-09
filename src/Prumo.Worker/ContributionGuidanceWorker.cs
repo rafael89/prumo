@@ -50,17 +50,45 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     {
                         try
                         {
+                            var provider = scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>();
                             var (proposal, allocations, retryCount) = await ProposeValidatedAllocationAsync(
-                                scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId,
+                                provider, job.PortfolioId,
                                 guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy, stoppingToken);
-                            var allocationMode = AllocationMode(allocations, deterministicOptions);
-                            metrics.RecordAiOutcome(allocationMode);
-                            guidance.UpdateIntelligence(proposal.Metadata.Provider, proposal.Metadata.Model, proposal.Availability.ToString(), proposal.Reason, JsonSerializer.Serialize(new
+                            var initialProjection = CompositionProjectionEvaluator.Project(workItem.Candidates, allocations);
+                            AllocationReview? review = null;
+                            AllocationReviewResolution reviewResolution;
+                            try
                             {
-                                engineVersion = proposal.Metadata.EngineVersion,
-                                policyVersion = proposal.Metadata.PolicyVersion,
-                                promptVersion = proposal.Metadata.PromptVersion,
-                                generatedAt = proposal.Metadata.GeneratedAt,
+                                review = await provider.ReviewAllocationAsync(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy, initialProjection, stoppingToken);
+                                reviewResolution = AllocationReviewResolver.Resolve(allocations, review, guidance.RequestedAmount, workItem.Candidates);
+                                if (!reviewResolution.ReviewAccepted)
+                                    logger.LogWarning("Revisão da composição para o job de guidance {JobId} não foi aceita; a proposta inicial válida foi preservada: {Warning}", job.Id, reviewResolution.Warning);
+                            }
+                            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                reviewResolution = new AllocationReviewResolution(allocations, false, false, "review-unavailable-kept-initial", $"A revisão pós-projeção não ficou disponível ({ex.Message}); a proposta inicial válida foi preservada.");
+                                logger.LogWarning(ex, "Revisão pós-projeção indisponível para o job de guidance {JobId}; a proposta inicial válida foi preservada", job.Id);
+                            }
+
+                            var finalAllocations = reviewResolution.FinalAllocations;
+                            var finalProjection = reviewResolution.CompositionChangedAfterProjection
+                                ? CompositionProjectionEvaluator.Project(workItem.Candidates, finalAllocations)
+                                : initialProjection;
+                            var finalMetadata = reviewResolution.ReviewAccepted && review is not null ? review.Metadata : proposal.Metadata;
+                            var finalReason = reviewResolution.ReviewAccepted && !string.IsNullOrWhiteSpace(review?.Reason) ? review.Reason : proposal.Reason;
+                            var allocationMode = AllocationMode(finalAllocations, deterministicOptions);
+                            metrics.RecordAiOutcome(allocationMode);
+                            metrics.RecordAiOutcome($"composition-review-{reviewResolution.Outcome}");
+                            guidance.UpdateIntelligence(finalMetadata.Provider, finalMetadata.Model, proposal.Availability.ToString(), finalReason, JsonSerializer.Serialize(new
+                            {
+                                engineVersion = finalMetadata.EngineVersion,
+                                policyVersion = finalMetadata.PolicyVersion,
+                                promptVersion = finalMetadata.PromptVersion,
+                                generatedAt = finalMetadata.GeneratedAt,
                                 deterministicBaselineScenarioKey = deterministicOptions.FirstOrDefault()?.ScenarioKey,
                                 usedFallback = false,
                                 selectionMode = "ai-constrained-allocation",
@@ -77,9 +105,23 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 evidenceCount = workItem.Baseline.Evidence.Count,
                                 primaryFactors = proposal.PrimaryFactors,
                                 confidence = proposal.Confidence,
-                                proposalDecisionType = proposal.DecisionType
+                                proposalDecisionType = proposal.DecisionType,
+                                initialAiAllocation = initialProjection.ProposedAllocation,
+                                initialProjection,
+                                reviewDecision = review?.Decision ?? "unavailable",
+                                reviewOutcome = reviewResolution.Outcome,
+                                reviewAccepted = reviewResolution.ReviewAccepted,
+                                reviewReason = review?.Reason,
+                                reviewConsiderations = review?.Considerations ?? Array.Empty<string>(),
+                                reviewWarning = reviewResolution.Warning,
+                                reviewProvider = review?.Metadata.Provider,
+                                reviewModel = review?.Metadata.Model,
+                                reviewPromptVersion = review?.Metadata.PromptVersion,
+                                finalAllocation = finalProjection.ProposedAllocation,
+                                finalProjection,
+                                compositionChangedAfterProjection = reviewResolution.CompositionChangedAfterProjection
                             }));
-                            guidance.ReplaceAllocations(ToPersistedAllocations(guidance.Id, allocations, workItem.Candidates, proposal.Confidence));
+                            guidance.ReplaceAllocations(ToPersistedAllocations(guidance.Id, finalAllocations, workItem.Candidates, proposal.Confidence));
                         }
                         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                         {
