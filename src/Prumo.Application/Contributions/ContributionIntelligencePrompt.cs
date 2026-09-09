@@ -8,7 +8,7 @@ public static class ContributionIntelligencePrompt
     // Kept for the legacy evaluation/selection contract. R5 has its own prompt
     // version so historical R4 traces remain comparable.
     public const string Version = "r4-contribution-v12";
-    public const string AllocationVersion = "r5-constrained-allocation-v1";
+    public const string AllocationVersion = "r5-constrained-allocation-v2";
 
     public static string BuildAllocationProposal(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null)
     {
@@ -96,6 +96,17 @@ public static class ContributionIntelligencePrompt
             portfolioId,
             contributionAmount,
             rebalanceMode = deterministicReferences.FirstOrDefault()?.PrimaryNeed is null ? "Maintenance" : "Required",
+            allocationConstraints = new
+            {
+                classBudgetMeaning = "ClassBudget é o máximo agregado permitido para a classe nesta decisão; não é uma necessidade, um alvo de consumo nem uma instrução para escolher uma classe.",
+                totalBudgetMeaning = "A soma de todas as allocations não pode superar contributionAmount.",
+                maintenance = new
+                {
+                    canMixAssetClasses = true,
+                    canUseLessThanClassBudget = true,
+                    canConcentrateInOneCandidate = true
+                }
+            },
             investorPolicy = investorPolicy ?? InvestorPolicy.Current,
             portfolioState = new
             {
@@ -137,6 +148,7 @@ public static class ContributionIntelligencePrompt
             A soma dos amounts não pode superar contributionAmount. A soma dentro de cada assetClass não pode superar o classBudget informado nos candidatos daquela classe. Use valores positivos, monetários, com no máximo duas casas; não repita candidateKey. "NoAction" deve ter allocations vazias e deve ser raro: use-o apenas se nenhum aporte responsável puder ser justificado pelos fatos fornecidos.
 
             Compare o estado bruto da carteira e portfolioState: peso atual, target e desvio de classe; concentração por setor e posição; aportes recentes; posição nova ou em estabelecimento; exposições geográficas e de moeda; assessments e eventos. projectedPortfolioExposure simula o efeito de alocar o máximo permitido a cada candidato individualmente. Só trate uma dimensão como diferenciadora quando sua coverage for Partial ou Complete; Unavailable e valores nulos significam ausência de dados, não concentração. Priorize a necessidade estrutural, depois evite concentração severa e melhore diversificação/exposições; cooldown e qualidade financeira só diferenciam alternativas equivalentes. DecisionScore e os cenários determinísticos são referências auditáveis, não uma instrução nem uma verdade obrigatória.
+            Em Required, primaryNeed e o déficit de classe continuam sendo evidências relevantes; respeite os limites por classe. Em Maintenance, não há obrigação de priorizar ou consumir integralmente nenhuma classe. Cada ClassBudget é somente o máximo agregado permitido naquela classe, mesmo quando várias classes exibem um máximo igual a contributionAmount. Compare tanto alocações concentradas quanto composições entre candidatos da mesma classe ou de classes diferentes, escolhendo apenas quando os fatos sustentarem benefício marginal para a carteira. Não favoreça a divisão ou a concentração apenas pela forma da alocação.
             Você pode reproduzir uma referência, alterá-la ou criar uma combinação própria. Não aloque automaticamente todo o aporte se os limites e fatos sustentarem apenas uma parte. A reason precisa citar fatos estruturados concretos. primaryFactors deve conter fatores curtos dentre concentration, diversification, class_gap, recent_contribution, assessment, exposure ou new_position. confidence deve ser low, medium ou high.
             Se rejectionReason estiver presente, corrija exatamente o problema relatado e retorne uma nova proposta válida.
             Responda exclusivamente no JSON do schema: decisionType, allocations, reason, primaryFactors, confidence.

@@ -146,6 +146,57 @@ public sealed class ContributionScenarioSelectionTests
     }
 
     [Fact]
+    public void Maintenance_accepts_a_multiclass_allocation_within_independent_class_budgets()
+    {
+        var fii = Candidate("FIIB11") with { AssetClass = AssetClass.Fii, ClassBudget = 4_400m };
+        var stock = Candidate("PETR4") with { AssetClass = AssetClass.BrazilianStock, ClassBudget = 4_400m };
+
+        var allocations = AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(fii.CandidateKey, 2_500m), new AllocationProposalAllocation(stock.CandidateKey, 1_900m)),
+            4_400m, new[] { fii, stock });
+
+        Assert.Equal(4_400m, allocations.Sum(allocation => allocation.Amount));
+        Assert.Equal(2_500m, allocations.Single(allocation => allocation.Key == fii.CandidateKey).Amount);
+        Assert.Equal(1_900m, allocations.Single(allocation => allocation.Key == stock.CandidateKey).Amount);
+    }
+
+    [Fact]
+    public void Maintenance_continues_to_accept_a_concentrated_allocation()
+    {
+        var fii = Candidate("FIIB11") with { AssetClass = AssetClass.Fii, ClassBudget = 4_400m };
+
+        var allocations = AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(fii.CandidateKey, 4_400m)), 4_400m, new[] { fii });
+
+        Assert.Equal(4_400m, Assert.Single(allocations).Amount);
+    }
+
+    [Fact]
+    public void Class_budget_is_a_ceiling_not_a_required_amount()
+    {
+        var fii = Candidate("FIIB11") with { AssetClass = AssetClass.Fii, ClassBudget = 4_400m };
+
+        var allocations = AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(fii.CandidateKey, 2_500m)), 4_400m, new[] { fii });
+
+        Assert.Equal(2_500m, Assert.Single(allocations).Amount);
+    }
+
+    [Fact]
+    public void Multiclass_allocation_cannot_exceed_total_or_class_ceiling()
+    {
+        var fii = Candidate("FIIB11") with { AssetClass = AssetClass.Fii, ClassBudget = 2_500m };
+        var stock = Candidate("PETR4") with { AssetClass = AssetClass.BrazilianStock, ClassBudget = 4_400m };
+
+        Assert.Throws<InvalidOperationException>(() => AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(fii.CandidateKey, 2_501m), new AllocationProposalAllocation(stock.CandidateKey, 1_899m)),
+            4_400m, new[] { fii, stock }));
+        Assert.Throws<InvalidOperationException>(() => AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(fii.CandidateKey, 2_500m), new AllocationProposalAllocation(stock.CandidateKey, 1_901m)),
+            4_400m, new[] { fii, stock }));
+    }
+
+    [Fact]
     public void Ai_cannot_allocate_to_an_unknown_or_blocked_candidate()
     {
         var allowed = Candidate("AAA3");
@@ -237,6 +288,24 @@ public sealed class ContributionScenarioSelectionTests
         Assert.Contains("deterministicReference", prompt);
         Assert.Contains("rejectionReason", prompt);
         Assert.Contains("candidateKey", prompt);
+    }
+
+    [Fact]
+    public void Allocation_prompt_explains_multiclass_freedom_in_maintenance_without_changing_required()
+    {
+        var fii = Candidate("FIIB11") with { AssetClass = AssetClass.Fii, ClassBudget = 4_400m };
+        var stock = Candidate("PETR4") with { AssetClass = AssetClass.BrazilianStock, ClassBudget = 4_400m };
+        var maintenancePrompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 4_400m, new[] { fii, stock }, Array.Empty<ContributionScenarioOption>());
+        var requiredPrompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 4_400m, new[] { fii, stock }, new[]
+        {
+            new ContributionScenarioOption("scenario:deterministic", new[] { new CandidateAllocation(fii.Identity, 4_400m) }, 1m, "reference", "Fii")
+        });
+
+        Assert.Contains("canMixAssetClasses", maintenancePrompt);
+        Assert.Contains("ClassBudget é somente o máximo agregado permitido", maintenancePrompt);
+        Assert.Contains("não há obrigação de priorizar ou consumir integralmente nenhuma classe", maintenancePrompt);
+        Assert.Contains("\"rebalanceMode\":\"Required\"", requiredPrompt);
+        Assert.Contains("Em Required, primaryNeed", requiredPrompt);
     }
 
     [Fact]
