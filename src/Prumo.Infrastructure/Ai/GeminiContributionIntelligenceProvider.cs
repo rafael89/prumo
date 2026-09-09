@@ -51,6 +51,25 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
         return new(payload.SelectedScenarioKey, payload.Reason ?? string.Empty, payload.Considerations?.ToArray() ?? Array.Empty<string>(), ContributionIntelligenceAvailability.IntelligenceAvailable, new("R17.8", "contribution-scenario", ContributionIntelligencePrompt.Version, "Gemini", settings.Model, DateTimeOffset.UtcNow));
     }
 
+    public async Task<AllocationProposal> ProposeAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
+        var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(portfolioId, contributionAmount, candidates, deterministicReferences, investorPolicy ?? InvestorPolicy.Current, rejectionReason);
+        var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = AllocationProposalSchema } };
+        var raw = await SendAsync(settings.Model, request, AiRequestRateLimiter.EstimateTokens(prompt) + 2000, timeout.Token);
+        using var document = JsonDocument.Parse(raw);
+        var text = document.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
+        if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Resposta Gemini vazia.");
+        var payload = JsonSerializer.Deserialize<AllocationProposalPayload>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidOperationException("Resposta Gemini inválida.");
+        return new(payload.DecisionType ?? string.Empty,
+            payload.Allocations?.Select(x => new AllocationProposalAllocation(new CandidateKey(x.CandidateKey ?? string.Empty), x.Amount)).ToArray() ?? Array.Empty<AllocationProposalAllocation>(),
+            payload.Reason ?? string.Empty, payload.PrimaryFactors?.ToArray() ?? Array.Empty<string>(), payload.Confidence ?? "low",
+            ContributionIntelligenceAvailability.IntelligenceAvailable,
+            new("R5-ai-allocation", "contribution-allocation", ContributionIntelligencePrompt.AllocationVersion, "Gemini", settings.Model, DateTimeOffset.UtcNow));
+    }
+
     private async Task<string> SendAsync(string model, object body, int estimatedTokens, CancellationToken ct)
     {
         HttpStatusCode lastStatus = HttpStatusCode.ServiceUnavailable;
@@ -94,7 +113,10 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
 
     private sealed record Payload(List<Evaluation>? CandidateEvaluations, string? OverallReasoning, string? IntelligenceAvailability);
     private sealed record ScenarioPayload(string? SelectedScenarioKey, string? Reason, List<string>? Considerations);
+    private sealed record AllocationProposalPayload(string? DecisionType, List<AllocationPayload>? Allocations, string? Reason, List<string>? PrimaryFactors, string? Confidence);
+    private sealed record AllocationPayload(string? CandidateKey, decimal Amount);
     private static readonly object ScenarioSchema = new { type = "object", properties = new { selectedScenarioKey = new { type = "string" }, reason = new { type = "string" }, considerations = new { type = "array", items = new { type = "string" } } }, required = new[] { "selectedScenarioKey", "reason", "considerations" } };
+    private static readonly object AllocationProposalSchema = new { type = "object", properties = new { decisionType = new { type = "string", @enum = new[] { "Allocate", "NoAction" } }, allocations = new { type = "array", items = new { type = "object", properties = new { candidateKey = new { type = "string" }, amount = new { type = "number", minimum = 0 } }, required = new[] { "candidateKey", "amount" } } }, reason = new { type = "string" }, primaryFactors = new { type = "array", items = new { type = "string" } }, confidence = new { type = "string", @enum = new[] { "low", "medium", "high" } } }, required = new[] { "decisionType", "allocations", "reason", "primaryFactors", "confidence" } };
     private sealed record Evaluation(string? CandidateKey, Guid? AssetId, int Rank, decimal SuggestedAmount, string? Reason, decimal Confidence, List<Evidence>? EvidenceReferences);
     private sealed record Evidence(string? Type, string? ReferenceId, string? Label, string? Summary);
     private static readonly object Schema = new { type = "object", properties = new { candidateEvaluations = new { type = "array", items = new { type = "object", properties = new { candidateKey = new { type = "string" }, rank = new { type = "integer" }, suggestedAmount = new { type = "number", minimum = 0 }, reason = new { type = "string" }, confidence = new { type = "number", minimum = 0, maximum = 1 }, evidenceReferences = new { type = "array", items = new { type = "object", properties = new { type = "string", referenceId = new { type = "string" }, label = new { type = "string" }, summary = new { type = "string" } }, required = new[] { "type", "referenceId", "label" } } } }, required = new[] { "candidateKey", "rank", "suggestedAmount", "reason", "confidence", "evidenceReferences" } } }, overallReasoning = new { type = "string" }, intelligenceAvailability = new { type = "string", @enum = new[] { "IntelligenceAvailable", "PartialIntelligence", "InsufficientIntelligence" } } }, required = new[] { "candidateEvaluations", "overallReasoning", "intelligenceAvailability" } };

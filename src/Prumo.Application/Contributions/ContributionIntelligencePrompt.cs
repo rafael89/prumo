@@ -5,7 +5,106 @@ namespace Prumo.Application.Contributions;
 
 public static class ContributionIntelligencePrompt
 {
+    // Kept for the legacy evaluation/selection contract. R5 has its own prompt
+    // version so historical R4 traces remain comparable.
     public const string Version = "r4-contribution-v12";
+    public const string AllocationVersion = "r5-constrained-allocation-v1";
+
+    public static string BuildAllocationProposal(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null)
+    {
+        var candidateByKey = candidates.ToDictionary(x => x.CandidateKey.Value);
+        var eligibleCandidates = candidates.Where(x => !x.HasBlock && x.ClassBudget > 0).Select(candidate => new
+        {
+            candidateKey = candidate.CandidateKey.Value,
+            candidate.Ticker,
+            candidate.AssetClass,
+            candidate.AssetType,
+            candidate.CurrentValue,
+            candidate.CurrentWeight,
+            candidate.CurrentClassWeight,
+            candidate.TargetClassWeight,
+            candidate.ClassBudget,
+            candidate.HasPosition,
+            candidate.IsEstablishingPosition,
+            candidate.Sector,
+            candidate.SectorCategory,
+            candidate.SectorWeightWithinClass,
+            candidate.RecentContributionAmount,
+            candidate.RecentContributionCount,
+            candidate.LastContributionAt,
+            candidate.GeographicExposureCoverage,
+            candidate.GeographicExposures,
+            candidate.EconomicCurrencyExposureCoverage,
+            candidate.CurrencyExposures,
+            candidate.ListingCountryCode,
+            candidate.TradingCurrency,
+            candidate.FinancialSnapshot,
+            assessments = candidate.CurrentAssessments,
+            deterministicReference = new
+            {
+                decisionScore = candidate.DecisionScore,
+                candidate.AllocationNeedScore,
+                candidate.DiversificationScore,
+                candidate.UnderweightScore,
+                recentContributionPenalty = ContributionRecency.Penalty(candidate.RecentContributionPenalty, candidate.RecentContributionCount, candidate.LastContributionAt, candidate.IsEstablishingPosition, candidate.CurrentWeight)
+            }
+        });
+        var blockedCandidates = candidates.Where(x => x.HasBlock).Select(x => new
+        {
+            candidateKey = x.CandidateKey.Value,
+            x.Ticker,
+            x.AssetClass,
+            assessments = x.CurrentAssessments.Where(assessment => assessment.ActionRequirement != "None")
+        });
+        var references = deterministicReferences.Select(reference => new
+        {
+            reference.ScenarioKey,
+            reference.Summary,
+            reference.Improvement,
+            reference.PrimaryNeed,
+            reference.StructuralReasons,
+            reference.DeviationBefore,
+            reference.DeviationAfter,
+            allocations = reference.Allocations.Select(allocation => new
+            {
+                candidateKey = allocation.Key.Value,
+                ticker = candidateByKey.TryGetValue(allocation.Key.Value, out var candidate) ? candidate.Ticker : null,
+                allocation.Amount
+            })
+        });
+        var context = JsonSerializer.Serialize(new
+        {
+            portfolioId,
+            contributionAmount,
+            rebalanceMode = deterministicReferences.FirstOrDefault()?.PrimaryNeed is null ? "Maintenance" : "Required",
+            investorPolicy = investorPolicy ?? InvestorPolicy.Current,
+            eligibleCandidates,
+            blockedCandidates,
+            projection = deterministicReferences.Select(reference => new
+            {
+                reference.ScenarioKey,
+                deviationBefore = reference.DeviationBefore,
+                deviationAfter = reference.DeviationAfter,
+                improvement = reference.Improvement
+            }),
+            deterministicReferences = references,
+            rejectionReason
+        }, JsonOptions);
+        const string instructions = """
+            Você é o componente de julgamento qualitativo de aportes do Prumo. Construa uma proposta de alocação, não escolha apenas um cenário pronto.
+
+            O backend é dono das regras duras e vai validar a resposta. Você só pode alocar para candidateKey presente em eligibleCandidates. Nunca invente ticker, candidato, venda, preço, valuation, rentabilidade ou fatos externos. blockedCandidates são contexto e jamais podem receber aporte.
+            A soma dos amounts não pode superar contributionAmount. A soma dentro de cada assetClass não pode superar o classBudget informado nos candidatos daquela classe. Use valores positivos, monetários, com no máximo duas casas; não repita candidateKey. "NoAction" deve ter allocations vazias e deve ser raro: use-o apenas se nenhum aporte responsável puder ser justificado pelos fatos fornecidos.
+
+            Compare o estado bruto da carteira: peso atual, target e desvio de classe; concentração por setor e posição; aportes recentes; posição nova ou em estabelecimento; exposições geográficas e de moeda; assessments e eventos. Priorize a necessidade estrutural, depois evite concentração severa e melhore diversificação/exposições; cooldown e qualidade financeira só diferenciam alternativas equivalentes. DecisionScore e os cenários determinísticos são referências auditáveis, não uma instrução nem uma verdade obrigatória.
+            Você pode reproduzir uma referência, alterá-la ou criar uma combinação própria. Não aloque automaticamente todo o aporte se os limites e fatos sustentarem apenas uma parte. A reason precisa citar fatos estruturados concretos. primaryFactors deve conter fatores curtos dentre concentration, diversification, class_gap, recent_contribution, assessment, exposure ou new_position. confidence deve ser low, medium ou high.
+            Se rejectionReason estiver presente, corrija exatamente o problema relatado e retorne uma nova proposta válida.
+            Responda exclusivamente no JSON do schema: decisionType, allocations, reason, primaryFactors, confidence.
+
+            Contexto JSON:
+            """;
+        return $"{instructions}\n{context}";
+    }
 
     public static string BuildScenarioSelection(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null)
     {

@@ -285,7 +285,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         // worker may have selected a valid scenario afterwards. Never expose the
         // baseline NoAction label when the published guidance has allocations.
         var effectiveDecisionType = decision?.DecisionType;
-        if (allocations.Length > 0 && string.Equals(effectiveDecisionType, "NoAction", StringComparison.OrdinalIgnoreCase))
+        var aiGeneratedAllocation = string.Equals(ExtractSelectionMode(item.MetadataJson), "ai-constrained-allocation", StringComparison.Ordinal);
+        if (allocations.Length > 0 && (aiGeneratedAllocation || string.Equals(effectiveDecisionType, "NoAction", StringComparison.OrdinalIgnoreCase)))
         {
             effectiveDecisionType = allocations.Length > 1
                 ? "SplitContribution"
@@ -335,7 +336,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 criteriaJson = FormatJson(jobCandidates ?? item.MetadataJson),
                 fallbackReason = ExtractFallbackReason(item.MetadataJson),
                 selectionMode = ExtractSelectionMode(item.MetadataJson),
+                allocationMode = ExtractMetadataString(item.MetadataJson, "allocationMode"),
                 selectedScenarioKey = ExtractMetadataString(item.MetadataJson, "selectedScenarioKey"),
+                primaryFactors = ExtractMetadataStrings(item.MetadataJson, "primaryFactors"),
+                confidence = ExtractMetadataString(item.MetadataJson, "confidence"),
                 investorPolicyId = ExtractMetadataString(item.MetadataJson, "investorPolicyId"),
                 investorPolicyVersion = ExtractMetadataString(item.MetadataJson, "investorPolicyVersion")
             },
@@ -491,6 +495,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 "ai-quota-exceeded" => "O limite de cota da IA foi atingido.",
                 "ai-timeout" => "A IA não respondeu dentro do prazo.",
                 "ai-invalid-scenario" => "A IA respondeu, mas o cenário não passou nas regras de segurança do Prumo.",
+                "ai-invalid-allocation" => "A IA respondeu, mas a distribuição não passou nas regras de segurança do Prumo.",
                 "ai-unavailable" => "A IA não respondeu corretamente.",
                 "deterministic-partial-allocation" => "A IA foi consultada, mas não havia um cenário completo que respeitasse os limites das classes; foi usada a distribuição parcial segura.",
                 _ => null
@@ -517,6 +522,18 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             return TryGet(root, property, property[..1].ToUpperInvariant() + property[1..], out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
         }
         catch (JsonException) { return null; }
+    }
+
+    private static string[] ExtractMetadataStrings(string json, string property)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            return TryGet(root, property, property[..1].ToUpperInvariant() + property[1..], out var value) && value.ValueKind == JsonValueKind.Array
+                ? value.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToArray()
+                : Array.Empty<string>();
+        }
+        catch (JsonException) { return Array.Empty<string>(); }
     }
 
     private static bool TryGet(JsonElement root, string camelName, string pascalName, out JsonElement value)

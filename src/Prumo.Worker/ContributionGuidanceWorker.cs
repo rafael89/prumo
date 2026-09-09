@@ -36,81 +36,35 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates, investorPolicy);
                     var usedFallback = false;
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision, workItem.Baseline, workItem.Candidates);
-                    if (deterministicOptions.Length == 0)
+                    var eligibleCandidates = workItem.Candidates.Where(candidate => !candidate.HasBlock && candidate.ClassBudget > 0).ToArray();
+                    if (eligibleCandidates.Length == 0)
                     {
-                        try
-                        {
-                            // An empty safe set is a deterministic outcome, not an AI
-                            // selection problem. Never send an empty scenarios list.
-                            usedFallback = true;
-                            ApplyFallback(
-                                guidance,
-                                workItem.Baseline,
-                                deterministicDecision.Reasons.FirstOrDefault() ?? "Não há um cenário completo que respeite os limites atuais; a distribuição parcial segura foi preservada.",
-                                "deterministic-partial-allocation");
-                            /*
-                            // The AI is consulted even when there is no complete safe
-                            // scenario. Its response cannot invent an allocation, but it
-                            // can still provide contextual reasoning for the fallback.
-                            var selection = await intelligenceProvider.SelectScenarioAsync(job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, stoppingToken);
-                            usedFallback = true;
-                            ApplyFallback(
-                                guidance,
-                                workItem.Baseline,
-                                deterministicDecision.Reasons.FirstOrDefault() ?? "Não há um cenário completo que respeite os limites atuais; a distribuição parcial segura foi preservada.",
-                                "deterministic-partial-allocation");
-                            guidance.UpdateIntelligence(
-                                "deterministic-fallback",
-                                "portfolio-rules",
-                                ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
-                                string.IsNullOrWhiteSpace(selection.Reason) ? guidance.Reasoning : $"{selection.Reason}\n{guidance.Reasoning}",
-                                JsonSerializer.Serialize(new
-                                {
-                                    engineVersion = selection.Metadata.EngineVersion,
-                                    policyVersion = workItem.Baseline.PortfolioHealthPolicyVersion,
-                                    promptVersion = selection.Metadata.PromptVersion,
-                                    aiProvider = selection.Metadata.Provider,
-                                    aiModel = selection.Metadata.Model,
-                                    fallbackReason = "deterministic-partial-allocation",
-                                    usedFallback = true,
-                                    generatedAt = DateTimeOffset.UtcNow,
-                                    classAllocations = workItem.Baseline.ClassAllocations
-                                }));
-                            */
-                        }
-                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            usedFallback = true;
-                            ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code);
-                            logger.LogWarning(ex, "Resposta da IA não utilizável para o job de guidance {JobId}; fallback determinístico aplicado", job.Id);
-                        }
+                        usedFallback = true;
+                        ApplyFallback(
+                            guidance,
+                            workItem.Baseline,
+                            deterministicDecision.Reasons.FirstOrDefault() ?? "Não há candidato elegível dentro dos limites atuais.",
+                            "no-eligible-candidates");
                     }
                     else
                     {
                         try
                         {
-                            var (selection, selected, retryCount) = deterministicOptions.Length == 1
-                                ? SingleScenarioSelection(deterministicOptions[0])
-                                : await SelectValidatedScenarioAsync(scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId, guidance.RequestedAmount, deterministicOptions, workItem.Candidates, investorPolicy, deterministicDecision.RebalanceMode, stoppingToken);
-                            var selectionMode = deterministicOptions.Length == 1 ? "single-safe-scenario" : "ai-scenario-selection";
-                            if (deterministicOptions.Length == 1) metrics.RecordAiOutcome("single-safe-scenario");
-                            guidance.UpdateIntelligence(selection.Metadata.Provider, selection.Metadata.Model, selection.Availability.ToString(), selection.Reason, JsonSerializer.Serialize(new
+                            var (proposal, allocations, retryCount) = await ProposeValidatedAllocationAsync(
+                                scope.ServiceProvider.GetRequiredService<IContributionIntelligenceProvider>(), job.PortfolioId,
+                                guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy, stoppingToken);
+                            var allocationMode = AllocationMode(allocations, deterministicOptions);
+                            metrics.RecordAiOutcome(allocationMode);
+                            guidance.UpdateIntelligence(proposal.Metadata.Provider, proposal.Metadata.Model, proposal.Availability.ToString(), proposal.Reason, JsonSerializer.Serialize(new
                             {
-                                engineVersion = selection.Metadata.EngineVersion,
-                                policyVersion = selection.Metadata.PolicyVersion,
-                                promptVersion = selection.Metadata.PromptVersion,
-                                generatedAt = selection.Metadata.GeneratedAt,
-                                selectedScenarioKey = selected.ScenarioKey,
-                                selectedScenarioDeviationBefore = selected.DeviationBefore,
-                                selectedScenarioDeviationAfter = selected.DeviationAfter,
-                                selectedScenarioImprovement = selected.Improvement,
-                                deterministicBaselineScenarioKey = deterministicOptions[0].ScenarioKey,
+                                engineVersion = proposal.Metadata.EngineVersion,
+                                policyVersion = proposal.Metadata.PolicyVersion,
+                                promptVersion = proposal.Metadata.PromptVersion,
+                                generatedAt = proposal.Metadata.GeneratedAt,
+                                deterministicBaselineScenarioKey = deterministicOptions.FirstOrDefault()?.ScenarioKey,
                                 usedFallback = false,
-                                selectionMode,
+                                selectionMode = "ai-constrained-allocation",
+                                allocationMode,
                                 retryCount,
                                 investorPolicyId = investorPolicy.PolicyId,
                                 investorPolicyVersion = investorPolicy.PolicyVersion,
@@ -121,9 +75,11 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 decisionEvidence = deterministicDecision.DecisionEvidence,
                                 assessmentVersions = workItem.Baseline.AssessmentVersions,
                                 evidenceCount = workItem.Baseline.Evidence.Count,
-                                considerations = selection.Considerations
+                                primaryFactors = proposal.PrimaryFactors,
+                                confidence = proposal.Confidence,
+                                proposalDecisionType = proposal.DecisionType
                             }));
-                            guidance.ReplaceAllocations(ToPersistedAllocations(guidance.Id, selected, workItem.Candidates));
+                            guidance.ReplaceAllocations(ToPersistedAllocations(guidance.Id, allocations, workItem.Candidates, proposal.Confidence));
                         }
                         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                         {
@@ -187,7 +143,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
     {
         HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests } => ("A cota da IA foi excedida; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-quota-exceeded"),
         TimeoutException or TaskCanceledException => ("A IA não respondeu dentro do prazo; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-timeout"),
-        InvalidOperationException { Message: not null } ex when ex.Message.StartsWith("A IA retornou", StringComparison.Ordinal) => ("A IA respondeu em formato incompatível com as regras do Prumo; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-invalid-scenario"),
+        InvalidOperationException { Message: not null } ex when ex.Message.StartsWith("A IA", StringComparison.Ordinal) => ("A IA respondeu em formato incompatível com as regras do Prumo; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-invalid-allocation"),
         _ => ("A IA não respondeu corretamente; a distribuição foi calculada pela estratégia e pelas posições atuais da carteira.", "ai-unavailable")
     };
 
@@ -291,6 +247,66 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         return new(key, scenario.Allocations, scenario.Improvement, summary, primaryNeed, structuralReasons, scenario.DeviationBefore, scenario.DeviationAfter);
     }
 
+    private async Task<(AllocationProposal Proposal, IReadOnlyList<CandidateAllocation> Allocations, int RetryCount)> ProposeValidatedAllocationAsync(
+        IContributionIntelligenceProvider provider,
+        Guid portfolioId,
+        decimal amount,
+        IReadOnlyList<ContributionCandidate> candidates,
+        IReadOnlyList<ContributionScenarioOption> deterministicReferences,
+        InvestorPolicy investorPolicy,
+        CancellationToken cancellationToken)
+    {
+        Exception? last = null;
+        string? rejectionReason = null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var proposal = await provider.ProposeAllocationAsync(portfolioId, amount, candidates, deterministicReferences, investorPolicy, rejectionReason, cancellationToken);
+                var allocations = AllocationProposalValidator.Validate(proposal, amount, candidates);
+                if (!HasGroundedReason(proposal))
+                    throw new InvalidOperationException("A IA retornou uma justificativa insuficiente para a alocação proposta.");
+                if (attempt > 0) metrics.RecordAiOutcome("retry-succeeded");
+                return (proposal, allocations, attempt);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                last = exception;
+                rejectionReason = exception.Message;
+                if (attempt == 0)
+                {
+                    metrics.RecordAiOutcome("retry");
+                    logger.LogWarning(exception, "Resposta da IA não passou na validação; uma nova tentativa será feita");
+                }
+            }
+        }
+
+        metrics.RecordAiOutcome("fallback");
+        throw last ?? new InvalidOperationException("A IA não retornou uma alocação válida.");
+    }
+
+    private static bool HasGroundedReason(AllocationProposal proposal)
+    {
+        var text = $"{proposal.Reason} {string.Join(" ", proposal.PrimaryFactors)}".Trim().ToLowerInvariant();
+        if (string.Equals(proposal.DecisionType, "NoAction", StringComparison.OrdinalIgnoreCase)) return text.Length >= 12;
+        if (text.Length < 12) return false;
+        var criteria = new[] { "classe", "target", "desvio", "divers", "concent", "aporte", "assessment", "bloque", "exposi", "posi", "recente" };
+        return criteria.Any(text.Contains);
+    }
+
+    private static string AllocationMode(IReadOnlyList<CandidateAllocation> allocations, IReadOnlyList<ContributionScenarioOption> references)
+    {
+        static bool Same(IReadOnlyList<CandidateAllocation> left, IReadOnlyList<CandidateAllocation> right)
+            => left.Count == right.Count && left.OrderBy(x => x.Key.Value, StringComparer.Ordinal).SequenceEqual(right.OrderBy(x => x.Key.Value, StringComparer.Ordinal));
+        if (references.Count > 0 && Same(allocations, references[0].Allocations)) return "baseline";
+        if (references.Any(reference => Same(allocations, reference.Allocations))) return "modified-baseline";
+        return "ai-composition";
+    }
+
     private async Task<(ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount)> SelectValidatedScenarioAsync(
         IContributionIntelligenceProvider provider,
         Guid portfolioId,
@@ -361,6 +377,16 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             allocation,
             candidates.Single(candidate => candidate.CandidateKey == allocation.Key),
             1)).ToArray();
+
+    private static PersistedContributionGuidanceAllocation[] ToPersistedAllocations(Guid guidanceId, IReadOnlyList<CandidateAllocation> allocations, IReadOnlyList<ContributionCandidate> candidates, string confidence)
+    {
+        var numericConfidence = confidence.ToLowerInvariant() switch { "high" => .9m, "medium" => .6m, _ => .3m };
+        return allocations.Select(allocation => PersistedAllocation(
+            guidanceId,
+            allocation,
+            candidates.Single(candidate => candidate.CandidateKey == allocation.Key),
+            numericConfidence)).ToArray();
+    }
 
     private static async Task<ContributionGuidanceJob?> ClaimNextAsync(PrumoDbContext db, CancellationToken ct)
     {

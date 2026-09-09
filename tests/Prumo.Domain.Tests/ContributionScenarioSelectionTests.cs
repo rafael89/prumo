@@ -133,6 +133,45 @@ public sealed class ContributionScenarioSelectionTests
     }
 
     [Fact]
+    public void Ai_can_create_a_valid_allocation_not_present_in_deterministic_references()
+    {
+        var first = Candidate("AAA3");
+        var second = Candidate("BBB3");
+        var proposal = Proposal("Allocate", new AllocationProposalAllocation(first.CandidateKey, 60m), new AllocationProposalAllocation(second.CandidateKey, 40m));
+
+        var allocations = AllocationProposalValidator.Validate(proposal, 100m, new[] { first, second });
+
+        Assert.Equal(new[] { 60m, 40m }, allocations.Select(x => x.Amount));
+        Assert.Equal(new[] { first.CandidateKey, second.CandidateKey }, allocations.Select(x => x.Key));
+    }
+
+    [Fact]
+    public void Ai_cannot_allocate_to_an_unknown_or_blocked_candidate()
+    {
+        var allowed = Candidate("AAA3");
+        var blocked = Candidate("BBB3") with { HasBlock = true };
+
+        Assert.Throws<InvalidOperationException>(() => AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(CandidateIdentity.Known(Guid.NewGuid()).Key, 100m)), 100m, new[] { allowed, blocked }));
+        Assert.Throws<InvalidOperationException>(() => AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(blocked.CandidateKey, 100m)), 100m, new[] { allowed, blocked }));
+    }
+
+    [Fact]
+    public void Ai_allocation_must_respect_amount_class_budget_and_unique_candidates()
+    {
+        var first = Candidate("AAA3") with { ClassBudget = 70m };
+        var second = Candidate("BBB3") with { ClassBudget = 70m };
+
+        Assert.Throws<InvalidOperationException>(() => AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(first.CandidateKey, 71m)), 100m, new[] { first, second }));
+        Assert.Throws<InvalidOperationException>(() => AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(first.CandidateKey, 60m), new AllocationProposalAllocation(second.CandidateKey, 60m)), 100m, new[] { first, second }));
+        Assert.Throws<InvalidOperationException>(() => AllocationProposalValidator.Validate(
+            Proposal("Allocate", new AllocationProposalAllocation(first.CandidateKey, 30m), new AllocationProposalAllocation(first.CandidateKey, 30m)), 100m, new[] { first, second }));
+    }
+
+    [Fact]
     public void Ai_assisted_guidance_preserves_provider_model_and_rationale()
     {
         var selection = Selection("scenario:deterministic", "Escolha sustentada pelos dados.", "Gemini", "gemini-2.5-flash");
@@ -184,6 +223,22 @@ public sealed class ContributionScenarioSelectionTests
         Assert.Contains("concentra", contextJson);
     }
 
+    [Fact]
+    public void Allocation_prompt_exposes_eligible_universe_and_keeps_scores_as_references()
+    {
+        var candidate = Candidate("AAA3") with { AllocationNeedScore = 90m, RecentContributionCount = 1, LastContributionAt = DateTimeOffset.UtcNow.AddDays(-5) };
+        var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 100m, new[] { candidate },
+            new[] { Option("scenario:deterministic", candidate, 100m) }, InvestorPolicy.Current, "Valor acima do aporte.");
+
+        Assert.Contains("eligibleCandidates", prompt);
+        Assert.Contains("blockedCandidates", prompt);
+        Assert.Contains("projection", prompt);
+        Assert.Contains("deterministicReferences", prompt);
+        Assert.Contains("deterministicReference", prompt);
+        Assert.Contains("rejectionReason", prompt);
+        Assert.Contains("candidateKey", prompt);
+    }
+
     private static ContributionCandidate Candidate(string ticker)
         => new(CandidateIdentity.Known(Guid.NewGuid()), ticker, AssetClass.BrazilianStock, 100m, 50m, 50m, 100m, 100m, false, Array.Empty<ContributionAssessmentContext>());
 
@@ -193,6 +248,11 @@ public sealed class ContributionScenarioSelectionTests
     private static ContributionScenarioSelection Selection(string key, string reason, string provider, string model)
         => new(key, reason, new[] { "structured" }, ContributionIntelligenceAvailability.IntelligenceAvailable,
             new("R17.8", "contribution-scenario", ContributionIntelligencePrompt.Version, provider, model, DateTimeOffset.UtcNow));
+
+    private static AllocationProposal Proposal(string decisionType, params AllocationProposalAllocation[] allocations)
+        => new(decisionType, allocations, "A diversificação reduz a concentração do aporte.", new[] { "diversification", "concentration" }, "medium",
+            ContributionIntelligenceAvailability.IntelligenceAvailable,
+            new("R5-ai-allocation", "contribution-allocation", ContributionIntelligencePrompt.AllocationVersion, "AI", "model-x", DateTimeOffset.UtcNow));
 
     private static ContributionGuidance FallbackGuidance(ContributionCandidate candidate)
         => new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(

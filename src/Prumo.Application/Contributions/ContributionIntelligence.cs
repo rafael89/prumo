@@ -99,6 +99,61 @@ public sealed record ContributionScenarioOption(
 public sealed record ContributionScenarioSelection(string SelectedScenarioKey, string Reason, IReadOnlyList<string> Considerations, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
 public sealed record ContributionGuidanceWorkItem(ContributionGuidance Baseline, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<ContributionCandidate> Candidates);
 
+/// <summary>
+/// A constrained allocation proposed by the intelligence provider. Candidate keys are
+/// deliberately the only identifiers accepted here: the model can distribute capital,
+/// but it cannot create an instrument outside of the portfolio's known universe.
+/// </summary>
+public sealed record AllocationProposalAllocation(CandidateKey CandidateKey, decimal Amount);
+public sealed record AllocationProposal(
+    string DecisionType,
+    IReadOnlyList<AllocationProposalAllocation> Allocations,
+    string Reason,
+    IReadOnlyList<string> PrimaryFactors,
+    string Confidence,
+    ContributionIntelligenceAvailability Availability,
+    ContributionIntelligenceMetadata Metadata);
+
+public static class AllocationProposalValidator
+{
+    public static IReadOnlyList<CandidateAllocation> Validate(AllocationProposal proposal, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates)
+    {
+        if (proposal is null) throw new InvalidOperationException("A IA não retornou uma proposta de alocação.");
+        var noAction = string.Equals(proposal.DecisionType, "NoAction", StringComparison.OrdinalIgnoreCase);
+        if (!noAction && !string.Equals(proposal.DecisionType, "Allocate", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("A IA retornou um tipo de decisão inválido.");
+        if (noAction && proposal.Allocations.Count > 0)
+            throw new InvalidOperationException("A IA retornou alocações para uma decisão sem ação.");
+        if (!noAction && proposal.Allocations.Count == 0)
+            throw new InvalidOperationException("A IA não retornou nenhuma alocação para a decisão de aporte.");
+        if (proposal.Confidence is not ("low" or "medium" or "high"))
+            throw new InvalidOperationException("A IA retornou uma confiança inválida.");
+        var allowedFactors = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "concentration", "diversification", "class_gap", "recent_contribution", "assessment", "exposure", "new_position"
+        };
+        if (proposal.PrimaryFactors.Any(factor => !allowedFactors.Contains(factor)))
+            throw new InvalidOperationException("A IA retornou um fator de decisão inválido.");
+
+        var byKey = candidates.ToDictionary(x => x.CandidateKey);
+        if (proposal.Allocations.Any(x => !byKey.ContainsKey(x.CandidateKey) || byKey[x.CandidateKey].HasBlock))
+            throw new InvalidOperationException("A IA retornou um candidato inexistente ou bloqueado.");
+        if (proposal.Allocations.Any(x => x.Amount <= 0 || decimal.Round(x.Amount, 2) != x.Amount))
+            throw new InvalidOperationException("A IA retornou um valor de alocação inválido.");
+        if (proposal.Allocations.GroupBy(x => x.CandidateKey).Any(x => x.Count() > 1))
+            throw new InvalidOperationException("A IA retornou o mesmo candidato mais de uma vez.");
+        if (decimal.Round(proposal.Allocations.Sum(x => x.Amount), 2) > decimal.Round(contributionAmount, 2))
+            throw new InvalidOperationException("A IA retornou uma alocação acima do valor do aporte.");
+        if (proposal.Allocations.GroupBy(x => byKey[x.CandidateKey].AssetClass)
+            .Any(group => group.Sum(x => x.Amount) > byKey[group.First().CandidateKey].ClassBudget))
+            throw new InvalidOperationException("A IA retornou uma alocação acima do orçamento de uma classe de ativos.");
+
+        return proposal.Allocations
+            .Select(x => new CandidateAllocation(byKey[x.CandidateKey].Identity, x.Amount))
+            .ToArray();
+    }
+}
+
 public static class ContributionScenarioValidator
 {
     public static ContributionScenarioOption Select(ContributionScenarioSelection selection, IReadOnlyList<ContributionScenarioOption> scenarios, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates)
@@ -127,6 +182,8 @@ public interface IContributionIntelligenceProvider
     Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken cancellationToken = default);
     Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Este provider não oferece seleção de cenários.");
+    Task<AllocationProposal> ProposeAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Este provider não oferece geração de alocação.");
 }
 
 public static class ContributionIntelligenceValidator
@@ -186,6 +243,9 @@ public static class ContributionIntelligenceApplier
 
 public sealed class DeterministicContributionIntelligenceProvider : IContributionIntelligenceProvider
 {
+    public Task<AllocationProposal> ProposeAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null, CancellationToken cancellationToken = default)
+        => Task.FromResult(new AllocationProposal("NoAction", Array.Empty<AllocationProposalAllocation>(), "A IA não está configurada; foi aplicado o fallback determinístico.", Array.Empty<string>(), "low", ContributionIntelligenceAvailability.InsufficientIntelligence, new("R5-ai-allocation", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
+
     public Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null, CancellationToken cancellationToken = default)
         => Task.FromResult(new ContributionScenarioSelection(string.Empty, "A IA não está configurada; foi aplicado o fallback determinístico.", Array.Empty<string>(), ContributionIntelligenceAvailability.InsufficientIntelligence, new("R17.8", "deterministic", "none", "deterministic", "none", DateTimeOffset.UtcNow)));
 
