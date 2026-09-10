@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faArrowRight, faCircleCheck, faCircleInfo, faEye, faRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faArrowRight, faCircleCheck, faCircleInfo, faRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl } from '../api/client'
 import { TransactionReconciliationSection } from './TransactionReconciliationSection'
@@ -37,6 +37,7 @@ export type DashboardAssessment = {
   status: number | string
   userState: number | string
   documentImportance?: string
+  hasRadarAssessment?: boolean
 }
 
 type RecentDocumentAnalysis = {
@@ -237,9 +238,11 @@ function priorityClasses(priority: number) {
   return 'bg-sky-50 text-sky-700'
 }
 
-function canManageSituation(item: DashboardAssessment) {
-  // Assessments with no capital-decision impact are informational only.
-  return item.capitalDecisionImpact !== 1
+function canManageSituation() {
+  // Any Radar assessment can be closed or reopened. Attention is derived from
+  // the complete assessment (priority, action and capital impact), so using
+  // only CapitalDecisionImpact here made the action disappear for valid items.
+  return true
 }
 
 function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
@@ -267,12 +270,14 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
 
 export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResolved = false, onClose, onMarkSeen, onResolve, onReopen, actionPending = false }: { item: DashboardAssessment; portfolioId: string; isSeen?: boolean; isResolved?: boolean; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean }) {
   useEffect(() => {
+    if (!isSeen && !isResolved && onMarkSeen) onMarkSeen()
+  }, [isSeen, isResolved, onMarkSeen])
+  useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previousOverflow }
   }, [])
 
-  const [markedSeen, setMarkedSeen] = useState(false)
   const analysis = useQuery({
     queryKey: ['dashboard-document-analysis', item.documentId, portfolioId],
     queryFn: async () => {
@@ -347,9 +352,8 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
       {analysis.data && <div className="mt-5 space-y-5 text-sm text-slate-700"><div className="grid gap-4 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Importância</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Classificação</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.classification}</p></div></div><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Resumo</p><p className="mt-2 leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto</p><p className="mt-2 leading-7">{analysis.data.impact}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto na minha carteira</p><p className="mt-2 leading-7">{analysis.data.portfolioAssessment?.portfolioImpactText ?? analysis.data.portfolioImpact}</p></article><div className="grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ação sugerida</p><p className="mt-1 font-semibold text-slate-950">{analysis.data.suggestedAction}{analysis.data.requiresAction ? ' · Requer atenção' : ''}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Confiança</p><p className="mt-1 font-semibold text-slate-950">{Math.round(analysis.data.confidence * 100)}%</p></div></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ativos afetados</p><div className="mt-2 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map(asset => <span key={asset} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span>Nenhum ativo listado.</span>}</div></div></div>}
       </div>
       <div data-radar-actions="true" className="mt-6 grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white pt-4 sm:flex sm:flex-wrap">
-        {onMarkSeen && !isResolved && <button type="button" onClick={() => { onMarkSeen(); setMarkedSeen(true) }} disabled={actionPending || isSeen || markedSeen} className="inline-flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-2.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 sm:px-4 sm:text-sm"><FontAwesomeIcon icon={faEye} />{isSeen || markedSeen ? 'Visto' : 'Marcar como visto'}</button>}
-        {canManageSituation(item) && !isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
-        {canManageSituation(item) && isResolved && onReopen && <button type="button" onClick={onReopen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faRotate} />Reabrir</button>}
+        {canManageSituation() && !isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
+        {canManageSituation() && isResolved && onReopen && <button type="button" onClick={onReopen} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faRotate} />Reabrir</button>}
       </div>
     </div>
   </div>
@@ -358,9 +362,20 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
 function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
   const [visibleCount, setVisibleCount] = useState(5)
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
+  const queryClient = useQueryClient()
+  const markSeen = useMutation({
+    mutationFn: (assessmentId: string) => fetch(`${contributionApiUrl}/api/radar/${assessmentId}/seen?portfolioId=${portfolioId}`, { method: 'PATCH' }).then(response => {
+      if (!response.ok) throw new Error('Não foi possível marcar o documento como visto.')
+      return response
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] })
+      void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] })
+    },
+  })
   return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
-    {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhuma mudança relevante recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
+    {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhum documento recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
       {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
         <div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
@@ -368,7 +383,7 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
         <div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
+    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isSeen={selectedItem.userState === 1 || selectedItem.userState === 'Seen'} onClose={() => setSelectedItem(null)} onMarkSeen={selectedItem.hasRadarAssessment === false ? undefined : () => markSeen.mutate(selectedItem.assessmentId)} actionPending={markSeen.isPending} />}
   </article>
 }
 
