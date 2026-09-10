@@ -42,4 +42,19 @@ public static class ContributionText
 
         return normalized;
     }
+
+    public static string NormalizeCandidateKeys(string text, IEnumerable<ContributionCandidate> candidates)
+    {
+        var normalized = text;
+        foreach (var candidate in candidates
+            .Where(x => !string.IsNullOrWhiteSpace(x.CandidateKey.Value))
+            .OrderByDescending(x => x.CandidateKey.Value.Length))
+        {
+            var displayName = !string.IsNullOrWhiteSpace(candidate.Ticker) ? candidate.Ticker
+                : !string.IsNullOrWhiteSpace(candidate.ExternalName) ? candidate.ExternalName
+                : candidate.CandidateKey.Value;
+            normalized = normalized.Replace(candidate.CandidateKey.Value, displayName, StringComparison.Ordinal);
+        }
+        return normalized;
+    }
 }

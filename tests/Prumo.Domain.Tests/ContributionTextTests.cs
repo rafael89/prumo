@@ -36,4 +36,15 @@ public sealed class ContributionTextTests
 
         Assert.Equal("Foi preterido por outro ativo eleg\u00edvel da mesma classe com maior benef\u00edcio marginal.", result);
     }
+
+    [Fact]
+    public void Oculta_chave_tecnica_do_candidato_no_texto_exibido()
+    {
+        var asset = new Prumo.Domain.Entities.Asset("FIIB11", "FII Industrial", AssetType.Fii, "Imobiliário");
+        var candidate = new ContributionCandidate(CandidateIdentity.Known(asset.Id), asset.Ticker, asset.AssetClass, 0, 0, 0, 100, 100, false, Array.Empty<ContributionAssessmentContext>());
+
+        var result = ContributionText.NormalizeCandidateKeys("A proposta no KnownCatalog:" + asset.Id + " foi confirmada.", new[] { candidate });
+
+        Assert.Equal("A proposta no FIIB11 foi confirmada.", result);
+    }
 }

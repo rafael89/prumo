@@ -7,6 +7,7 @@ using Prumo.Infrastructure.Persistence;
 using Prumo.Application.Abstractions;
 using Prumo.Infrastructure.MarketData;
 using Prumo.Domain.Enums;
+using System.Reflection;
 
 namespace Prumo.Worker;
 
@@ -14,6 +15,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
 {
     private const int MaxAttempts = 3;
     private static readonly TimeSpan Lease = TimeSpan.FromMinutes(30);
+    private static readonly string WorkerVersion = typeof(ContributionGuidanceWorker).Assembly.GetName().Version?.ToString() ?? "unknown";
+    private static readonly string WorkerBuild = typeof(ContributionGuidanceWorker).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -41,16 +44,18 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var investorPolicy = InvestorPolicy.Current;
                     var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates, investorPolicy);
                     var usedFallback = false;
+                    var executionPath = "normal";
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision, workItem.Baseline, workItem.Candidates);
                     var eligibleCandidates = workItem.Candidates.Where(candidate => !candidate.HasBlock && candidate.ClassBudget > 0).ToArray();
                     if (eligibleCandidates.Length == 0)
                     {
                         usedFallback = true;
+                        executionPath = "deterministic-fallback";
                         ApplyFallback(
                             guidance,
                             workItem.Baseline,
                             deterministicDecision.Reasons.FirstOrDefault() ?? "Não há candidato elegível dentro dos limites atuais.",
-                            "no-eligible-candidates", workItem);
+                            "no-eligible-candidates", workItem, executionPath);
                     }
                     else
                     {
@@ -76,6 +81,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                             }
                             catch (Exception ex)
                             {
+                                executionPath = "review-fallback";
                                 reviewResolution = new AllocationReviewResolution(allocations, false, false, "review-unavailable-kept-initial", $"A revisão pós-projeção não ficou disponível ({ex.Message}); a proposta inicial válida foi preservada.");
                                 logger.LogWarning(ex, "Revisão pós-projeção indisponível para o job de guidance {JobId}; a proposta inicial válida foi preservada", job.Id);
                             }
@@ -86,6 +92,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 : initialProjection;
                             var finalMetadata = reviewResolution.ReviewAccepted && review is not null ? review.Metadata : proposal.Metadata;
                             var finalReason = reviewResolution.ReviewAccepted && !string.IsNullOrWhiteSpace(review?.Reason) ? review.Reason : proposal.Reason;
+                            finalReason = ContributionText.NormalizeCandidateKeys(ContributionText.NormalizeAssetClassNames(finalReason), workItem.Candidates);
                             var allocationMode = AllocationMode(finalAllocations, deterministicOptions);
                             metrics.RecordAiOutcome(allocationMode);
                             metrics.RecordAiOutcome($"composition-review-{reviewResolution.Outcome}");
@@ -101,6 +108,9 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 generatedAt = finalMetadata.GeneratedAt,
                                 deterministicBaselineScenarioKey = deterministicOptions.FirstOrDefault()?.ScenarioKey,
                                 usedFallback = false,
+                                workerVersion = WorkerVersion,
+                                workerBuild = WorkerBuild,
+                                executionPath,
                                 selectionMode = "ai-constrained-allocation",
                                 allocationMode,
                                 retryCount,
@@ -170,7 +180,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         catch (Exception ex)
                         {
                             usedFallback = true;
-                            ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code, workItem);
+                            executionPath = "proposal-fallback";
+                            ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code, workItem, executionPath);
                             logger.LogWarning(ex, "Resposta da IA não utilizável para o job de guidance {JobId}; fallback determinístico aplicado", job.Id);
                         }
                     }
@@ -208,7 +219,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         }
     }
 
-    private static void ApplyFallback(PersistedContributionGuidance guidance, ContributionGuidance fallback, string reason, string code, ContributionGuidanceWorkItem? workItem = null)
+    private static void ApplyFallback(PersistedContributionGuidance guidance, ContributionGuidance fallback, string reason, string code, ContributionGuidanceWorkItem? workItem = null, string executionPath = "deterministic-fallback")
     {
         var applied = ContributionIntelligenceApplier.ApplyFallback(fallback, reason);
         guidance.UpdateIntelligence(
@@ -216,7 +227,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, investorPolicyId = InvestorPolicy.Current.PolicyId, investorPolicyVersion = InvestorPolicy.Current.PolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, candidateIntelligenceCandidateCount = workItem?.Candidates.Count(x => x.CandidateIntelligence is not null) ?? 0, candidateIntelligencePayloadLimited = workItem?.CandidateIntelligencePayloadLimited ?? false, candidatePayloadOriginalChars = workItem?.CandidatePayloadOriginalChars ?? 0, candidatePayloadProjectedChars = workItem?.CandidatePayloadProjectedChars ?? 0, candidatePayloadPersistedChars = workItem?.CandidatePayloadPersistedChars ?? 0, candidatePayloadReductionPercent = workItem?.CandidatePayloadReductionPercent ?? 0, candidatePayloadTruncatedEventCount = workItem?.CandidatePayloadTruncatedEventCount ?? 0, candidatePayloadTruncatedSummaryCount = workItem?.CandidatePayloadTruncatedSummaryCount ?? 0, candidateIntelligenceEvidenceReferenceCount = 0, candidateIntelligenceAssessmentCount = 0, candidateIntelligenceDocumentEvidenceCount = 0, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
+            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, workerVersion = WorkerVersion, workerBuild = WorkerBuild, executionPath, investorPolicyId = InvestorPolicy.Current.PolicyId, investorPolicyVersion = InvestorPolicy.Current.PolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, candidateIntelligenceCandidateCount = workItem?.Candidates.Count(x => x.CandidateIntelligence is not null) ?? 0, candidateIntelligencePayloadLimited = workItem?.CandidateIntelligencePayloadLimited ?? false, candidatePayloadOriginalChars = workItem?.CandidatePayloadOriginalChars ?? 0, candidatePayloadProjectedChars = workItem?.CandidatePayloadProjectedChars ?? 0, candidatePayloadPersistedChars = workItem?.CandidatePayloadPersistedChars ?? 0, candidatePayloadReductionPercent = workItem?.CandidatePayloadReductionPercent ?? 0, candidatePayloadTruncatedEventCount = workItem?.CandidatePayloadTruncatedEventCount ?? 0, candidatePayloadTruncatedSummaryCount = workItem?.CandidatePayloadTruncatedSummaryCount ?? 0, candidateIntelligenceEvidenceReferenceCount = workItem?.Candidates.Sum(x => x.CandidateIntelligence?.Evidence.Count ?? 0), candidateIntelligenceAssessmentCount = workItem?.Candidates.Sum(x => x.CandidateIntelligence?.Assessments.Count ?? 0), candidateIntelligenceDocumentEvidenceCount = workItem?.Candidates.Sum(x => x.CandidateIntelligence?.Evidence.Count(e => e.Type == "Document") ?? 0), proposalContextChars = (int?)null, reviewContextChars = (int?)null, proposalEventCount = (int?)null, reviewEventCount = (int?)null, storagePayloadChars = workItem?.CandidatePayloadPersistedChars, storagePayloadLimited = false, proposalContextLimited = false, reviewContextLimited = false, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId!.Value, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }

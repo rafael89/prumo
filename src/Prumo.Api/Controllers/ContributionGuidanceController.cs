@@ -396,10 +396,13 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 candidatePayloadTruncatedEventCount = ExtractMetadataInt(item.MetadataJson, "candidatePayloadTruncatedEventCount"),
                 candidatePayloadTruncatedSummaryCount = ExtractMetadataInt(item.MetadataJson, "candidatePayloadTruncatedSummaryCount"),
                 storagePayloadChars = ExtractMetadataInt(item.MetadataJson, "storagePayloadChars"),
-                proposalContextChars = ExtractMetadataInt(item.MetadataJson, "proposalContextChars"),
-                reviewContextChars = ExtractMetadataInt(item.MetadataJson, "reviewContextChars"),
-                proposalEventCount = ExtractMetadataInt(item.MetadataJson, "proposalEventCount"),
-                reviewEventCount = ExtractMetadataInt(item.MetadataJson, "reviewEventCount"),
+                proposalContextChars = ExtractMetadataNullableInt(item.MetadataJson, "proposalContextChars"),
+                reviewContextChars = ExtractMetadataNullableInt(item.MetadataJson, "reviewContextChars"),
+                proposalEventCount = ExtractMetadataNullableInt(item.MetadataJson, "proposalEventCount"),
+                reviewEventCount = ExtractMetadataNullableInt(item.MetadataJson, "reviewEventCount"),
+                workerVersion = ExtractMetadataString(item.MetadataJson, "workerVersion"),
+                workerBuild = ExtractMetadataString(item.MetadataJson, "workerBuild"),
+                executionPath = ExtractMetadataString(item.MetadataJson, "executionPath"),
                 storagePayloadLimited = ExtractMetadataBool(item.MetadataJson, "storagePayloadLimited"),
                 proposalContextLimited = ExtractMetadataBool(item.MetadataJson, "proposalContextLimited"),
                 reviewContextLimited = ExtractMetadataBool(item.MetadataJson, "reviewContextLimited"),
@@ -416,7 +419,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 investorPolicyVersion = ExtractMetadataString(item.MetadataJson, "investorPolicyVersion")
             },
             item.IntelligenceAvailability,
-            reasoning = ContributionText.NormalizeAssetClassNames(item.Reasoning),
+            reasoning = ContributionText.NormalizeCandidateKeys(ContributionText.NormalizeAssetClassNames(item.Reasoning), workItem?.Candidates ?? Array.Empty<ContributionCandidate>()),
             jobStatus = ContributionGuidanceJobStatus.Completed.ToString(),
             reused = true
         };
@@ -603,6 +606,17 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             return root.TryGetProperty(propertyName, out var value) && value.TryGetInt32(out var count) ? Math.Max(0, count) : 0;
         }
         catch (JsonException) { return 0; }
+    }
+
+    private static int? ExtractMetadataNullableInt(string json, string propertyName)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            if (!root.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+            return value.TryGetInt32(out var count) ? Math.Max(0, count) : null;
+        }
+        catch (JsonException) { return null; }
     }
 
     private static bool ExtractMetadataBool(string json, string propertyName)
