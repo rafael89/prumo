@@ -153,6 +153,10 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 storagePayloadChars = workItem.CandidatePayloadPersistedChars,
                                 proposalContextChars = proposalContext.Length,
                                 reviewContextChars = reviewContext.Length,
+                                proposalMetricEvidenceCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.MetricEvidence.Count ?? 0),
+                                reviewMetricEvidenceCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.MetricEvidence.Count ?? 0),
+                                metricEvidenceStatusCounts = MetricEvidenceStatusCounts(workItem.Candidates),
+                                metricEvidenceConflictCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.MetricEvidence.Count(e => e.Status == MetricEvidenceResolutionStatus.Conflict) ?? 0),
                                 proposalEventCount,
                                 reviewEventCount,
                                 storagePayloadLimited = false,
@@ -627,4 +631,9 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         string Reason,
         decimal Confidence,
         string EvidenceJson);
+
+    private static IReadOnlyDictionary<string, int> MetricEvidenceStatusCounts(IReadOnlyList<ContributionCandidate> candidates)
+        => candidates.SelectMany(x => x.CandidateIntelligence?.Freshness?.ByMetric.Values ?? Array.Empty<MetricApplicability>())
+            .GroupBy(x => x.ToString())
+            .ToDictionary(x => x.Key, x => x.Count());
 }

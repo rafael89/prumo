@@ -46,9 +46,9 @@ public sealed class FundOfFundsSectorSemanticsTests
             Guid.NewGuid(), 100, new[] { Candidate("HFOF11", "Fund of Funds", 6.82m, EconomicSector.RealEstate) },
             Array.Empty<ContributionScenarioOption>());
 
-        Assert.Contains("FundOfFunds is a fund structure, not an economic sector", prompt);
+        Assert.Contains("FundOfFunds é uma estrutura de fundo, não um setor econômico", prompt);
         Assert.Contains("underlyingSectorExposure", prompt);
-        Assert.Contains("sector diversification effect as unknown", prompt);
+        Assert.Contains("efeito sobre a diversificação setorial como desconhecido", prompt);
         Assert.Contains("\"sectorWeightWithinClass\":null", prompt);
         Assert.Contains("\"diversificationScore\":0", prompt);
         Assert.Contains("\"underlyingSectorExposure\":{\"status\":\"Unavailable\"", prompt);

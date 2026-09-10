@@ -63,9 +63,9 @@ public sealed class CandidateIntelligenceTests
 
         var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 100m, new[] { candidate }, Array.Empty<ContributionScenarioOption>());
 
-        Assert.Contains("Candidate Intelligence", prompt);
-        Assert.Contains("unavailable", prompt, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Do not produce a recommendation", prompt);
+        Assert.Contains("Candidate Intelligence é somente evidência contextual", prompt);
+        Assert.Contains("Unavailable", prompt);
+        Assert.Contains("Não produza recomendação", prompt);
     }
 
     [Fact]

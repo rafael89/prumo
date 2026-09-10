@@ -36,6 +36,10 @@ public sealed record CandidateIntelligence(
     IReadOnlyList<EvidenceReference> Evidence,
     CandidateIntelligenceCoverage Coverage)
 {
+    public IReadOnlyList<MetricEvidenceResolution> MetricEvidence { get; init; } = Array.Empty<MetricEvidenceResolution>();
+    public IReadOnlyList<CandidateDimensionCoverage> DimensionalCoverage { get; init; } = Array.Empty<CandidateDimensionCoverage>();
+    public CandidateFreshness? Freshness { get; init; }
+
     public static CandidateIntelligence Unavailable(ContributionCandidate candidate) => new(
         candidate.CandidateKey,
         new(CandidateIntelligenceSectionStatus.Unavailable, null, Array.Empty<EvidenceReference>(), null, new[] { "Metadados estruturais indisponíveis." }),
@@ -72,6 +76,16 @@ public static class CandidateIntelligenceBuilder
             asset.AssetClass == AssetClass.Other ? new[] { "Classe do ativo indisponível." } : Array.Empty<string>());
 
         var financial = CandidateFinancialEvaluator.Evaluate(asset.Id, asset.AssetType, candidate.FinancialSnapshot);
+        var metricEvidence = MetricEvidenceResolver.Resolve(asset);
+        var fundType = candidate.FundType == FundType.Unknown ? SectorExposureSemantics.InferFundType(asset.AssetType, asset.Sector) : candidate.FundType;
+        var dimensions = Enum.GetValues<CandidateIntelligenceDimension>()
+            .Where(x => x is not CandidateIntelligenceDimension.Events and not CandidateIntelligenceDimension.Assessments)
+            .Select(x => MetricApplicabilityResolver.Dimension(x, asset.AssetType, fundType, metricEvidence, DateTimeOffset.UtcNow)).ToArray();
+        dimensions = dimensions.Concat(new[]
+        {
+            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Events, eventCoverage(events, asset.Id), 0, events.Count(x => x.AffectedAssets.Any(a => a.Id == asset.Id)), 0, Array.Empty<string>(), null),
+            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Assessments, assessments.Count > 0 ? MetricApplicability.Available : MetricApplicability.Unavailable, assessments.Count > 0 ? 1 : 0, assessments.Count > 0 ? 1 : 0, 0, assessments.Count > 0 ? Array.Empty<string>() : new[] { "Assessments indisponíveis." }, null)
+        }).ToArray();
         var fundamentals = FinancialSection(financial.Quality.Coverage, financial.Quality.Freshness, candidate.FinancialSnapshot?.ObservedAt,
             candidate.FinancialSnapshot?.SourceReference, "Fundamentos", financial.Quality.Evidence.Count, financial.Quality.MissingData);
         var valuation = FinancialSection(financial.Valuation.Coverage, financial.Valuation.Freshness, candidate.FinancialSnapshot?.ObservedAt,
@@ -101,8 +115,18 @@ public static class CandidateIntelligenceBuilder
         var unavailableCount = intelligenceSections.Count(x => x == CandidateIntelligenceSectionStatus.Unavailable) + (eventContexts.Length == 0 ? 1 : 0) + (assessments.Count == 0 ? 1 : 0);
         var coverage = unavailableCount == 0 && !intelligenceSections.Contains(CandidateIntelligenceSectionStatus.Stale)
             ? CandidateIntelligenceCoverage.High : availableCount > 0 ? CandidateIntelligenceCoverage.Medium : CandidateIntelligenceCoverage.Low;
-        return new(candidate.CandidateKey, structural, fundamentals, valuation, income, eventContexts, assessments, allEvidence, coverage);
+        return new(candidate.CandidateKey, structural, fundamentals, valuation, income, eventContexts, assessments, allEvidence, coverage)
+        {
+            MetricEvidence = metricEvidence.Metrics,
+            DimensionalCoverage = dimensions,
+            Freshness = new(CandidateFreshnessPolicy.Version,
+                metricEvidence.Metrics.ToDictionary(x => x.Metric, x => x.Canonical is null ? MetricApplicability.Unavailable : CandidateFreshnessPolicy.Evaluate(x.Metric, x.Canonical.ReferenceDate, x.Canonical.ReferencePeriod, x.Canonical.PeriodType, x.Canonical.ObservedAt, DateTimeOffset.UtcNow), StringComparer.OrdinalIgnoreCase),
+                dimensions.ToDictionary(x => x.Dimension, x => x.Applicability))
+        };
     }
+
+    private static MetricApplicability eventCoverage(IReadOnlyList<InvestmentEvent> events, Guid assetId)
+        => events.Any(x => x.AffectedAssets.Any(a => a.Id == assetId)) ? MetricApplicability.Available : MetricApplicability.Unavailable;
 
     private static CandidateIntelligenceSection FinancialSection(FinancialEvidenceCoverage coverage, FinancialEvidenceFreshness freshness, DateTimeOffset? observedAt, string? source, string label, int evidenceCount, IReadOnlyList<string> missing)
     {

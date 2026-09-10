@@ -18,7 +18,11 @@ public sealed record CandidateFinancialSnapshot(
     decimal? PriceBook = null,
     decimal? EvEbitda = null,
     decimal? DividendYield = null,
-    string? SourceReference = null);
+    string? SourceReference = null,
+    decimal? Revenue = null,
+    decimal? Ebitda = null,
+    decimal? Roic = null,
+    decimal? NetMargin = null);
 
 public sealed record FinancialMetricEvidence(string Metric, decimal Value, string Semantics);
 public sealed record CandidateQualityEvaluation(string Applicability, FinancialEvidenceCoverage Coverage, FinancialEvidenceFreshness Freshness, string Category, IReadOnlyList<string> Signals, IReadOnlyList<string> Concerns, IReadOnlyList<FinancialMetricEvidence> Evidence, IReadOnlyList<string> MissingData);
