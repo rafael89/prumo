@@ -38,6 +38,16 @@ public sealed class PortfolioAssessmentCurrentService
         var current = new List<PortfolioAssessment>();
         var keys = new HashSet<string>();
         var pending = new List<PortfolioAssessment>();
+        // A target change creates a new assessment version, but it must not
+        // reopen a document that the user already closed. The Radar state is
+        // document-oriented, so carry the state from any closed assessment
+        // for the same document into the replacement assessment.
+        var closedByDocument = assessments
+            .Where(x => x.Status == AssessmentStatus.Closed && x.InvestmentEvent is not null)
+            .GroupBy(x => x.InvestmentEvent!.DocumentAnalysisId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(x => x.GeneratedAt).First());
 
         // Keep the acquisition order stable across API requests and the worker.
         foreach (var assessment in assessments
@@ -76,14 +86,15 @@ public sealed class PortfolioAssessmentCurrentService
                 .ToList();
             var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
             var output = impactService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(assessment.InvestmentEvent, portfolio, relevant, health));
+            var previousState = closedByDocument.GetValueOrDefault(assessment.InvestmentEvent.DocumentAnalysisId);
             var replacement = new PortfolioAssessment(
                 portfolio.Id,
                 assessment.InvestmentEventId,
                 output.AttentionPriority,
                 output.ActionRequirement,
                 output.CapitalDecisionImpact,
-                AssessmentStatus.Detected,
-                AssessmentUserState.Unread,
+                previousState is null ? AssessmentStatus.Detected : AssessmentStatus.Closed,
+                previousState?.UserState ?? AssessmentUserState.Unread,
                 output.Summary,
                 output.WhyItMatters,
                 output.SuggestedBehavior,

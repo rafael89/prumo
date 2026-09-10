@@ -120,6 +120,53 @@ public sealed class PortfolioImpactAssessmentServiceTests
         Assert.Equal(1, await db.PortfolioAssessments.CountAsync());
     }
 
+    [Fact]
+    public async Task Closed_document_stays_closed_when_target_allocation_changes()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrumoDbContext(options);
+        var portfolio = new Portfolio("Carteira teste");
+        var asset = new Asset("TEST", "Ativo teste", AssetType.Stock, "Teste");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1m, 1m, 1m));
+        var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento teste", Array.Empty<string>());
+        investmentEvent.AffectedAssets.Add(asset);
+
+        var oldTarget = new TargetAllocation(portfolio.Id, AssetClass.BrazilianStock, 100m);
+        var newTarget = new TargetAllocation(portfolio.Id, AssetClass.FixedIncome, 100m);
+        var closed = new PortfolioAssessment(
+            portfolio.Id, investmentEvent.Id, AttentionPriority.High, ActionRequirement.Review,
+            CapitalDecisionImpact.Caution, AssessmentStatus.Closed, AssessmentUserState.Seen,
+            "Avaliação fechada", "Motivo", "Acompanhar", IntelligenceConfidence.High,
+            TargetAllocationKeyCalculator.Calculate(new[] { oldTarget }), "portfolio-impact-v5",
+            "snapshot-antigo", investmentEvent.Version);
+        closed.AttachInvestmentEvent(investmentEvent);
+        var stale = new PortfolioAssessment(
+            portfolio.Id, investmentEvent.Id, AttentionPriority.High, ActionRequirement.Review,
+            CapitalDecisionImpact.Caution, AssessmentStatus.Detected, AssessmentUserState.Seen,
+            "Avaliação antiga", "Motivo", "Acompanhar", IntelligenceConfidence.High,
+            TargetAllocationKeyCalculator.Calculate(new[] { oldTarget }), "portfolio-impact-v5",
+            "snapshot-antigo", investmentEvent.Version);
+        stale.AttachInvestmentEvent(investmentEvent);
+
+        var service = new PortfolioAssessmentCurrentService(
+            db,
+            new PortfolioImpactAssessmentService(),
+            new PortfolioAssessmentFreshnessEvaluator(),
+            NullLogger<PortfolioAssessmentCurrentService>.Instance);
+
+        var current = await service.EnsureFreshAsync(
+            portfolio,
+            new[] { newTarget },
+            new[] { closed, stale },
+            CancellationToken.None);
+
+        var replacement = Assert.Single(current);
+        Assert.Equal(AssessmentStatus.Closed, replacement.Status);
+        Assert.Equal(AssessmentUserState.Seen, replacement.UserState);
+    }
+
     private static PortfolioImpactAssessmentOutput Assess(InvestmentEventType eventType, decimal weight, AnalysisImportance? importance = null)
     {
         var portfolio = new Portfolio("Carteira teste");
