@@ -45,9 +45,11 @@ public static class ContributionIntelligencePrompt
             candidate.IsEstablishingPosition,
             candidate.Sector,
             candidate.SectorCategory,
+            candidate.FundType,
+            candidate.UnderlyingSectorExposure,
             // A value of 100 for an asset with no sector is not concentration;
             // it is missing metadata. Do not let the model mistake one for the other.
-            sectorWeightWithinClass = string.IsNullOrWhiteSpace(candidate.Sector) ? (decimal?)null : candidate.SectorWeightWithinClass,
+            sectorWeightWithinClass = SectorWeightForPrompt(candidate),
             candidate.RecentContributionAmount,
             candidate.RecentContributionCount,
             candidate.LastContributionAt,
@@ -143,6 +145,7 @@ public static class ContributionIntelligencePrompt
             rejectionReason
         }, JsonOptions);
         const string instructions = """
+            FundOfFunds is a fund structure, not an economic sector. Do not infer sector diversification from a FundOfFunds label. When underlying sector exposure is Unavailable, treat its sector diversification effect as unknown rather than positive or negative.
             Você é o componente de julgamento qualitativo de aportes do Prumo. Construa uma proposta de alocação, não escolha apenas um cenário pronto.
 
             O backend é dono das regras duras e vai validar a resposta. Você só pode alocar para candidateKey presente em eligibleCandidates. Nunca invente ticker, candidato, venda, preço, valuation, rentabilidade ou fatos externos. blockedCandidates são contexto e jamais podem receber aporte.
@@ -189,6 +192,8 @@ public static class ContributionIntelligencePrompt
                 candidate.IsEstablishingPosition,
                 candidate.Sector,
                 candidate.SectorCategory,
+                candidate.FundType,
+                candidate.UnderlyingSectorExposure,
                 geographicExposureCoverage = candidate.GeographicExposureCoverage,
                 candidate.GeographicExposures,
                 economicCurrencyExposureCoverage = candidate.EconomicCurrencyExposureCoverage,
@@ -211,6 +216,7 @@ public static class ContributionIntelligencePrompt
             })
         }, JsonOptions);
         const string instructions = """
+            FundOfFunds is a fund structure, not an economic sector. Do not infer sector diversification from a FundOfFunds label. When underlying sector exposure is Unavailable, treat its sector diversification effect as unknown rather than positive or negative.
             Você revisa uma proposta R5 já validada pelo backend. A proposta original, o estado antes/depois e os impactos foram calculados deterministicamente para a composição inteira.
 
             Responda à pergunta: agora que conhece o efeito real pós-aporte, esta continua sendo a melhor utilização marginal do aporte? Compare concentração em ativo, impacto por classe, setor/geografia/moeda somente quando houver cobertura, aportes recentes, posição em estabelecimento, assessments, eventos conhecidos e InvestorPolicy. Scores e referências determinísticas são contexto, não verdade obrigatória.
@@ -264,11 +270,13 @@ public static class ContributionIntelligencePrompt
             underweightScore = candidate.UnderweightScore,
             recentContributionPenalty = candidate.RecentContributionPenalty,
             sector = candidate.Sector,
-            sectorWeightWithinClass = candidate.SectorWeightWithinClass,
+            sectorWeightWithinClass = SectorWeightForPrompt(candidate),
             recentContributionCount = candidate.RecentContributionCount,
             recentContributionAmount = candidate.RecentContributionAmount,
             lastContributionAt = candidate.LastContributionAt,
             sectorCategory = candidate.SectorCategory,
+            fundType = candidate.FundType,
+            underlyingSectorExposure = candidate.UnderlyingSectorExposure,
             geographicExposureCoverage = candidate.GeographicExposureCoverage,
             geographicExposures = candidate.GeographicExposures,
             economicCurrencyExposureCoverage = candidate.EconomicCurrencyExposureCoverage,
@@ -307,6 +315,7 @@ public static class ContributionIntelligencePrompt
     }
 
     private const string Instructions = """
+        FundOfFunds is a fund structure, not an economic sector. Do not infer sector diversification from a FundOfFunds label. When underlying sector exposure is Unavailable, treat its sector diversification effect as unknown rather than positive or negative.
         Você é o componente de inteligência de aportes do Prumo.
 
         Sua tarefa é escolher os ativos e distribuir o valor do aporte entre os candidatos elegíveis, respeitando integralmente os limites calculados pelo backend.
@@ -378,7 +387,7 @@ public static class ContributionIntelligencePrompt
             candidate.HasPosition,
             candidate.DecisionScore,
             candidate.Sector,
-            candidate.SectorWeightWithinClass,
+            sectorWeightWithinClass = SectorWeightForPrompt(candidate),
             candidate.RecentContributionAmount,
             candidate.RecentContributionCount,
             candidate.GeographicExposureCoverage,
@@ -386,10 +395,18 @@ public static class ContributionIntelligencePrompt
             candidate.EconomicCurrencyExposureCoverage,
             candidate.CurrencyExposures,
             candidate.SectorCategory,
+            candidate.FundType,
+            candidate.UnderlyingSectorExposure,
             candidate.FinancialSnapshot,
             candidate.CurrentAssessments
         });
         var context = JsonSerializer.Serialize(new { portfolioId, contributionAmount, candidates = safeCandidates, scenarios }, JsonOptions);
         return $"{Instructions}\n{context}";
     }
+
+    private static decimal? SectorWeightForPrompt(ContributionCandidate candidate) =>
+        SectorExposureSemantics.IsFundOfFunds(candidate.FundType, candidate.Sector)
+            && candidate.UnderlyingSectorExposure.Status != UnderlyingSectorExposureStatus.Available
+                ? null
+                : string.IsNullOrWhiteSpace(candidate.Sector) ? null : candidate.SectorWeightWithinClass;
 }

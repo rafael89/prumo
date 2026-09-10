@@ -46,7 +46,8 @@ public static class PortfolioExposureAggregator
 
     private static PortfolioExposureDimensionSummary AggregateSector(IReadOnlyList<ContributionCandidate> candidates, decimal total)
     {
-        var known = candidates.Where(x => x.CurrentValue > 0 && x.SectorCategory.HasValue).GroupBy(x => x.SectorCategory!.Value.ToString()).ToDictionary(x => x.Key, x => x.Sum(y => y.CurrentValue));
+        var known = candidates.Where(x => x.CurrentValue > 0 && x.SectorCategory.HasValue && !SectorExposureSemantics.IsFundOfFunds(x.FundType, x.Sector))
+            .GroupBy(x => x.SectorCategory!.Value.ToString()).ToDictionary(x => x.Key, x => x.Sum(y => y.CurrentValue));
         return Summary("Sector", known, total);
     }
 

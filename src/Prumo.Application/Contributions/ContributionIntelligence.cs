@@ -71,8 +71,18 @@ public sealed record ContributionCandidate(
     public string? ExternalSourceReference { get; init; }
     public Guid AssetId => Identity.AssetId ?? throw new InvalidOperationException("Este candidato não possui AssetId persistido.");
     public CandidateKey CandidateKey => Identity.Key;
+    public FundType FundType { get; init; } = FundType.Unknown;
+    private UnderlyingSectorExposure? _underlyingSectorExposure;
+    public UnderlyingSectorExposure UnderlyingSectorExposure
+    {
+        get => _underlyingSectorExposure ?? (SectorExposureSemantics.IsFundOfFunds(FundType, Sector) || string.IsNullOrWhiteSpace(Sector)
+            ? UnderlyingSectorExposure.Unavailable : new(UnderlyingSectorExposureStatus.Available));
+        init => _underlyingSectorExposure = value;
+    }
+    public bool IsSectorDiversificationKnown => !SectorExposureSemantics.IsFundOfFunds(FundType, Sector) && !string.IsNullOrWhiteSpace(Sector);
+    public decimal EffectiveDiversificationScore => DiversificationScore > 0 ? DiversificationScore : IsSectorDiversificationKnown ? Math.Clamp(100m - SectorWeightWithinClass, 0, 100) : 0;
     public decimal DecisionScore => AllocationNeedScore * 0.25m
-        + (DiversificationScore > 0 ? DiversificationScore : Math.Clamp(100m - SectorWeightWithinClass, 0, 100)) * 0.20m
+        + EffectiveDiversificationScore * 0.20m
         + UnderweightScore * 0.15m
         + (100m - ContributionRecency.Penalty(RecentContributionPenalty, RecentContributionCount, LastContributionAt, IsEstablishingPosition, CurrentWeight)) * 0.15m;
 }

@@ -32,8 +32,18 @@ public sealed record GuidancePosition(
     CandidateFinancialSnapshot? FinancialSnapshot = null)
 {
     public bool IsEstablishingPosition { get; init; }
+    public FundType FundType { get; init; } = FundType.Unknown;
+    private UnderlyingSectorExposure? _underlyingSectorExposure;
+    public UnderlyingSectorExposure UnderlyingSectorExposure
+    {
+        get => _underlyingSectorExposure ?? (SectorExposureSemantics.IsFundOfFunds(FundType, Sector) || string.IsNullOrWhiteSpace(Sector)
+            ? Prumo.Application.Contributions.UnderlyingSectorExposure.Unavailable : new(UnderlyingSectorExposureStatus.Available));
+        init => _underlyingSectorExposure = value;
+    }
+    public bool IsSectorDiversificationKnown => !SectorExposureSemantics.IsFundOfFunds(FundType, Sector) && !string.IsNullOrWhiteSpace(Sector);
+    public decimal EffectiveDiversificationScore => DiversificationScore > 0 ? DiversificationScore : IsSectorDiversificationKnown ? Math.Clamp(100m - SectorWeightWithinClass, 0, 100) : 0;
     public decimal DecisionScore => AllocationNeedScore * 0.25m
-        + (DiversificationScore > 0 ? DiversificationScore : Math.Clamp(100m - SectorWeightWithinClass, 0, 100)) * 0.20m
+        + EffectiveDiversificationScore * 0.20m
         + UnderweightScore * 0.15m
         + (100m - ContributionRecency.Penalty(RecentContributionPenalty, RecentContributionCount, LastContributionAt, IsEstablishingPosition, CurrentWeight)) * 0.15m;
 }

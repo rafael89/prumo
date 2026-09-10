@@ -90,7 +90,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     : sectorValue / classTotals[asset.AssetClass] * 100m;
                 var deviation = health.AllocationDeviations.FirstOrDefault(x => x.AssetClass == asset.AssetClass);
                 var allocationNeedScore = requiresRebalance ? ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0) : 0m;
-                var diversificationScore = sector.Length == 0 ? 0 : Math.Clamp(100m - sectorWeight, 0, 100);
+                var fundType = SectorExposureSemantics.InferFundType(asset.AssetType, asset.Sector);
+                var diversificationScore = SectorExposureSemantics.IsFundOfFunds(fundType, asset.Sector) || sector.Length == 0 ? 0 : Math.Clamp(100m - sectorWeight, 0, 100);
                 var underweightScore = Math.Clamp(100m - (total == 0 ? 0 : x.CurrentValue!.Value / total * 100m), 0, 100);
                 var recentPenalty = recent is null ? 0 : Math.Clamp(25m + recent.Amount / Math.Max(total, 1m) * 100m, 0, 100);
                 var isEstablishing = recent is not null
@@ -107,6 +108,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage, e.Source.ToString(), e.SourceReference, e.ObservedAt)).ToArray(),
                     asset.ListingCountryCode, asset.TradingCurrency, DocumentFinancialQualityResolver.Resolve(asset))
                 {
+                    FundType = fundType,
+                    UnderlyingSectorExposure = SectorExposureSemantics.IsFundOfFunds(fundType, asset.Sector) ? UnderlyingSectorExposure.Unavailable : new(UnderlyingSectorExposureStatus.Available),
                     IsEstablishingPosition = isEstablishing
                 };
             }).ToList();
@@ -122,6 +125,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         {
             var deviation = health.AllocationDeviations.FirstOrDefault(x => x.AssetClass == asset.AssetClass);
             var assetClass = asset.AssetType == AssetType.Etf ? AssetClass.International : asset.AssetClass;
+            var fundType = SectorExposureSemantics.InferFundType(asset.AssetType, asset.Sector);
             return new GuidancePosition(asset.Id, asset.Ticker, assetClass, 0, 0, asset.AssetType, asset.Sector,
                 HasPosition: false, AllocationNeedScore: requiresRebalance ? ScoreNeed(deviation?.TargetPercentage ?? 0, deviation?.CurrentPercentage ?? 0) : 0m,
                 UnderweightScore: 100, SectorCategory: asset.SectorCategory,
@@ -129,7 +133,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 GeographicExposures: asset.GeographicExposures.Select(e => new KnownGeographicExposure(e.CountryCode, e.Percentage, e.Source.ToString(), e.SourceReference, e.ObservedAt)).ToArray(),
                 EconomicCurrencyExposureCoverage: asset.EconomicCurrencyExposureCoverage,
                 CurrencyExposures: asset.CurrencyExposures.Select(e => new KnownCurrencyExposure(e.CurrencyCode, e.Percentage, e.Source.ToString(), e.SourceReference, e.ObservedAt)).ToArray(),
-                ListingCountryCode: asset.ListingCountryCode, TradingCurrency: asset.TradingCurrency, FinancialSnapshot: DocumentFinancialQualityResolver.Resolve(asset));
+                ListingCountryCode: asset.ListingCountryCode, TradingCurrency: asset.TradingCurrency, FinancialSnapshot: DocumentFinancialQualityResolver.Resolve(asset))
+            { FundType = fundType, UnderlyingSectorExposure = SectorExposureSemantics.IsFundOfFunds(fundType, asset.Sector) ? UnderlyingSectorExposure.Unavailable : new(UnderlyingSectorExposureStatus.Available) };
         })).ToList();
         var ids = positions.Select(x => x.AssetId).ToHashSet();
         var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery()
@@ -187,6 +192,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 position.GeographicExposures, position.EconomicCurrencyExposureCoverage, position.CurrencyExposures,
                 position.ListingCountryCode, position.TradingCurrency, position.FinancialSnapshot)
             {
+                FundType = position.FundType,
+                UnderlyingSectorExposure = position.UnderlyingSectorExposure,
                 IsEstablishingPosition = position.IsEstablishingPosition
             };
         }).ToArray();
