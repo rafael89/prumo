@@ -154,8 +154,10 @@ public sealed class PortfoliosController : ControllerBase
         var analyzedDocuments = await dbContext.DocumentAnalyses.AsNoTracking()
             .Include(analysis => analysis.Document!).ThenInclude(document => document!.Asset)
             .Where(analysis => portfolioAssetIds.Contains(analysis.Document!.AssetId))
-            .GroupBy(analysis => analysis.DocumentId)
-            .Select(group => group.OrderByDescending(analysis => analysis.CreatedAt).First())
+            .Where(analysis => !dbContext.DocumentAnalyses.Any(other =>
+                other.DocumentId == analysis.DocumentId
+                && (other.CreatedAt > analysis.CreatedAt
+                    || (other.CreatedAt == analysis.CreatedAt && other.Id > analysis.Id))))
             .OrderByDescending(analysis => analysis.Document!.PublishedAt)
             .ThenByDescending(analysis => analysis.CreatedAt)
             .ToListAsync(cancellationToken);
