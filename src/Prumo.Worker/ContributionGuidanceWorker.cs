@@ -103,6 +103,19 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 decisionEvidence = deterministicDecision.DecisionEvidence,
                                 assessmentVersions = workItem.Baseline.AssessmentVersions,
                                 evidenceCount = workItem.Baseline.Evidence.Count,
+                                candidateIntelligenceCandidateCount = workItem.Candidates.Count(x => x.CandidateIntelligence is not null),
+                                candidateIntelligenceCoverage = workItem.Candidates.ToDictionary(x => x.CandidateKey.Value, x => x.CandidateIntelligence?.Coverage.ToString() ?? "Unavailable"),
+                                candidateIntelligenceSectionStatuses = workItem.Candidates.ToDictionary(x => x.CandidateKey.Value, x => new
+                                {
+                                    fundamentals = x.CandidateIntelligence?.Fundamentals.Status.ToString() ?? "Unavailable",
+                                    valuation = x.CandidateIntelligence?.Valuation.Status.ToString() ?? "Unavailable",
+                                    incomeQuality = x.CandidateIntelligence?.IncomeQuality.Status.ToString() ?? "Unavailable",
+                                    events = x.CandidateIntelligence?.RecentEvents.Count > 0 ? "Available" : "Unavailable",
+                                    assessments = x.CandidateIntelligence?.Assessments.Count > 0 ? "Available" : "Unavailable"
+                                }),
+                                candidateIntelligenceEvidenceReferenceCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.Evidence.Count ?? 0),
+                                candidateIntelligenceAssessmentCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.Assessments.Count ?? 0),
+                                candidateIntelligenceDocumentEvidenceCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.Evidence.Count(e => e.Type == "Document") ?? 0),
                                 primaryFactors = proposal.PrimaryFactors,
                                 confidence = proposal.Confidence,
                                 proposalDecisionType = proposal.DecisionType,
@@ -176,7 +189,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, investorPolicyId = InvestorPolicy.Current.PolicyId, investorPolicyVersion = InvestorPolicy.Current.PolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
+            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, investorPolicyId = InvestorPolicy.Current.PolicyId, investorPolicyVersion = InvestorPolicy.Current.PolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, candidateIntelligenceCandidateCount = 0, candidateIntelligenceEvidenceReferenceCount = 0, candidateIntelligenceAssessmentCount = 0, candidateIntelligenceDocumentEvidenceCount = 0, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId!.Value, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }

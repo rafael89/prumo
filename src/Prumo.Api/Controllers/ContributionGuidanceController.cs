@@ -31,6 +31,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.GeographicExposures)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.CurrencyExposures)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.FundamentalSnapshots)
+            .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.ValuationSnapshots)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.DocumentFinancialFacts)
             .SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
@@ -117,7 +118,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
         var catalogCandidates = await db.Assets.AsNoTracking()
             .Include(x => x.GeographicExposures).Include(x => x.CurrencyExposures)
-            .Include(x => x.FundamentalSnapshots).Include(x => x.DocumentFinancialFacts)
+            .Include(x => x.FundamentalSnapshots).Include(x => x.ValuationSnapshots).Include(x => x.DocumentFinancialFacts)
             .Where(x => x.IsActive && (targetClasses.Contains(x.AssetClass) || targetClasses.Contains(AssetClass.International) && x.AssetType == AssetType.Etf) && !positionAssetIds.Contains(x.Id))
             .OrderBy(x => x.Ticker)
             .ToListAsync(ct);
@@ -146,6 +147,13 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant)
                 && x.InvestmentEvent.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
         assessments = (await current.EnsureFreshAsync(portfolio, targets, assessments, ct)).ToList();
+
+        var events = await db.InvestmentEvents.AsNoTracking().AsSplitQuery()
+            .Include(x => x.AffectedAssets)
+            .Include(x => x.Evidence)
+            .Where(x => x.AffectedAssets.Any(a => ids.Contains(a.Id)))
+            .OrderByDescending(x => x.OccurredAt ?? x.CreatedAt)
+            .ToListAsync(ct);
 
         var inputs = assessments.Where(x => x.InvestmentEvent is not null)
             .SelectMany(x => x.InvestmentEvent!.AffectedAssets.Where(a => ids.Contains(a.Id)).Select(a => new GuidanceAssessment(
@@ -180,9 +188,12 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             var contexts = inputs.Where(x => x.AssetId == position.AssetId).Select(x => new ContributionAssessmentContext(
                 x.AttentionPriority.ToString(), x.ActionRequirement.ToString(), x.Impact.ToString(), x.Summary, x.WhyItMatters,
                 x.SuggestedBehavior, x.Confidence,
-                new[] { new EvidenceReference("assessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) })).ToArray();
+                new[] { new EvidenceReference("PortfolioAssessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) }
+                    .Concat(events.Where(e => e.AffectedAssets.Any(a => a.Id == position.AssetId)).SelectMany(e => e.Evidence.Select(reference =>
+                        new EvidenceReference("Document", reference.DocumentId.ToString(), reference.Reference, reference.Reference, e.OccurredAt))))
+                    .Distinct().ToArray())).ToArray();
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
-            return new ContributionCandidate(CandidateIdentity.Known(position.AssetId), position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
+            var candidate = new ContributionCandidate(CandidateIdentity.Known(position.AssetId), position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
                 deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, requiresRebalance ? classBudgets.GetValueOrDefault(position.AssetClass) : amount,
                 inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts,
                 position.AssetType, position.Sector, position.RecentContributionAmount, position.RecentContributionCount,
@@ -195,6 +206,13 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 FundType = position.FundType,
                 UnderlyingSectorExposure = position.UnderlyingSectorExposure,
                 IsEstablishingPosition = position.IsEstablishingPosition
+            };
+            return candidate with
+            {
+                CandidateIntelligence = CandidateIntelligenceBuilder.Build(
+                    candidate,
+                    position.HasPosition ? portfolio.Positions.Single(x => x.AssetId == position.AssetId).Asset! : catalogCandidates.Single(x => x.Id == position.AssetId),
+                    events, contexts)
             };
         }).ToArray();
 
@@ -345,6 +363,10 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 policyVersion = ExtractPolicyVersion(item.MetadataJson),
                 assessmentVersions = ExtractAssessmentVersions(item.MetadataJson),
                 evidenceCount = ExtractEvidenceCount(item.MetadataJson, allocations.SelectMany(x => x.evidence).Distinct().Count()),
+                candidateIntelligenceCandidateCount = ExtractMetadataInt(item.MetadataJson, "candidateIntelligenceCandidateCount"),
+                candidateIntelligenceEvidenceReferenceCount = ExtractMetadataInt(item.MetadataJson, "candidateIntelligenceEvidenceReferenceCount"),
+                candidateIntelligenceAssessmentCount = ExtractMetadataInt(item.MetadataJson, "candidateIntelligenceAssessmentCount"),
+                candidateIntelligenceDocumentEvidenceCount = ExtractMetadataInt(item.MetadataJson, "candidateIntelligenceDocumentEvidenceCount"),
                 criteriaJson = FormatJson(jobCandidates ?? item.MetadataJson),
                 fallbackReason = ExtractFallbackReason(item.MetadataJson),
                 selectionMode = ExtractSelectionMode(item.MetadataJson),
@@ -475,6 +497,16 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             return value.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToArray();
         }
         catch (JsonException) { return Array.Empty<string>(); }
+    }
+
+    private static int ExtractMetadataInt(string json, string propertyName)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            return root.TryGetProperty(propertyName, out var value) && value.TryGetInt32(out var count) ? Math.Max(0, count) : 0;
+        }
+        catch (JsonException) { return 0; }
     }
 
     private static int ExtractEvidenceCount(string json, int allocationEvidenceCount)

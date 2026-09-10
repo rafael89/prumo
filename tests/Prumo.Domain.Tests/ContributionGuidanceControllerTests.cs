@@ -113,6 +113,7 @@ public sealed class ContributionGuidanceControllerTests
         var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson);
         Assert.NotNull(workItem);
         Assert.Contains(workItem!.Candidates, candidate => candidate.AssetId == catalogAsset.Id && !candidate.HasPosition);
+        Assert.All(workItem.Candidates, candidate => Assert.NotNull(candidate.CandidateIntelligence));
     }
 
     [Fact]

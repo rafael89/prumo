@@ -67,6 +67,7 @@ public sealed record ContributionCandidate(
     CandidateFinancialSnapshot? FinancialSnapshot = null)
 {
     public bool IsEstablishingPosition { get; init; }
+    public CandidateIntelligence? CandidateIntelligence { get; init; }
     public string? ExternalName { get; init; }
     public string? ExternalSourceReference { get; init; }
     public Guid AssetId => Identity.AssetId ?? throw new InvalidOperationException("Este candidato não possui AssetId persistido.");
