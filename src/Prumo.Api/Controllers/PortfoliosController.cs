@@ -247,6 +247,20 @@ public sealed class PortfoliosController : ControllerBase
         var position = new PortfolioPosition(portfolio.Id, asset.Id, request.Quantity, request.AveragePrice, request.CurrentPrice);
         dbContext.PortfolioPositions.Add(position);
         portfolio.Positions.Add(position);
+        if (request.RegisterPurchase)
+        {
+            if (request.Quantity <= 0 || request.AveragePrice <= 0)
+            {
+                return BadRequest("Para registrar a compra, informe quantidade e preço médio positivos.");
+            }
+
+            dbContext.PortfolioTransactions.Add(CreateManualBuy(
+                portfolio.Id,
+                asset.Id,
+                request.Quantity,
+                request.AveragePrice,
+                request.OccurredAt));
+        }
         Recalculate(portfolio);
         await dbContext.SaveChangesAsync(cancellationToken);
         if (documentBootstrap is not null)
@@ -277,7 +291,22 @@ public sealed class PortfoliosController : ControllerBase
 
         try
         {
+            var addedQuantity = request.Quantity - position.Quantity;
+            if (request.RegisterPurchase && addedQuantity > 0 && request.AveragePrice <= 0)
+            {
+                return BadRequest("Para registrar a compra, informe um preço médio positivo.");
+            }
+
             position.Update(request.Quantity, request.AveragePrice, request.CurrentPrice);
+            if (request.RegisterPurchase && addedQuantity > 0)
+            {
+                dbContext.PortfolioTransactions.Add(CreateManualBuy(
+                    portfolio!.Id,
+                    position.AssetId,
+                    addedQuantity,
+                    request.AveragePrice,
+                    request.OccurredAt));
+            }
             Recalculate(portfolio!);
             await dbContext.SaveChangesAsync(cancellationToken);
             return Ok(CreatePositionResponse(position));
@@ -312,6 +341,14 @@ public sealed class PortfoliosController : ControllerBase
             .ThenInclude(position => position.Asset)
             .ThenInclude(asset => asset!.CurrencyExposures)
             .SingleOrDefaultAsync(portfolio => portfolio.Id == portfolioId, cancellationToken);
+    }
+
+    private static PortfolioTransaction CreateManualBuy(Guid portfolioId, Guid assetId, decimal quantity, decimal unitPrice, DateTimeOffset? occurredAt)
+    {
+        var total = decimal.Round(quantity * unitPrice, 2);
+        var transaction = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, occurredAt ?? DateTimeOffset.UtcNow, null, total, source: FinancialSource.Manual);
+        transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, assetId, quantity, unitPrice));
+        return transaction;
     }
 
     private static void Recalculate(Portfolio portfolio)
@@ -365,8 +402,8 @@ public sealed class PortfoliosController : ControllerBase
 
 public sealed record CreatePortfolioRequest(string Name);
 public sealed record RenamePortfolioRequest(string Name);
-public sealed record PositionRequest(string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, AssetClass? AssetClass = null);
-public sealed record PositionUpdateRequest(decimal Quantity, decimal AveragePrice, decimal? CurrentPrice);
+public sealed record PositionRequest(string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, AssetClass? AssetClass = null, bool RegisterPurchase = false, DateTimeOffset? OccurredAt = null);
+public sealed record PositionUpdateRequest(decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, bool RegisterPurchase = false, DateTimeOffset? OccurredAt = null);
 public sealed record PortfolioSummaryResponse(Guid Id, string Name, decimal TotalValue, int PositionCount);
 public sealed record PortfolioDetailResponse(Guid Id, string Name, decimal TotalValue, IReadOnlyList<PositionResponse> Positions);
 public enum DashboardState { Ready, FirstUse, Processing, StrategyNotConfigured }
