@@ -30,8 +30,14 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 try
                 {
                     var guidance = await db.ContributionGuidances.Include(x => x.Allocations).SingleAsync(x => x.Id == job.ContributionGuidanceId, stoppingToken);
-                    var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson)
-                        ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
+                    var workItem = DeserializeWorkItem(job.CandidatesJson);
+                    workItem = workItem with
+                    {
+                        Candidates = workItem.Candidates.Select(candidate => candidate with
+                        {
+                            CurrentAssessments = candidate.CandidateIntelligence?.Assessments ?? candidate.CurrentAssessments
+                        }).ToArray()
+                    };
                     var investorPolicy = InvestorPolicy.Current;
                     var deterministicDecision = new PortfolioDecisionService().DecideDeterministically(guidance.RequestedAmount, workItem.Candidates, investorPolicy);
                     var usedFallback = false;
@@ -44,7 +50,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                             guidance,
                             workItem.Baseline,
                             deterministicDecision.Reasons.FirstOrDefault() ?? "Não há candidato elegível dentro dos limites atuais.",
-                            "no-eligible-candidates");
+                            "no-eligible-candidates", workItem);
                     }
                     else
                     {
@@ -104,6 +110,13 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 assessmentVersions = workItem.Baseline.AssessmentVersions,
                                 evidenceCount = workItem.Baseline.Evidence.Count,
                                 candidateIntelligenceCandidateCount = workItem.Candidates.Count(x => x.CandidateIntelligence is not null),
+                                candidateIntelligencePayloadLimited = workItem.CandidateIntelligencePayloadLimited,
+                                candidatePayloadOriginalChars = workItem.CandidatePayloadOriginalChars,
+                                candidatePayloadProjectedChars = workItem.CandidatePayloadProjectedChars,
+                                candidatePayloadPersistedChars = workItem.CandidatePayloadPersistedChars,
+                                candidatePayloadReductionPercent = workItem.CandidatePayloadReductionPercent,
+                                candidatePayloadTruncatedEventCount = workItem.CandidatePayloadTruncatedEventCount,
+                                candidatePayloadTruncatedSummaryCount = workItem.CandidatePayloadTruncatedSummaryCount,
                                 candidateIntelligenceCoverage = workItem.Candidates.ToDictionary(x => x.CandidateKey.Value, x => x.CandidateIntelligence?.Coverage.ToString() ?? "Unavailable"),
                                 candidateIntelligenceSectionStatuses = workItem.Candidates.ToDictionary(x => x.CandidateKey.Value, x => new
                                 {
@@ -121,6 +134,8 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 proposalDecisionType = proposal.DecisionType,
                                 initialAiAllocation = initialProjection.ProposedAllocation,
                                 initialProjection,
+                                proposalPromptChars = ContributionIntelligencePrompt.BuildAllocationProposal(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy).Length,
+                                reviewPromptChars = ContributionIntelligencePrompt.BuildAllocationReview(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy, initialProjection).Length,
                                 reviewDecision = review?.Decision ?? "unavailable",
                                 reviewOutcome = reviewResolution.Outcome,
                                 reviewAccepted = reviewResolution.ReviewAccepted,
@@ -143,7 +158,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                         catch (Exception ex)
                         {
                             usedFallback = true;
-                            ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code);
+                            ApplyFallback(guidance, workItem.Baseline, FallbackReason(ex).Reason, FallbackReason(ex).Code, workItem);
                             logger.LogWarning(ex, "Resposta da IA não utilizável para o job de guidance {JobId}; fallback determinístico aplicado", job.Id);
                         }
                     }
@@ -181,7 +196,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         }
     }
 
-    private static void ApplyFallback(PersistedContributionGuidance guidance, ContributionGuidance fallback, string reason, string code)
+    private static void ApplyFallback(PersistedContributionGuidance guidance, ContributionGuidance fallback, string reason, string code, ContributionGuidanceWorkItem? workItem = null)
     {
         var applied = ContributionIntelligenceApplier.ApplyFallback(fallback, reason);
         guidance.UpdateIntelligence(
@@ -189,7 +204,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             "portfolio-rules",
             ContributionIntelligenceAvailability.InsufficientIntelligence.ToString(),
             applied.Reasons.FirstOrDefault() ?? reason,
-            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, investorPolicyId = InvestorPolicy.Current.PolicyId, investorPolicyVersion = InvestorPolicy.Current.PolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, candidateIntelligenceCandidateCount = 0, candidateIntelligenceEvidenceReferenceCount = 0, candidateIntelligenceAssessmentCount = 0, candidateIntelligenceDocumentEvidenceCount = 0, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
+            JsonSerializer.Serialize(new { engineVersion = "R17.8", policyVersion = fallback.PortfolioHealthPolicyVersion, investorPolicyId = InvestorPolicy.Current.PolicyId, investorPolicyVersion = InvestorPolicy.Current.PolicyVersion, assessmentVersions = fallback.AssessmentVersions, evidenceCount = fallback.Evidence.Count, candidateIntelligenceCandidateCount = workItem?.Candidates.Count(x => x.CandidateIntelligence is not null) ?? 0, candidateIntelligencePayloadLimited = workItem?.CandidateIntelligencePayloadLimited ?? false, candidatePayloadOriginalChars = workItem?.CandidatePayloadOriginalChars ?? 0, candidatePayloadProjectedChars = workItem?.CandidatePayloadProjectedChars ?? 0, candidatePayloadPersistedChars = workItem?.CandidatePayloadPersistedChars ?? 0, candidatePayloadReductionPercent = workItem?.CandidatePayloadReductionPercent ?? 0, candidatePayloadTruncatedEventCount = workItem?.CandidatePayloadTruncatedEventCount ?? 0, candidatePayloadTruncatedSummaryCount = workItem?.CandidatePayloadTruncatedSummaryCount ?? 0, candidateIntelligenceEvidenceReferenceCount = 0, candidateIntelligenceAssessmentCount = 0, candidateIntelligenceDocumentEvidenceCount = 0, fallbackReason = code, usedFallback = true, generatedAt = DateTimeOffset.UtcNow, classAllocations = applied.ClassAllocations }));
         guidance.ReplaceAllocations(applied.Allocations.Select(allocation => new PersistedContributionGuidanceAllocation(
             guidance.Id, allocation.AssetId!.Value, allocation.Amount, allocation.Reason, 0, JsonSerializer.Serialize(allocation.Evidence))));
     }
@@ -360,6 +375,20 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         if (references.Count > 0 && Same(allocations, references[0].Allocations)) return "baseline";
         if (references.Any(reference => Same(allocations, reference.Allocations))) return "modified-baseline";
         return "ai-composition";
+    }
+
+    private static ContributionGuidanceWorkItem DeserializeWorkItem(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("positions", out _))
+        {
+            var projected = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(json)
+                ?? throw new InvalidOperationException("Contexto projetado da orientaÃ§Ã£o de aporte invÃ¡lido.");
+            return projected.ToRuntime();
+        }
+
+        return JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(json)
+            ?? throw new InvalidOperationException("Contexto da orientaÃ§Ã£o de aporte invÃ¡lido.");
     }
 
     private async Task<(ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount)> SelectValidatedScenarioAsync(

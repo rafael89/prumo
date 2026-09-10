@@ -108,7 +108,138 @@ public sealed record ContributionScenarioOption(
     decimal DeviationBefore = 0,
     decimal DeviationAfter = 0);
 public sealed record ContributionScenarioSelection(string SelectedScenarioKey, string Reason, IReadOnlyList<string> Considerations, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
-public sealed record ContributionGuidanceWorkItem(ContributionGuidance Baseline, IReadOnlyList<GuidancePosition> Positions, IReadOnlyList<ContributionCandidate> Candidates);
+public sealed record ContributionGuidanceWorkItem(
+    ContributionGuidance Baseline,
+    IReadOnlyList<GuidancePosition> Positions,
+    IReadOnlyList<ContributionCandidate> Candidates,
+    bool CandidateIntelligencePayloadLimited = false,
+    int CandidatePayloadOriginalChars = 0,
+    int CandidatePayloadProjectedChars = 0,
+    int CandidatePayloadPersistedChars = 0,
+    decimal CandidatePayloadReductionPercent = 0,
+    int CandidatePayloadTruncatedEventCount = 0,
+    int CandidatePayloadTruncatedSummaryCount = 0);
+
+// Persisted contribution contract. It deliberately contains only the data
+// needed to rebuild the runtime contribution context; rich application/domain
+// records are not serialized directly.
+public sealed record PersistedContributionGuidanceWorkItem(
+    PersistedContributionBaseline Baseline,
+    IReadOnlyList<PersistedContributionCandidate> Candidates,
+    bool CandidateIntelligencePayloadLimited = false,
+    int CandidatePayloadOriginalChars = 0,
+    int CandidatePayloadProjectedChars = 0,
+    int CandidatePayloadPersistedChars = 0,
+    decimal CandidatePayloadReductionPercent = 0,
+    int CandidatePayloadTruncatedEventCount = 0,
+    int CandidatePayloadTruncatedSummaryCount = 0)
+{
+    public ContributionGuidanceWorkItem ToRuntime()
+        => new(Baseline.ToRuntime(), Array.Empty<GuidancePosition>(), (Candidates ?? Array.Empty<PersistedContributionCandidate>()).Select(x => x.ToRuntime()).ToArray(), CandidateIntelligencePayloadLimited, CandidatePayloadOriginalChars, CandidatePayloadProjectedChars, CandidatePayloadPersistedChars, CandidatePayloadReductionPercent, CandidatePayloadTruncatedEventCount, CandidatePayloadTruncatedSummaryCount);
+}
+
+public sealed record PersistedContributionBaseline(
+    ContributionGuidanceStatus Status,
+    Guid PortfolioId,
+    decimal ContributionAmount,
+    IReadOnlyList<PersistedContributionAllocation> Allocations,
+    IReadOnlyList<AvoidedCandidate> AvoidedCandidates,
+    IReadOnlyList<ContributionClassAllocation> ClassAllocations,
+    decimal UnallocatedAmount,
+    ContributionAllocationStyle AllocationStyle,
+    IReadOnlyList<string> Reasons,
+    IReadOnlyList<string> Evidence,
+    string PortfolioHealthPolicyVersion,
+    IReadOnlyList<string> AssessmentVersions,
+    DateTimeOffset GeneratedAt)
+{
+    public static PersistedContributionBaseline From(ContributionGuidance baseline) => new(
+        baseline.Status, baseline.PortfolioId, baseline.ContributionAmount,
+        baseline.Allocations.Select(PersistedContributionAllocation.From).ToArray(), baseline.AvoidedCandidates,
+        baseline.ClassAllocations, baseline.UnallocatedAmount, baseline.AllocationStyle, baseline.Reasons,
+        baseline.Evidence, baseline.PortfolioHealthPolicyVersion, baseline.AssessmentVersions, baseline.GeneratedAt);
+
+    public ContributionGuidance ToRuntime()
+    {
+        var guidance = new ContributionGuidance(
+            Status, PortfolioId, ContributionAmount,
+            Allocations.Select(x => x.ToRuntime()).ToArray(), AvoidedCandidates, UnallocatedAmount,
+            AllocationStyle, Reasons, Evidence, PortfolioHealthPolicyVersion, AssessmentVersions, GeneratedAt)
+        { ClassAllocations = ClassAllocations };
+        return guidance;
+    }
+}
+
+public sealed record PersistedContributionAllocation(
+    Guid? AssetId, CandidateIdentity Identity, string CandidateKey, string Ticker, AssetClass AssetClass, decimal Amount, string Reason, IReadOnlyList<string> Evidence)
+{
+    public static PersistedContributionAllocation From(ContributionAllocation allocation) => new(
+        allocation.AssetId, allocation.Identity, allocation.Identity.Key.Value, allocation.Ticker, allocation.AssetClass, allocation.Amount, allocation.Reason, allocation.Evidence);
+
+    public ContributionAllocation ToRuntime()
+        => new(AssetId, Ticker, AssetClass, Amount, Reason, Evidence, Identity);
+}
+
+public sealed record PersistedContributionCandidate(
+    CandidateIdentity Identity,
+    string Ticker,
+    AssetClass AssetClass,
+    decimal CurrentValue,
+    decimal CurrentWeight,
+    decimal CurrentClassWeight,
+    decimal TargetClassWeight,
+    decimal ClassBudget,
+    bool HasBlock,
+    AssetType AssetType,
+    string? Sector,
+    decimal RecentContributionAmount,
+    int RecentContributionCount,
+    DateTimeOffset? LastContributionAt,
+    decimal SectorWeightWithinClass,
+    bool HasPosition,
+    decimal AllocationNeedScore,
+    decimal DiversificationScore,
+    decimal UnderweightScore,
+    decimal RecentContributionPenalty,
+    EconomicSector? SectorCategory,
+    ExposureCoverage GeographicExposureCoverage,
+    IReadOnlyList<KnownGeographicExposure>? GeographicExposures,
+    ExposureCoverage EconomicCurrencyExposureCoverage,
+    IReadOnlyList<KnownCurrencyExposure>? CurrencyExposures,
+    string? ListingCountryCode,
+    string? TradingCurrency,
+    CandidateFinancialSnapshot? FinancialSnapshot,
+    bool IsEstablishingPosition,
+    FundType FundType,
+    UnderlyingSectorExposure UnderlyingSectorExposure,
+    CandidateIntelligence? CandidateIntelligence,
+    string? ExternalName,
+    string? ExternalSourceReference)
+{
+    public static PersistedContributionCandidate From(ContributionCandidate candidate) => new(
+        candidate.Identity, candidate.Ticker, candidate.AssetClass, candidate.CurrentValue, candidate.CurrentWeight,
+        candidate.CurrentClassWeight, candidate.TargetClassWeight, candidate.ClassBudget, candidate.HasBlock,
+        candidate.AssetType, candidate.Sector, candidate.RecentContributionAmount, candidate.RecentContributionCount,
+        candidate.LastContributionAt, candidate.SectorWeightWithinClass, candidate.HasPosition, candidate.AllocationNeedScore,
+        candidate.DiversificationScore, candidate.UnderweightScore, candidate.RecentContributionPenalty, candidate.SectorCategory,
+        candidate.GeographicExposureCoverage, candidate.GeographicExposures, candidate.EconomicCurrencyExposureCoverage,
+        candidate.CurrencyExposures, candidate.ListingCountryCode, candidate.TradingCurrency, candidate.FinancialSnapshot,
+        candidate.IsEstablishingPosition, candidate.FundType, candidate.UnderlyingSectorExposure,
+        candidate.CandidateIntelligence, candidate.ExternalName, candidate.ExternalSourceReference);
+
+    public ContributionCandidate ToRuntime()
+        => new(Identity, Ticker, AssetClass, CurrentValue, CurrentWeight, CurrentClassWeight, TargetClassWeight, ClassBudget,
+            HasBlock, Array.Empty<ContributionAssessmentContext>(), AssetType, Sector, RecentContributionAmount,
+            RecentContributionCount, LastContributionAt, SectorWeightWithinClass, HasPosition, AllocationNeedScore,
+            DiversificationScore, UnderweightScore, RecentContributionPenalty, SectorCategory, GeographicExposureCoverage,
+            GeographicExposures, EconomicCurrencyExposureCoverage, CurrencyExposures, ListingCountryCode, TradingCurrency,
+            FinancialSnapshot)
+        {
+            IsEstablishingPosition = IsEstablishingPosition, FundType = FundType,
+            UnderlyingSectorExposure = UnderlyingSectorExposure, CandidateIntelligence = CandidateIntelligence,
+            ExternalName = ExternalName, ExternalSourceReference = ExternalSourceReference
+        };
+}
 
 /// <summary>
 /// A constrained allocation proposed by the intelligence provider. Candidate keys are

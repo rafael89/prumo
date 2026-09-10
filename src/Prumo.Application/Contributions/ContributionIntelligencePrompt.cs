@@ -61,7 +61,7 @@ public static class ContributionIntelligencePrompt
             candidate.TradingCurrency,
             candidate.FinancialSnapshot,
             candidateIntelligence = candidate.CandidateIntelligence,
-            assessments = candidate.CurrentAssessments,
+            assessments = LegacyAssessments(candidate),
             projectedPortfolioExposure = projectedExposureByCandidate.GetValueOrDefault(candidate.CandidateKey),
             deterministicReference = new
             {
@@ -77,7 +77,7 @@ public static class ContributionIntelligencePrompt
             candidateKey = x.CandidateKey.Value,
             x.Ticker,
             x.AssetClass,
-            assessments = x.CurrentAssessments.Where(assessment => assessment.ActionRequirement != "None")
+            assessments = LegacyAssessments(x).Where(assessment => assessment.ActionRequirement != "None")
         });
         var references = deterministicReferences.Select(reference => new
         {
@@ -204,7 +204,7 @@ public static class ContributionIntelligencePrompt
                 candidate.RecentContributionCount,
                 candidate.LastContributionAt,
                 candidateIntelligence = candidate.CandidateIntelligence,
-                assessments = candidate.CurrentAssessments,
+                assessments = LegacyAssessments(candidate),
                 deterministicReference = new { decisionScore = candidate.DecisionScore }
             }),
             blockedCandidates = candidates.Where(candidate => candidate.HasBlock).Select(candidate => new { candidateKey = candidate.CandidateKey.Value, candidate.Ticker, candidate.AssetClass }),
@@ -288,8 +288,8 @@ public static class ContributionIntelligencePrompt
             tradingCurrency = candidate.TradingCurrency,
             financialSnapshot = candidate.FinancialSnapshot,
             candidateIntelligence = candidate.CandidateIntelligence,
-            assessments = candidate.CurrentAssessments,
-            pendingEvents = candidate.CurrentAssessments
+            assessments = LegacyAssessments(candidate),
+            pendingEvents = LegacyAssessments(candidate)
                 .Where(assessment => assessment.ActionRequirement != "None")
                 .Select(assessment => new { assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior })
         });
@@ -402,7 +402,7 @@ public static class ContributionIntelligencePrompt
             candidate.FundType,
             candidate.UnderlyingSectorExposure,
             candidate.FinancialSnapshot,
-            candidate.CurrentAssessments
+            assessments = LegacyAssessments(candidate)
         });
         var context = JsonSerializer.Serialize(new { portfolioId, contributionAmount, candidates = safeCandidates, scenarios }, JsonOptions);
         return $"{Instructions}\n{context}";
@@ -413,4 +413,7 @@ public static class ContributionIntelligencePrompt
             && candidate.UnderlyingSectorExposure.Status != UnderlyingSectorExposureStatus.Available
                 ? null
                 : string.IsNullOrWhiteSpace(candidate.Sector) ? null : candidate.SectorWeightWithinClass;
+
+    private static IReadOnlyList<ContributionAssessmentContext> LegacyAssessments(ContributionCandidate candidate)
+        => candidate.CandidateIntelligence is null ? candidate.CurrentAssessments : Array.Empty<ContributionAssessmentContext>();
 }

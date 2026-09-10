@@ -16,11 +16,14 @@ public sealed record CandidateIntelligenceSection(
     IReadOnlyList<string> MissingData);
 
 public sealed record CandidateIntelligenceEvent(
+    Guid EventId,
     InvestmentEventType Type,
     DateTimeOffset? OccurredAt,
     string Summary,
     IReadOnlyList<string> Facts,
-    IReadOnlyList<EvidenceReference> Evidence);
+    IReadOnlyList<EvidenceReference> Evidence,
+    bool SummaryTruncated = false,
+    int OriginalSummaryLength = 0);
 
 public sealed record CandidateIntelligence(
     CandidateKey CandidateKey,
@@ -44,6 +47,18 @@ public sealed record CandidateIntelligence(
 
 public static class CandidateIntelligenceBuilder
 {
+    public static CandidateIntelligence ProjectForR5(CandidateIntelligence intelligence)
+    {
+        var eventReferences = intelligence.RecentEvents.SelectMany(x => x.Evidence).ToHashSet();
+        var assessmentReferences = intelligence.Assessments.SelectMany(x => x.EvidenceReferences).ToHashSet();
+        var sectionReferences = intelligence.Structural.Evidence.Concat(intelligence.Fundamentals.Evidence)
+            .Concat(intelligence.Valuation.Evidence).Concat(intelligence.IncomeQuality.Evidence).ToHashSet();
+        var indexedOnly = intelligence.Evidence
+            .Where(reference => !eventReferences.Contains(reference) && !assessmentReferences.Contains(reference) && !sectionReferences.Contains(reference))
+            .Distinct().ToArray();
+        return intelligence with { Evidence = indexedOnly };
+    }
+
     public static CandidateIntelligence Build(
         ContributionCandidate candidate,
         Asset asset,
@@ -73,7 +88,7 @@ public static class CandidateIntelligenceBuilder
         var eventContexts = events
             .Where(x => x.AffectedAssets.Any(a => a.Id == asset.Id))
             .OrderByDescending(x => x.OccurredAt ?? x.CreatedAt)
-            .Select(x => new CandidateIntelligenceEvent(x.EventType, x.OccurredAt, x.Summary, x.Facts,
+            .Select(x => new CandidateIntelligenceEvent(x.Id, x.EventType, x.OccurredAt, x.Summary, x.Facts,
                 x.Evidence.Select(e => new EvidenceReference("Document", e.DocumentId.ToString(), e.Reference, e.Reference, x.OccurredAt)).ToArray()))
             .ToArray();
         var eventEvidence = eventContexts.SelectMany(x => x.Evidence).Distinct().ToArray();

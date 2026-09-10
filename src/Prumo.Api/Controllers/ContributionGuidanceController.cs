@@ -218,7 +218,20 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
 
         var persisted = new PersistedContributionGuidance(portfolioId, amount, snapshot, targetKey, intelligenceContextKey, ContributionEngineVersion, "pending-ai", "pending", "Pending", "Análise em andamento: o Prumo está avaliando os candidatos e os limites da carteira.", "{}");
         db.ContributionGuidances.Add(persisted);
-        var job = new ContributionGuidanceJob(portfolioId, persisted.Id, JsonSerializer.Serialize(new ContributionGuidanceWorkItem(baseline, positions, candidates)));
+        var workItem = BuildPersistableWorkItem(baseline, positions, candidates);
+        persisted.UpdateIntelligence("pending-ai", "pending", "Pending", "Análise em andamento: o Prumo está avaliando os candidatos e os limites da carteira.",
+            JsonSerializer.Serialize(new
+            {
+                candidateIntelligencePayloadLimited = workItem.CandidateIntelligencePayloadLimited,
+                candidatePayloadOriginalChars = workItem.CandidatePayloadOriginalChars,
+                candidatePayloadProjectedChars = workItem.CandidatePayloadProjectedChars,
+                candidatePayloadPersistedChars = workItem.CandidatePayloadPersistedChars,
+                candidatePayloadReductionPercent = workItem.CandidatePayloadReductionPercent,
+                candidatePayloadTruncatedEventCount = workItem.CandidatePayloadTruncatedEventCount,
+                candidatePayloadTruncatedSummaryCount = workItem.CandidatePayloadTruncatedSummaryCount,
+                generatedAt = DateTimeOffset.UtcNow
+            }));
+        var job = new ContributionGuidanceJob(portfolioId, persisted.Id, JsonSerializer.Serialize(workItem));
         db.ContributionGuidanceJobs.Add(job);
         await db.SaveChangesAsync(ct);
 
@@ -292,7 +305,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         ContributionGuidanceWorkItem? workItem = null;
         if (!string.IsNullOrWhiteSpace(jobCandidates))
         {
-            workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(jobCandidates);
+            workItem = DeserializeWorkItemForRead(jobCandidates);
             avoidedCandidates = workItem?.Baseline?.AvoidedCandidates
                 .Where(x => !selectedAssetIds.Contains(x.AssetId))
                 .GroupBy(x => x.AssetId)
@@ -367,6 +380,15 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 candidateIntelligenceEvidenceReferenceCount = ExtractMetadataInt(item.MetadataJson, "candidateIntelligenceEvidenceReferenceCount"),
                 candidateIntelligenceAssessmentCount = ExtractMetadataInt(item.MetadataJson, "candidateIntelligenceAssessmentCount"),
                 candidateIntelligenceDocumentEvidenceCount = ExtractMetadataInt(item.MetadataJson, "candidateIntelligenceDocumentEvidenceCount"),
+                candidateIntelligencePayloadLimited = ExtractMetadataBool(item.MetadataJson, "candidateIntelligencePayloadLimited"),
+                candidatePayloadOriginalChars = ExtractMetadataInt(item.MetadataJson, "candidatePayloadOriginalChars"),
+                candidatePayloadProjectedChars = ExtractMetadataInt(item.MetadataJson, "candidatePayloadProjectedChars"),
+                candidatePayloadPersistedChars = ExtractMetadataInt(item.MetadataJson, "candidatePayloadPersistedChars"),
+                candidatePayloadReductionPercent = ExtractMetadataDecimal(item.MetadataJson, "candidatePayloadReductionPercent"),
+                candidatePayloadTruncatedEventCount = ExtractMetadataInt(item.MetadataJson, "candidatePayloadTruncatedEventCount"),
+                candidatePayloadTruncatedSummaryCount = ExtractMetadataInt(item.MetadataJson, "candidatePayloadTruncatedSummaryCount"),
+                proposalPromptChars = ExtractMetadataInt(item.MetadataJson, "proposalPromptChars"),
+                reviewPromptChars = ExtractMetadataInt(item.MetadataJson, "reviewPromptChars"),
                 criteriaJson = FormatJson(jobCandidates ?? item.MetadataJson),
                 fallbackReason = ExtractFallbackReason(item.MetadataJson),
                 selectionMode = ExtractSelectionMode(item.MetadataJson),
@@ -410,6 +432,104 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     };
 
     private static string NormalizeSector(string? sector) => string.IsNullOrWhiteSpace(sector) ? string.Empty : sector.Trim().ToUpperInvariant();
+
+    private static PersistedContributionGuidanceWorkItem BuildPersistableWorkItem(ContributionGuidance baseline, IReadOnlyList<GuidancePosition> positions, IReadOnlyList<ContributionCandidate> candidates)
+    {
+        const int physicalLimit = 200_000;
+        const int safetyLimit = 190_000;
+        var full = new ContributionGuidanceWorkItem(baseline, positions, candidates);
+        var originalChars = JsonSerializer.Serialize(full).Length;
+
+        var projectedCandidates = candidates.Select(ProjectForR5).ToArray();
+        var projected = new PersistedContributionGuidanceWorkItem(
+            PersistedContributionBaseline.From(baseline), projectedCandidates.Select(PersistedContributionCandidate.From).ToArray());
+        var projectedChars = JsonSerializer.Serialize(projected).Length;
+        var selectedCandidates = projectedCandidates;
+        var limited = false;
+
+        // Technical payload limit only. This does not rank or filter by
+        // investment merit; it bounds repeated optional context before it is
+        // stored in the existing varchar(200000) column.
+        if (projectedChars > safetyLimit)
+        {
+            selectedCandidates = projectedCandidates.Select(candidate => candidate with
+            {
+                CandidateIntelligence = candidate.CandidateIntelligence is null ? null : Compact(candidate.CandidateIntelligence)
+            }).ToArray();
+            limited = true;
+        }
+        var selected = new PersistedContributionGuidanceWorkItem(
+            PersistedContributionBaseline.From(baseline), selectedCandidates.Select(PersistedContributionCandidate.From).ToArray(), limited);
+        if (JsonSerializer.Serialize(selected).Length > safetyLimit)
+        {
+            selectedCandidates = selectedCandidates.Select(candidate => candidate with
+            {
+                CandidateIntelligence = candidate.CandidateIntelligence is null ? null : candidate.CandidateIntelligence with
+                {
+                    RecentEvents = Array.Empty<CandidateIntelligenceEvent>(),
+                    Assessments = candidate.CandidateIntelligence.Assessments.Select(a => a with { EvidenceReferences = Array.Empty<EvidenceReference>() }).ToArray(),
+                    Evidence = Array.Empty<EvidenceReference>()
+                }
+            }).ToArray();
+            limited = true;
+            selected = new PersistedContributionGuidanceWorkItem(
+                PersistedContributionBaseline.From(baseline), selectedCandidates.Select(PersistedContributionCandidate.From).ToArray(), true);
+        }
+
+        // Preserve the section states and references while removing verbose
+        // optional narratives as a final deterministic safety valve.
+        var persistedChars = JsonSerializer.Serialize(selected).Length;
+        var reductionPercent = originalChars == 0 ? 0 : decimal.Round((originalChars - persistedChars) * 100m / originalChars, 2);
+        selected = selected with
+        {
+            CandidatePayloadOriginalChars = originalChars,
+            CandidatePayloadProjectedChars = projectedChars,
+            CandidatePayloadPersistedChars = persistedChars,
+            CandidatePayloadReductionPercent = reductionPercent,
+            CandidatePayloadTruncatedEventCount = CountEvents(projectedCandidates) - CountEvents(selectedCandidates),
+            CandidatePayloadTruncatedSummaryCount = CountTruncatedSummaries(selectedCandidates)
+        };
+        persistedChars = JsonSerializer.Serialize(selected).Length;
+        selected = selected with { CandidatePayloadPersistedChars = persistedChars };
+        persistedChars = JsonSerializer.Serialize(selected).Length;
+        if (persistedChars >= physicalLimit)
+            throw new InvalidOperationException($"O contexto de candidatos excede o limite físico de {physicalLimit} caracteres mesmo após a projeção e a compactação técnica.");
+        return selected with { CandidatePayloadPersistedChars = persistedChars };
+    }
+
+    private static ContributionCandidate ProjectForR5(ContributionCandidate candidate) => candidate with
+    {
+        CurrentAssessments = Array.Empty<ContributionAssessmentContext>(),
+        CandidateIntelligence = candidate.CandidateIntelligence is null ? null : CandidateIntelligenceBuilder.ProjectForR5(candidate.CandidateIntelligence)
+    };
+
+    private static CandidateIntelligence Compact(CandidateIntelligence intelligence) => intelligence with
+    {
+        RecentEvents = intelligence.RecentEvents.Take(3).Select(item => item with
+        {
+            Summary = Trim(item.Summary, 500),
+            SummaryTruncated = item.SummaryTruncated || item.Summary.Length > 500,
+            OriginalSummaryLength = item.Summary.Length > 500 ? item.Summary.Length : item.OriginalSummaryLength,
+            Facts = item.Facts.Take(3).Select(fact => Trim(fact, 300)).ToArray(),
+            Evidence = item.Evidence.Take(3).ToArray()
+        }).ToArray(),
+        Assessments = intelligence.Assessments.Take(5).Select(assessment => assessment with
+        {
+            Summary = Trim(assessment.Summary, 500),
+            WhyItMatters = Trim(assessment.WhyItMatters, 500),
+            SuggestedBehavior = Trim(assessment.SuggestedBehavior, 500),
+            EvidenceReferences = assessment.EvidenceReferences.Take(3).ToArray()
+        }).ToArray(),
+        Evidence = intelligence.Evidence.Take(10).ToArray()
+    };
+
+    private static string Trim(string value, int maxLength) => string.IsNullOrEmpty(value) || value.Length <= maxLength ? value : value[..maxLength];
+
+    private static int CountEvents(IEnumerable<ContributionCandidate> candidates)
+        => candidates.Sum(x => x.CandidateIntelligence?.RecentEvents.Count ?? 0);
+
+    private static int CountTruncatedSummaries(IEnumerable<ContributionCandidate> candidates)
+        => candidates.Sum(x => x.CandidateIntelligence?.RecentEvents.Count(e => e.SummaryTruncated) ?? 0);
 
     private static decimal ScoreNeed(decimal target, decimal current) => Math.Clamp((target - current) * 5m, 0, 100);
 
@@ -499,12 +619,47 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         catch (JsonException) { return Array.Empty<string>(); }
     }
 
+    private static ContributionGuidanceWorkItem? DeserializeWorkItemForRead(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("positions", out _))
+            {
+                var projected = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(json);
+                return projected?.Baseline is null ? null : projected.ToRuntime();
+            }
+            return JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(json);
+        }
+        catch (JsonException) { return null; }
+    }
+
     private static int ExtractMetadataInt(string json, string propertyName)
     {
         try
         {
             var root = JsonSerializer.Deserialize<JsonElement>(json);
             return root.TryGetProperty(propertyName, out var value) && value.TryGetInt32(out var count) ? Math.Max(0, count) : 0;
+        }
+        catch (JsonException) { return 0; }
+    }
+
+    private static bool ExtractMetadataBool(string json, string propertyName)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            return root.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException) { return false; }
+    }
+
+    private static decimal ExtractMetadataDecimal(string json, string propertyName)
+    {
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            return root.TryGetProperty(propertyName, out var value) && value.TryGetDecimal(out var number) ? Math.Max(0, number) : 0;
         }
         catch (JsonException) { return 0; }
     }

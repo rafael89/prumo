@@ -110,9 +110,10 @@ public sealed class ContributionGuidanceControllerTests
 
         Assert.IsType<AcceptedResult>(result.Result);
         var job = await db.ContributionGuidanceJobs.SingleAsync();
-        var workItem = JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(job.CandidatesJson);
+        var workItem = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(job.CandidatesJson);
         Assert.NotNull(workItem);
-        Assert.Contains(workItem!.Candidates, candidate => candidate.AssetId == catalogAsset.Id && !candidate.HasPosition);
+        Assert.DoesNotContain("positions", job.CandidatesJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(workItem!.Candidates, candidate => candidate.Identity.AssetId == catalogAsset.Id && !candidate.HasPosition);
         Assert.All(workItem.Candidates, candidate => Assert.NotNull(candidate.CandidateIntelligence));
     }
 
@@ -130,6 +131,33 @@ public sealed class ContributionGuidanceControllerTests
         Assert.Equal("BR", petr4.ListingCountryCode);
         Assert.Equal("BRL", petr4.TradingCurrency);
         Assert.Empty(petr4.GeographicExposures);
+    }
+
+    [Fact]
+    public async Task GenerateBoundsPersistedCandidateContextWithoutChangingTheLegacyEvidenceCount()
+    {
+        await using var db = CreateDbContext();
+        var (portfolio, _) = await SeedPortfolioAsync(db);
+        var asset = await db.Assets.SingleAsync(x => x.Ticker == "PETR4");
+        for (var index = 0; index < 40; index++)
+        {
+            var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow.AddDays(-index), new string('E', 8_000), new[] { new string('F', 2_000) });
+            investmentEvent.AffectedAssets.Add(asset);
+            db.InvestmentEvents.Add(investmentEvent);
+        }
+        await db.SaveChangesAsync();
+
+        var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
+
+        Assert.IsType<AcceptedResult>(result.Result);
+        var job = await db.ContributionGuidanceJobs.SingleAsync();
+        Assert.True(job.CandidatesJson.Length <= 200_000);
+        var workItem = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(job.CandidatesJson);
+        Assert.NotNull(workItem);
+        Assert.True(workItem!.CandidateIntelligencePayloadLimited);
+        Assert.True(workItem.CandidatePayloadPersistedChars < 200_000);
+        Assert.True(workItem.CandidatePayloadTruncatedEventCount > 0);
+        Assert.True(workItem.CandidatePayloadTruncatedSummaryCount > 0);
     }
 
     [Fact]
