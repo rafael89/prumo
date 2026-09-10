@@ -315,9 +315,12 @@ function App() {
     } catch {
       // The persistent Radar state remains authoritative when storage is unavailable.
     }
-    setNotificationToast(next)
-    const timeout = window.setTimeout(() => setNotificationToast(null), 6000)
-    return () => window.clearTimeout(timeout)
+    const showTimeout = window.setTimeout(() => setNotificationToast(next), 0)
+    const hideTimeout = window.setTimeout(() => setNotificationToast(null), 6000)
+    return () => {
+      window.clearTimeout(showTimeout)
+      window.clearTimeout(hideTimeout)
+    }
   }, [activePortfolio, radarNotifications.data])
   const reprocessFailed = useMutation({
     mutationFn: () => sendJson<{ requeuedCount: number }, { errorContains: string | null }>(`/api/portfolios/${activePortfolio!.id}/documents/reprocess-failed`, 'POST', { errorContains: null }),
