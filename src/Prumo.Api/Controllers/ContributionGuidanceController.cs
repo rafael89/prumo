@@ -229,6 +229,14 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 candidatePayloadReductionPercent = workItem.CandidatePayloadReductionPercent,
                 candidatePayloadTruncatedEventCount = workItem.CandidatePayloadTruncatedEventCount,
                 candidatePayloadTruncatedSummaryCount = workItem.CandidatePayloadTruncatedSummaryCount,
+                storagePayloadChars = workItem.CandidatePayloadPersistedChars,
+                proposalContextChars = 0,
+                reviewContextChars = 0,
+                proposalEventCount = 0,
+                reviewEventCount = 0,
+                storagePayloadLimited = false,
+                proposalContextLimited = false,
+                reviewContextLimited = false,
                 generatedAt = DateTimeOffset.UtcNow
             }));
         var job = new ContributionGuidanceJob(portfolioId, persisted.Id, JsonSerializer.Serialize(workItem));
@@ -387,6 +395,14 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                 candidatePayloadReductionPercent = ExtractMetadataDecimal(item.MetadataJson, "candidatePayloadReductionPercent"),
                 candidatePayloadTruncatedEventCount = ExtractMetadataInt(item.MetadataJson, "candidatePayloadTruncatedEventCount"),
                 candidatePayloadTruncatedSummaryCount = ExtractMetadataInt(item.MetadataJson, "candidatePayloadTruncatedSummaryCount"),
+                storagePayloadChars = ExtractMetadataInt(item.MetadataJson, "storagePayloadChars"),
+                proposalContextChars = ExtractMetadataInt(item.MetadataJson, "proposalContextChars"),
+                reviewContextChars = ExtractMetadataInt(item.MetadataJson, "reviewContextChars"),
+                proposalEventCount = ExtractMetadataInt(item.MetadataJson, "proposalEventCount"),
+                reviewEventCount = ExtractMetadataInt(item.MetadataJson, "reviewEventCount"),
+                storagePayloadLimited = ExtractMetadataBool(item.MetadataJson, "storagePayloadLimited"),
+                proposalContextLimited = ExtractMetadataBool(item.MetadataJson, "proposalContextLimited"),
+                reviewContextLimited = ExtractMetadataBool(item.MetadataJson, "reviewContextLimited"),
                 proposalPromptChars = ExtractMetadataInt(item.MetadataJson, "proposalPromptChars"),
                 reviewPromptChars = ExtractMetadataInt(item.MetadataJson, "reviewPromptChars"),
                 criteriaJson = FormatJson(jobCandidates ?? item.MetadataJson),
@@ -435,8 +451,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
 
     private static PersistedContributionGuidanceWorkItem BuildPersistableWorkItem(ContributionGuidance baseline, IReadOnlyList<GuidancePosition> positions, IReadOnlyList<ContributionCandidate> candidates)
     {
-        const int physicalLimit = 200_000;
-        const int safetyLimit = 190_000;
+        const int physicalLimit = int.MaxValue;
         var full = new ContributionGuidanceWorkItem(baseline, positions, candidates);
         var originalChars = JsonSerializer.Serialize(full).Length;
 
@@ -444,41 +459,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         var projected = new PersistedContributionGuidanceWorkItem(
             PersistedContributionBaseline.From(baseline), projectedCandidates.Select(PersistedContributionCandidate.From).ToArray());
         var projectedChars = JsonSerializer.Serialize(projected).Length;
-        var selectedCandidates = projectedCandidates;
-        var limited = false;
-
-        // Technical payload limit only. This does not rank or filter by
-        // investment merit; it bounds repeated optional context before it is
-        // stored in the existing varchar(200000) column.
-        if (projectedChars > safetyLimit)
-        {
-            selectedCandidates = projectedCandidates.Select(candidate => candidate with
-            {
-                CandidateIntelligence = candidate.CandidateIntelligence is null ? null : Compact(candidate.CandidateIntelligence)
-            }).ToArray();
-            limited = true;
-        }
-        var selected = new PersistedContributionGuidanceWorkItem(
-            PersistedContributionBaseline.From(baseline), selectedCandidates.Select(PersistedContributionCandidate.From).ToArray(), limited);
-        if (JsonSerializer.Serialize(selected).Length > safetyLimit)
-        {
-            selectedCandidates = selectedCandidates.Select(candidate => candidate with
-            {
-                CandidateIntelligence = candidate.CandidateIntelligence is null ? null : candidate.CandidateIntelligence with
-                {
-                    RecentEvents = Array.Empty<CandidateIntelligenceEvent>(),
-                    Assessments = candidate.CandidateIntelligence.Assessments.Select(a => a with { EvidenceReferences = Array.Empty<EvidenceReference>() }).ToArray(),
-                    Evidence = Array.Empty<EvidenceReference>()
-                }
-            }).ToArray();
-            limited = true;
-            selected = new PersistedContributionGuidanceWorkItem(
-                PersistedContributionBaseline.From(baseline), selectedCandidates.Select(PersistedContributionCandidate.From).ToArray(), true);
-        }
-
-        // Preserve the section states and references while removing verbose
-        // optional narratives as a final deterministic safety valve.
-        var persistedChars = JsonSerializer.Serialize(selected).Length;
+        var selected = projected;
+        var persistedChars = projectedChars;
         var reductionPercent = originalChars == 0 ? 0 : decimal.Round((originalChars - persistedChars) * 100m / originalChars, 2);
         selected = selected with
         {
@@ -486,12 +468,19 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             CandidatePayloadProjectedChars = projectedChars,
             CandidatePayloadPersistedChars = persistedChars,
             CandidatePayloadReductionPercent = reductionPercent,
-            CandidatePayloadTruncatedEventCount = CountEvents(projectedCandidates) - CountEvents(selectedCandidates),
-            CandidatePayloadTruncatedSummaryCount = CountTruncatedSummaries(selectedCandidates)
+            CandidatePayloadTruncatedEventCount = 0,
+            CandidatePayloadTruncatedSummaryCount = 0
         };
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var serializedLength = JsonSerializer.Serialize(selected).Length;
+            if (serializedLength == selected.CandidatePayloadPersistedChars) break;
+            selected = selected with { CandidatePayloadPersistedChars = serializedLength };
+            persistedChars = serializedLength;
+        }
         persistedChars = JsonSerializer.Serialize(selected).Length;
-        selected = selected with { CandidatePayloadPersistedChars = persistedChars };
-        persistedChars = JsonSerializer.Serialize(selected).Length;
+        // Only guard the provider/runtime maximum; database size is no longer
+        // used to decide whether decision context is removed.
         if (persistedChars >= physicalLimit)
             throw new InvalidOperationException($"O contexto de candidatos excede o limite físico de {physicalLimit} caracteres mesmo após a projeção e a compactação técnica.");
         return selected with { CandidatePayloadPersistedChars = persistedChars };
@@ -502,34 +491,6 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         CurrentAssessments = Array.Empty<ContributionAssessmentContext>(),
         CandidateIntelligence = candidate.CandidateIntelligence is null ? null : CandidateIntelligenceBuilder.ProjectForR5(candidate.CandidateIntelligence)
     };
-
-    private static CandidateIntelligence Compact(CandidateIntelligence intelligence) => intelligence with
-    {
-        RecentEvents = intelligence.RecentEvents.Take(3).Select(item => item with
-        {
-            Summary = Trim(item.Summary, 500),
-            SummaryTruncated = item.SummaryTruncated || item.Summary.Length > 500,
-            OriginalSummaryLength = item.Summary.Length > 500 ? item.Summary.Length : item.OriginalSummaryLength,
-            Facts = item.Facts.Take(3).Select(fact => Trim(fact, 300)).ToArray(),
-            Evidence = item.Evidence.Take(3).ToArray()
-        }).ToArray(),
-        Assessments = intelligence.Assessments.Take(5).Select(assessment => assessment with
-        {
-            Summary = Trim(assessment.Summary, 500),
-            WhyItMatters = Trim(assessment.WhyItMatters, 500),
-            SuggestedBehavior = Trim(assessment.SuggestedBehavior, 500),
-            EvidenceReferences = assessment.EvidenceReferences.Take(3).ToArray()
-        }).ToArray(),
-        Evidence = intelligence.Evidence.Take(10).ToArray()
-    };
-
-    private static string Trim(string value, int maxLength) => string.IsNullOrEmpty(value) || value.Length <= maxLength ? value : value[..maxLength];
-
-    private static int CountEvents(IEnumerable<ContributionCandidate> candidates)
-        => candidates.Sum(x => x.CandidateIntelligence?.RecentEvents.Count ?? 0);
-
-    private static int CountTruncatedSummaries(IEnumerable<ContributionCandidate> candidates)
-        => candidates.Sum(x => x.CandidateIntelligence?.RecentEvents.Count(e => e.SummaryTruncated) ?? 0);
 
     private static decimal ScoreNeed(decimal target, decimal current) => Math.Clamp((target - current) * 5m, 0, 100);
 

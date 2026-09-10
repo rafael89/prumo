@@ -89,6 +89,10 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                             var allocationMode = AllocationMode(finalAllocations, deterministicOptions);
                             metrics.RecordAiOutcome(allocationMode);
                             metrics.RecordAiOutcome($"composition-review-{reviewResolution.Outcome}");
+                            var proposalContext = ContributionIntelligencePrompt.BuildAllocationProposal(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy);
+                            var reviewContext = ContributionIntelligencePrompt.BuildAllocationReview(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy, initialProjection);
+                            var proposalEventCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.RecentEvents.Count ?? 0);
+                            var reviewEventCount = proposalEventCount;
                             guidance.UpdateIntelligence(finalMetadata.Provider, finalMetadata.Model, proposal.Availability.ToString(), finalReason, JsonSerializer.Serialize(new
                             {
                                 engineVersion = finalMetadata.EngineVersion,
@@ -134,8 +138,16 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 proposalDecisionType = proposal.DecisionType,
                                 initialAiAllocation = initialProjection.ProposedAllocation,
                                 initialProjection,
-                                proposalPromptChars = ContributionIntelligencePrompt.BuildAllocationProposal(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy).Length,
-                                reviewPromptChars = ContributionIntelligencePrompt.BuildAllocationReview(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy, initialProjection).Length,
+                                proposalPromptChars = proposalContext.Length,
+                                reviewPromptChars = reviewContext.Length,
+                                storagePayloadChars = workItem.CandidatePayloadPersistedChars,
+                                proposalContextChars = proposalContext.Length,
+                                reviewContextChars = reviewContext.Length,
+                                proposalEventCount,
+                                reviewEventCount,
+                                storagePayloadLimited = false,
+                                proposalContextLimited = false,
+                                reviewContextLimited = false,
                                 reviewDecision = review?.Decision ?? "unavailable",
                                 reviewOutcome = reviewResolution.Outcome,
                                 reviewAccepted = reviewResolution.ReviewAccepted,

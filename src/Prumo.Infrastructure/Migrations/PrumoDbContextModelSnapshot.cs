@@ -393,8 +393,7 @@ namespace Prumo.Infrastructure.Migrations
 
                     b.Property<string>("CandidatesJson")
                         .IsRequired()
-                        .HasMaxLength(200000)
-                        .HasColumnType("character varying(200000)");
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");

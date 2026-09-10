@@ -151,13 +151,17 @@ public sealed class ContributionGuidanceControllerTests
 
         Assert.IsType<AcceptedResult>(result.Result);
         var job = await db.ContributionGuidanceJobs.SingleAsync();
-        Assert.True(job.CandidatesJson.Length <= 200_000);
+        Assert.True(job.CandidatesJson.Length > 200_000);
         var workItem = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(job.CandidatesJson);
         Assert.NotNull(workItem);
-        Assert.True(workItem!.CandidateIntelligencePayloadLimited);
-        Assert.True(workItem.CandidatePayloadPersistedChars < 200_000);
-        Assert.True(workItem.CandidatePayloadTruncatedEventCount > 0);
-        Assert.True(workItem.CandidatePayloadTruncatedSummaryCount > 0);
+        Assert.False(workItem!.CandidateIntelligencePayloadLimited);
+        Assert.True(workItem.CandidatePayloadPersistedChars >= workItem.CandidatePayloadProjectedChars);
+        Assert.Equal(job.CandidatesJson.Length, workItem.CandidatePayloadPersistedChars);
+        Assert.Equal(40, workItem.Candidates.Sum(x => x.CandidateIntelligence!.RecentEvents.Count));
+        Assert.All(workItem.Candidates.SelectMany(x => x.CandidateIntelligence!.RecentEvents), e => Assert.Equal(8_000, e.Summary.Length));
+        Assert.All(workItem.Candidates.SelectMany(x => x.CandidateIntelligence!.RecentEvents), e => Assert.Equal(2_000, e.Facts.Single().Length));
+        Assert.Equal(0, workItem.CandidatePayloadTruncatedEventCount);
+        Assert.Equal(0, workItem.CandidatePayloadTruncatedSummaryCount);
     }
 
     [Fact]
