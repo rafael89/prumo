@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Prumo.Application.Abstractions;
@@ -70,6 +71,11 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
                     var normalizedCnpj = NormalizeCnpj(cnpj);
                     var tickerRecords = records.Where(record => NormalizeCnpj(record.Cnpj) == normalizedCnpj).ToList();
+                    if (!isStock && options.FnetDirectDiscoveryEnabled)
+                    {
+                        var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, cancellationToken);
+                        tickerRecords.AddRange(directRecords);
+                    }
                     logger.LogInformation("Recurso CVM mapeou {RecordCount} registro(s) para o ticker {Ticker}", tickerRecords.Count, asset.Ticker);
 
                     foreach (var record in tickerRecords)
@@ -108,6 +114,79 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         logger.LogInformation("Fonte {SourceName} criou {CandidateCount} candidato(s)", Name, candidates.Count);
         return candidates;
     }
+
+    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct)
+    {
+        if (normalizedCnpj.Length != 14) return Array.Empty<CvmDocumentRecord>();
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj));
+            request.Headers.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
+            request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+            request.Headers.TryAddWithoutValidation("Referer", $"{options.FnetManagerUrl}?cnpjFundo={normalizedCnpj}");
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (!json.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                return Array.Empty<CvmDocumentRecord>();
+
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
+            var records = new List<CvmDocumentRecord>();
+            foreach (var item in data.EnumerateArray())
+            {
+                var id = ReadString(item, "id");
+                var delivered = ReadString(item, "dataEntrega");
+                var reference = ReadString(item, "dataReferencia");
+                if (string.IsNullOrWhiteSpace(id) || !TryParseFnetDate(delivered, out var publishedAt) || publishedAt < cutoff || publishedAt > DateTimeOffset.UtcNow.AddMinutes(5)) continue;
+                if (ReadString(item, "status")?.StartsWith("C", StringComparison.OrdinalIgnoreCase) == true) continue;
+
+                records.Add(new CvmDocumentRecord(
+                    normalizedCnpj,
+                    reference,
+                    delivered,
+                    ReadString(item, "tipoDocumento"),
+                    ReadString(item, "categoriaDocumento"),
+                    ReadString(item, "especieDocumento"),
+                    null,
+                    id,
+                    $"https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={Uri.EscapeDataString(id)}"));
+            }
+            logger.LogInformation("FNET direto mapeou {RecordCount} documento(s) recentes para {Ticker}", records.Count, asset.Ticker);
+            return records;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            // The public FNET grid is protected by an upstream WAF in some
+            // environments. Its failure must not interrupt the reliable CVM
+            // CSV discovery path.
+            logger.LogWarning(exception, "FNET direto indisponível para {Ticker}; mantendo descoberta pelo CSV", asset.Ticker);
+            return Array.Empty<CvmDocumentRecord>();
+        }
+    }
+
+    private string BuildFnetDocumentsUrl(string cnpj)
+    {
+        var query = new Dictionary<string, string>
+        {
+            ["draw"] = "1", ["start"] = "0", ["length"] = "100",
+            ["order[0][column]"] = "6", ["order[0][dir]"] = "desc",
+            ["tipoFundo"] = "1", ["cnpj"] = cnpj, ["cnpjFundo"] = cnpj,
+            ["isSession"] = "true", ["paginaCertificados"] = "false"
+        };
+        return options.FnetDocumentsUrl + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));
+    }
+
+    private static string? ReadString(JsonElement item, string property)
+    {
+        if (!item.TryGetProperty(property, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+        return value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() : value.ToString().Trim();
+    }
+
+    private static bool TryParseFnetDate(string? value, out DateTimeOffset date)
+        => DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy", "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
 
     private static async Task<List<CvmDocumentRecord>> ParseZipCsvAsync(byte[] content, CancellationToken cancellationToken)
     {
@@ -203,7 +282,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
     private static bool TryParseDate(string? value, out DateTimeOffset date)
     {
-        return DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy", "yyyy-MM-dd", "dd/MM/yyyy HH:mm:ss" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
+        return DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy", "yyyy-MM-dd", "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
     }
 
     internal static class CvmDocumentTypeMapper

@@ -200,6 +200,40 @@ public sealed class PortfolioImpactAssessmentServiceTests
         Assert.Equal(AssessmentUserState.Seen, replacement.UserState);
     }
 
+    [Fact]
+    public async Task Seen_duplicate_document_state_wins_when_stale_assessments_are_rebuilt()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrumoDbContext(options);
+        var portfolio = new Portfolio("Carteira teste");
+        var asset = new Asset("TEST", "Ativo teste", AssetType.Stock, "Teste");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1m, 1m, 1m));
+        var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento antigo", Array.Empty<string>());
+        investmentEvent.AffectedAssets.Add(asset);
+
+        var unread = CreateAssessment(portfolio.Id, investmentEvent, PortfolioImpactAssessmentService.CurrentVersion);
+        var seen = new PortfolioAssessment(
+            portfolio.Id, investmentEvent.Id, AttentionPriority.High, ActionRequirement.Review,
+            CapitalDecisionImpact.Caution, AssessmentStatus.Detected, AssessmentUserState.Seen,
+            "Avaliação duplicada já vista", "Motivo", "Acompanhar", IntelligenceConfidence.High,
+            null, PortfolioImpactAssessmentService.CurrentVersion, "snapshot-antigo", investmentEvent.Version);
+        seen.AttachInvestmentEvent(investmentEvent);
+
+        var service = new PortfolioAssessmentCurrentService(
+            db,
+            new PortfolioImpactAssessmentService(),
+            new PortfolioAssessmentFreshnessEvaluator(),
+            NullLogger<PortfolioAssessmentCurrentService>.Instance);
+
+        var current = await service.EnsureFreshAsync(portfolio, Array.Empty<TargetAllocation>(), new[] { unread, seen }, CancellationToken.None);
+
+        var replacement = Assert.Single(current);
+        Assert.Equal(AssessmentUserState.Seen, replacement.UserState);
+        Assert.DoesNotContain(current, assessment => assessment.UserState == AssessmentUserState.Unread);
+    }
+
     private static PortfolioImpactAssessmentOutput Assess(InvestmentEventType eventType, decimal weight, AnalysisImportance? importance = null)
     {
         var portfolio = new Portfolio("Carteira teste");

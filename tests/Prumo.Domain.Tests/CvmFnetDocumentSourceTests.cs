@@ -96,6 +96,27 @@ public sealed class CvmFnetDocumentSourceTests
     }
 
     [Fact]
+    public async Task ComplementaCsvComDocumentoRecenteDoFnet()
+    {
+        const string csv = "CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;TP_DOC;NM_ARQ;ID_DOC;LINK_ARQ\n";
+        const string fnet = "{\"data\":[{\"id\":\"1315141\",\"dataReferencia\":\"31/08/2026\",\"dataEntrega\":\"10/09/2026 19:58\",\"tipoDocumento\":\"Relatório Gerencial\",\"categoriaDocumento\":\"Relatórios\",\"especieDocumento\":\"\",\"status\":\"Ativo\"}]}";
+        using var client = new HttpClient(new FnetHandler(csv, fnet));
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            DocumentosEventuaisUrlTemplate = "https://dados.cvm.gov.br/eventual_{0}.csv",
+            FnetManagerUrl = "https://fnet.test/manager",
+            FnetDocumentsUrl = "https://fnet.test/documents"
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidate = Assert.Single(await source.FindAsync(new[] { new DocumentSourceAsset("HGBS11", "08.431.747/0001-06", AssetClass.Fii) }));
+
+        Assert.Equal("1315141", candidate.SourceIdentifier);
+        Assert.Equal(DocumentType.ManagementReport, candidate.DocumentType);
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1315141", candidate.SourceUrl);
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1315141", candidate.DownloadUrl);
+    }
+
+    [Fact]
     public async Task DescartaTickerSemResolucaoCvm()
     {
         using var client = new HttpClient(new CsvHandler("header\n"));
@@ -125,7 +146,18 @@ public sealed class CvmFnetDocumentSourceTests
                 Content = new ByteArrayContent(content)
             });
         }
-    }    [Fact]
+    }
+
+    private sealed class FnetHandler : HttpMessageHandler
+    {
+        private readonly byte[] csv;
+        private readonly byte[] fnet;
+        public FnetHandler(string csv, string fnet) { this.csv = Encoding.Latin1.GetBytes(csv); this.fnet = Encoding.UTF8.GetBytes(fnet); }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(request.RequestUri!.Host == "fnet.test" ? fnet : csv) });
+    }
+
+    [Fact]
     public async Task MapeiaDocumentosIpeDeCompanhiaParaAcao()
     {
         const string csv = "CNPJ_Companhia;Nome_Companhia;Codigo_CVM;Data_Referencia;Categoria;Tipo;Especie;Assunto;Data_Entrega;Tipo_Apresentacao;Protocolo_Entrega;Versao;Link_Download\n" +
