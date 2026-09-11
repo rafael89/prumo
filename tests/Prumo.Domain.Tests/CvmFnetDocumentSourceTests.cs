@@ -174,7 +174,21 @@ public sealed class CvmFnetDocumentSourceTests
         private readonly byte[] fnet;
         public FnetHandler(string csv, string fnet) { this.csv = Encoding.Latin1.GetBytes(csv); this.fnet = Encoding.UTF8.GetBytes(fnet); }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(request.RequestUri!.Host == "fnet.test" ? fnet : csv) });
+        {
+            if (request.RequestUri!.Host == "fnet.test")
+            {
+                var query = request.RequestUri.Query;
+                Assert.Contains("d=0", query);
+                Assert.Contains("s=0", query);
+                Assert.Contains("l=100", query);
+                Assert.Contains("idCategoriaDocumento=0", query);
+                Assert.Contains("idTipoDocumento=0", query);
+                Assert.DoesNotContain("draw=", query);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(fnet) });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(csv) });
+        }
     }
 
     [Fact]

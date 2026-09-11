@@ -41,6 +41,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
         var year = DateTimeOffset.UtcNow.Year;
         var candidates = new List<DocumentCandidate>();
+        var directFailureWarnings = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var group in assets.GroupBy(asset => asset.AssetClass == AssetClass.BrazilianStock))
         {
@@ -74,12 +75,12 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     var tickerRecords = records.Where(record => NormalizeCnpj(record.Cnpj) == normalizedCnpj).ToList();
                     if (isStock && options.EnetDirectDiscoveryEnabled)
                     {
-                        var directRecords = await FindRecentEnetRecordsAsync(asset, normalizedCnpj, cancellationToken);
+                        var directRecords = await FindRecentEnetRecordsAsync(asset, normalizedCnpj, cancellationToken, directFailureWarnings);
                         tickerRecords.AddRange(directRecords);
                     }
                     if (!isStock && options.FnetDirectDiscoveryEnabled)
                     {
-                        var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, cancellationToken);
+                        var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, cancellationToken, directFailureWarnings);
                         tickerRecords.AddRange(directRecords);
                     }
                     logger.LogInformation("Recurso CVM mapeou {RecordCount} registro(s) para o ticker {Ticker}", tickerRecords.Count, asset.Ticker);
@@ -121,7 +122,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         return candidates;
     }
 
-    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentEnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct)
+    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentEnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct, ISet<string> directFailureWarnings)
     {
         if (normalizedCnpj.Length != 14) return Array.Empty<CvmDocumentRecord>();
         try
@@ -170,20 +171,20 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (HttpRequestException exception)
         {
-            logger.LogWarning(
-                "ENET direto indisponível para {Ticker}; mantendo descoberta pelo IPE (HTTP {StatusCode})",
-                asset.Ticker,
-                (int?)exception.StatusCode ?? 0);
+            if (directFailureWarnings.Add($"ENET:http:{(int?)exception.StatusCode ?? 0}"))
+                logger.LogWarning("ENET direto indisponível; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (JsonException)
         {
-            logger.LogWarning("ENET direto retornou uma resposta inválida para {Ticker}; mantendo descoberta pelo IPE", asset.Ticker);
+            if (directFailureWarnings.Add("ENET:json"))
+                logger.LogWarning("ENET direto retornou uma resposta inválida; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "ENET direto indisponível para {Ticker}; mantendo descoberta pelo IPE", asset.Ticker);
+            if (directFailureWarnings.Add("ENET:other"))
+                logger.LogWarning(exception, "ENET direto indisponível; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
     }
@@ -201,7 +202,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
     private static bool TryParseEnetDate(string? value, out DateTimeOffset date)
         => DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
 
-    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct)
+    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct, ISet<string> directFailureWarnings)
     {
         if (normalizedCnpj.Length != 14) return Array.Empty<CvmDocumentRecord>();
 
@@ -245,15 +246,14 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (HttpRequestException exception)
         {
-            logger.LogWarning(
-                "FNET direto indisponível para {Ticker}; mantendo descoberta pelo CSV (HTTP {StatusCode})",
-                asset.Ticker,
-                (int?)exception.StatusCode ?? 0);
+            if (directFailureWarnings.Add($"FNET:http:{(int?)exception.StatusCode ?? 0}"))
+                logger.LogWarning("FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (JsonException)
         {
-            logger.LogWarning("FNET direto retornou uma resposta não-JSON para {Ticker}; mantendo descoberta pelo CSV", asset.Ticker);
+            if (directFailureWarnings.Add("FNET:json"))
+                logger.LogWarning("FNET direto retornou uma resposta não-JSON; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (Exception exception)
@@ -261,7 +261,8 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             // The public FNET grid is protected by an upstream WAF in some
             // environments. Its failure must not interrupt the reliable CVM
             // CSV discovery path.
-            logger.LogWarning(exception, "FNET direto indisponível para {Ticker}; mantendo descoberta pelo CSV", asset.Ticker);
+            if (directFailureWarnings.Add("FNET:other"))
+                logger.LogWarning(exception, "FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
     }
@@ -270,9 +271,11 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
     {
         var query = new Dictionary<string, string>
         {
-            ["draw"] = "1", ["start"] = "0", ["length"] = "100",
-            ["order[0][column]"] = "6", ["order[0][dir]"] = "desc",
+            // The public FNET endpoint uses its legacy paging names (d/s/l),
+            // rather than the DataTables names (draw/start/length).
+            ["d"] = "0", ["s"] = "0", ["l"] = "100",
             ["tipoFundo"] = "1", ["cnpj"] = cnpj, ["cnpjFundo"] = cnpj,
+            ["idCategoriaDocumento"] = "0", ["idTipoDocumento"] = "0",
             ["isSession"] = "true", ["paginaCertificados"] = "false"
         };
         return options.FnetDocumentsUrl + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));
