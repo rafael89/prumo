@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
@@ -11,10 +12,12 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
 {
     private readonly IServiceScopeFactory scopeFactory;
     private readonly ILogger<DocumentDiscoveryWorker> logger;
+    private readonly DocumentDiscoveryOptions options;
 
-    public DocumentDiscoveryWorker(IServiceScopeFactory scopeFactory, ILogger<DocumentDiscoveryWorker> logger)
+    public DocumentDiscoveryWorker(IServiceScopeFactory scopeFactory, IOptions<DocumentDiscoveryOptions> options, ILogger<DocumentDiscoveryWorker> logger)
     {
         this.scopeFactory = scopeFactory;
+        this.options = options.Value;
         this.logger = logger;
     }
 
@@ -87,6 +90,12 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
             throw;
         }
 
+        var discoveryCutoff = DateTimeOffset.UtcNow.AddDays(-Math.Max(1, options.LookbackDays));
+        var recentCandidates = candidates
+            .Where(candidate => candidate.PublishedAt >= discoveryCutoff && candidate.PublishedAt <= DateTimeOffset.UtcNow)
+            .ToList();
+        logger.LogInformation("Descoberta recorrente aplicou janela de {LookbackDays} dia(s): {RecentDocumentCount} de {DocumentCount} candidato(s) elegíveis", options.LookbackDays, recentCandidates.Count, candidates.Count);
+
         var assetByTicker = assets.ToDictionary(asset => asset.Ticker, StringComparer.OrdinalIgnoreCase);
         var reclassifiedDocuments = 0;
         foreach (var candidate in candidates.Where(candidate => assetByTicker.ContainsKey(candidate.Ticker)))
@@ -108,7 +117,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
             .Where(document => document.SourceName == source.Name && assets.Select(asset => asset.Id).Contains(document.AssetId))
             .Select(document => new { document.AssetId, document.Fingerprint, document.SourceIdentifier, document.SourceUrl })
             .ToListAsync(cancellationToken);
-        var latestCandidates = LatestDocumentSelector.SelectLatestUnseen(candidates, candidate =>
+        var latestCandidates = LatestDocumentSelector.SelectLatestUnseen(recentCandidates, candidate =>
         {
             if (!assetByTickerForSelection.TryGetValue(candidate.Ticker, out var asset)) return true;
             var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);
@@ -173,4 +182,9 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         command.CommandText = "SELECT pg_advisory_unlock(hashtext('prumo:document-discovery'))";
         await command.ExecuteScalarAsync(cancellationToken);
     }
+}
+
+public sealed class DocumentDiscoveryOptions
+{
+    public int LookbackDays { get; set; } = 7;
 }

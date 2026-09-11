@@ -69,6 +69,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddScoped<IProcessingJobQueue, PostgresProcessingJobQueue>();
         services.Configure<CvmFnetOptions>(context.Configuration.GetSection("Documents"));
         services.Configure<DocumentBootstrapOptions>(context.Configuration.GetSection("DocumentBootstrap"));
+        services.Configure<DocumentDiscoveryOptions>(context.Configuration.GetSection("DocumentDiscovery"));
         services.Configure<DocumentRetentionOptions>(context.Configuration.GetSection("DocumentRetention"));
         services.AddHttpClient<CvmFnetDocumentSource>();
         services.AddHttpClient<CvmFiiMonthlyStructuredSource>();
