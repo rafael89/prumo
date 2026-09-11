@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -269,9 +269,17 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
 }
 
 export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResolved = false, onClose, onMarkSeen, onResolve, onReopen, actionPending = false }: { item: DashboardAssessment; portfolioId: string; isSeen?: boolean; isResolved?: boolean; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean }) {
+  const markSeenCallback = useRef(onMarkSeen)
+  const markSeenAttemptedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!isSeen && !isResolved && onMarkSeen) onMarkSeen()
-  }, [isSeen, isResolved, onMarkSeen])
+    markSeenCallback.current = onMarkSeen
+  }, [onMarkSeen])
+  useEffect(() => {
+    if (!isSeen && !isResolved && markSeenCallback.current && markSeenAttemptedFor.current !== item.assessmentId) {
+      markSeenAttemptedFor.current = item.assessmentId
+      markSeenCallback.current()
+    }
+  }, [item.assessmentId, isSeen, isResolved])
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'

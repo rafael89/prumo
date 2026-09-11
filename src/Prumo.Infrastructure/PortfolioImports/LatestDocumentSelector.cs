@@ -25,6 +25,13 @@ public static class LatestDocumentSelector
             .Select(group => group.OrderByDescending(candidate => candidate.PublishedAt)
                 .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal).First());
 
+    public static IEnumerable<DocumentCandidate> SelectLatestUnseen(IEnumerable<DocumentCandidate> candidates, Func<DocumentCandidate, bool> exists) =>
+        candidates.GroupBy(candidate => candidate.Ticker, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(candidate => candidate.PublishedAt)
+                .ThenByDescending(candidate => candidate.SourceIdentifier ?? string.Empty, StringComparer.Ordinal)
+                .FirstOrDefault(candidate => !exists(candidate)))
+            .Where(candidate => candidate is not null)!;
+
     public static IEnumerable<DocumentCandidate> SelectBootstrap(IEnumerable<DocumentCandidate> candidates, DateTimeOffset now, int materialFactLookbackMonths)
     {
         var cutoff = now.AddMonths(-Math.Max(1, materialFactLookbackMonths));

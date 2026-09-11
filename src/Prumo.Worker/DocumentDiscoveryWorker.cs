@@ -81,7 +81,10 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         catch (Exception exception)
         {
             logger.LogError(exception, "Erro da fonte {SourceName} durante a descoberta dos tickers {Tickers}", source.Name, string.Join(", ", assets.Select(asset => asset.Ticker)));
-            return;
+            // Propaga a falha para o loop externo aplicar o retry curto.
+            // Absorver a exceção aqui fazia o worker aguardar uma hora até a
+            // próxima execução, mesmo quando a indisponibilidade era transitória.
+            throw;
         }
 
         var assetByTicker = assets.ToDictionary(asset => asset.Ticker, StringComparer.OrdinalIgnoreCase);
@@ -100,7 +103,20 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         }
         if (reclassifiedDocuments > 0) await dbContext.SaveChangesAsync(cancellationToken);
 
-        var latestCandidates = LatestDocumentSelector.SelectPerTicker(candidates).ToList();
+        var assetByTickerForSelection = assets.ToDictionary(asset => asset.Ticker, StringComparer.OrdinalIgnoreCase);
+        var existingDocuments = await dbContext.Documents
+            .Where(document => document.SourceName == source.Name && assets.Select(asset => asset.Id).Contains(document.AssetId))
+            .Select(document => new { document.AssetId, document.Fingerprint, document.SourceIdentifier, document.SourceUrl })
+            .ToListAsync(cancellationToken);
+        var latestCandidates = LatestDocumentSelector.SelectLatestUnseen(candidates, candidate =>
+        {
+            if (!assetByTickerForSelection.TryGetValue(candidate.Ticker, out var asset)) return true;
+            var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);
+            return existingDocuments.Any(document => document.AssetId == asset.Id &&
+                (document.Fingerprint == fingerprint
+                 || (!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && document.SourceIdentifier == candidate.SourceIdentifier)
+                 || document.SourceUrl == candidate.SourceUrl));
+        }).ToList();
         logger.LogInformation("Fonte {SourceName} retornou {DocumentCount} candidato(s); {LatestDocumentCount} documento(s) mais recente(s) selecionado(s) para processamento", source.Name, candidates.Count, latestCandidates.Count);
         var newDocuments = 0;
         var duplicatedDocuments = 0;
