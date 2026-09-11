@@ -12,6 +12,7 @@
   }
 }
 .document-job-details { margin-top: 2rem; }
+
 .notification-panel-enter { animation: notification-panel-enter 160ms ease-out both; }
 .notification-panel-exit { animation: notification-panel-exit 160ms ease-in both; }
 @keyframes notification-panel-enter {
