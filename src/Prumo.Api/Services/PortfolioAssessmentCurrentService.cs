@@ -93,8 +93,12 @@ public sealed class PortfolioAssessmentCurrentService
                 output.AttentionPriority,
                 output.ActionRequirement,
                 output.CapitalDecisionImpact,
-                previousState is null ? AssessmentStatus.Detected : AssessmentStatus.Closed,
-                previousState?.UserState ?? AssessmentUserState.Unread,
+                // Recalculating the portfolio impact must not turn an old Radar
+                // item into a new notification. Preserve the user state from the
+                // current assessment; a closed assessment still takes precedence
+                // so a target/portfolio change cannot reopen it.
+                previousState?.Status ?? assessment.Status,
+                previousState?.UserState ?? assessment.UserState,
                 output.Summary,
                 output.WhyItMatters,
                 output.SuggestedBehavior,

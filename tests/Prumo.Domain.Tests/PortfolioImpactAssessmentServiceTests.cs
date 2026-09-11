@@ -167,6 +167,39 @@ public sealed class PortfolioImpactAssessmentServiceTests
         Assert.Equal(AssessmentUserState.Seen, replacement.UserState);
     }
 
+    [Fact]
+    public async Task Seen_radar_item_does_not_become_unread_when_portfolio_changes()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrumoDbContext(options);
+        var portfolio = new Portfolio("Carteira teste");
+        var asset = new Asset("TEST", "Ativo teste", AssetType.Stock, "Teste");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1m, 1m, 1m));
+        var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento antigo", Array.Empty<string>());
+        investmentEvent.AffectedAssets.Add(asset);
+
+        var seen = new PortfolioAssessment(
+            portfolio.Id, investmentEvent.Id, AttentionPriority.High, ActionRequirement.Review,
+            CapitalDecisionImpact.Caution, AssessmentStatus.Detected, AssessmentUserState.Seen,
+            "Avaliação já vista", "Motivo", "Acompanhar", IntelligenceConfidence.High,
+            null, PortfolioImpactAssessmentService.CurrentVersion, "snapshot-antigo", investmentEvent.Version);
+        seen.AttachInvestmentEvent(investmentEvent);
+
+        var service = new PortfolioAssessmentCurrentService(
+            db,
+            new PortfolioImpactAssessmentService(),
+            new PortfolioAssessmentFreshnessEvaluator(),
+            NullLogger<PortfolioAssessmentCurrentService>.Instance);
+
+        var current = await service.EnsureFreshAsync(portfolio, Array.Empty<TargetAllocation>(), new[] { seen }, CancellationToken.None);
+
+        var replacement = Assert.Single(current);
+        Assert.Equal(AssessmentStatus.Detected, replacement.Status);
+        Assert.Equal(AssessmentUserState.Seen, replacement.UserState);
+    }
+
     private static PortfolioImpactAssessmentOutput Assess(InvestmentEventType eventType, decimal weight, AnalysisImportance? importance = null)
     {
         var portfolio = new Portfolio("Carteira teste");

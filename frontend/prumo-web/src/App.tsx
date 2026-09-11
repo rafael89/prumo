@@ -13,6 +13,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUp, faBell, faCheckDouble, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
 import { apiBaseUrl } from './api/client'
 import { Pagination } from './components/Pagination'
+import { AppDialog } from './components/AppDialog'
 
 const apiUrl = apiBaseUrl
 
@@ -64,12 +65,17 @@ type CreatePositionRequest = {
   quantity: number
   averagePrice: number
   currentPrice: number | null
+  registerPurchase?: boolean
 }
 type UpdatePositionRequest = {
   quantity: number
   averagePrice: number
   currentPrice: number | null
+  registerPurchase?: boolean
 }
+type PurchaseConfirmation =
+  | { kind: 'create'; request: CreatePositionRequest; ticker: string }
+  | { kind: 'update'; positionId: string; request: UpdatePositionRequest; ticker: string; addedQuantity: number }
 
 const assetTypeOptions: Array<{ value: AssetType; label: string }> = [
   { value: 0, label: 'Ação' },
@@ -137,6 +143,7 @@ function App() {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null)
   const [documentSelection, setDocumentSelection] = useState<{ key: string; id: string | null }>({ key: '', id: null })
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
+  const [purchaseConfirmation, setPurchaseConfirmation] = useState<PurchaseConfirmation | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [privacyHidden, setPrivacyHidden] = useState(false)
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
@@ -451,7 +458,7 @@ function App() {
       return
     }
 
-    createPosition.mutate({
+    const request: CreatePositionRequest = {
       ticker: positionForm.ticker.trim(),
       name: positionForm.ticker.trim(),
       assetType: positionForm.assetType,
@@ -459,7 +466,8 @@ function App() {
       quantity,
       averagePrice,
       currentPrice,
-    })
+    }
+    setPurchaseConfirmation({ kind: 'create', request, ticker: request.ticker })
   }
 
   function startEditing(position: Position) {
@@ -483,7 +491,28 @@ function App() {
       return
     }
 
-    updatePosition.mutate({ positionId, request: { quantity, averagePrice, currentPrice } })
+    const request: UpdatePositionRequest = { quantity, averagePrice, currentPrice }
+    const previousQuantity = dashboard.data?.positions.find(position => position.id === positionId)?.quantity ?? quantity
+    if (quantity > previousQuantity) {
+      setPurchaseConfirmation({ kind: 'update', positionId, request, ticker: dashboard.data?.positions.find(position => position.id === positionId)?.ticker ?? 'ativo', addedQuantity: quantity - previousQuantity })
+      return
+    }
+    updatePosition.mutate({ positionId, request })
+  }
+
+  function finishPurchaseConfirmation(registerPurchase: boolean, values?: Record<string, string>) {
+    if (!purchaseConfirmation) return
+    const unitPrice = values ? parseOptionalNumber(values.unitPrice) : null
+    if (registerPurchase && (unitPrice === null || Number.isNaN(unitPrice) || unitPrice <= 0)) {
+      setFeedback({ tone: 'error', message: 'Informe um preço unitário de compra positivo.' })
+      return
+    }
+    if (purchaseConfirmation.kind === 'create') {
+      createPosition.mutate({ ...purchaseConfirmation.request, averagePrice: registerPurchase ? unitPrice! : 0, registerPurchase })
+    } else {
+      updatePosition.mutate({ positionId: purchaseConfirmation.positionId, request: { ...purchaseConfirmation.request, averagePrice: registerPurchase ? unitPrice! : purchaseConfirmation.request.averagePrice, registerPurchase } })
+    }
+    setPurchaseConfirmation(null)
   }
 
   return (
@@ -528,6 +557,16 @@ function App() {
             {activePortfolio && <div className="order-2 self-start rounded-[1.75rem] border border-amber-200 bg-amber-50/40 xl:col-start-2 xl:row-start-1 [&>section]:px-0! [&>section]:pb-0!"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={setImportProcessing} /></div>}
           </div>}
         </section>
+        {purchaseConfirmation && <AppDialog
+          title={`Registrar ${purchaseConfirmation.kind === 'create' ? 'a inclusão' : 'o aumento'} de ${purchaseConfirmation.ticker} como compra?`}
+          description={purchaseConfirmation.kind === 'create' ? 'Se confirmar, essa posição também será registrada no histórico como um aporte de compra.' : `A quantidade aumentou em ${purchaseConfirmation.addedQuantity}. Se confirmar, esse acréscimo será registrado no histórico como um aporte de compra.`}
+          fields={[{ name: 'unitPrice', label: 'Preço unitário de compra', defaultValue: purchaseConfirmation.kind === 'create' ? positionForm.currentPrice : purchaseConfirmation.request.averagePrice.toString(), inputMode: 'decimal', decimalPlaces: 2 }]}
+          confirmLabel="Sim, registrar compra"
+          cancelLabel="Não, apenas salvar"
+          onClose={() => setPurchaseConfirmation(null)}
+          onCancel={() => finishPurchaseConfirmation(false)}
+          onConfirm={values => finishPurchaseConfirmation(true, values)}
+        />}
         {route === '/radar' && activePortfolio && <div className="mx-auto grid w-full max-w-358 gap-8 px-6 pb-24 pt-3"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
         <footer className="app-footer mt-auto h-14 border-t border-slate-200 bg-white/70 px-6 py-0">

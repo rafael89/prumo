@@ -5,6 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faBan, faCheck, faEye, faEyeSlash, faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
 import { Link } from 'react-router-dom'
+import { maskDecimalInput } from '../utils/decimalInput'
 type AssetType = 0 | 1 | 2 | 3
 type PortfolioItem = { id: string; name: string; totalValue: number; positionCount: number }
 type Position = { id: string; assetId: string; assetClass: number; ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null; currentValue: number | null; portfolioWeight: number }
@@ -86,7 +87,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                 </div>
                 <div>
                   <label htmlFor="current-price" className="text-sm font-medium text-slate-700">Pre&ccedil;o de refer&ecirc;ncia</label>
-                  <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
+                  <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: maskDecimalInput(event.target.value) }))} onBlur={() => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: maskDecimalInput(current.currentPrice, true) }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
                 </div>
                 <div className="col-span-2 flex items-end md:col-span-1">
                   <button type="submit" disabled={createPosition.isPending} className="h-11.5 w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
@@ -125,7 +126,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                             </div>
                             <div className="text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
                             <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span><input aria-label="Quantidade" value={editForm.quantity} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, quantity: event.target.value }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
-                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Preço ref.</span><input aria-label="Preço de referência" value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: event.target.value }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
+                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Preço ref.</span><input aria-label="Preço de referência" inputMode="decimal" value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: maskDecimalInput(event.target.value) }))} onBlur={() => setEditForm((current: EditForm) => ({ ...current, currentPrice: maskDecimalInput(current.currentPrice, true) }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
                             <div className="text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Valor atual</span>{formatCurrency(position.currentValue, privacyHidden)}</div>
                             <div className="text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Peso</span>{position.portfolioWeight.toFixed(2)}%</div>
                             <div className="flex items-center justify-end gap-2 md:justify-center">
