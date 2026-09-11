@@ -52,6 +52,10 @@ public sealed class MetricEvidenceV2A1Tests
         var intelligence = CandidateIntelligenceBuilder.Build(candidate, asset, Array.Empty<InvestmentEvent>(), Array.Empty<ContributionAssessmentContext>());
 
         Assert.Equal(MetricApplicability.Unavailable, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.FinancialFundamental).Applicability);
+        Assert.Equal(0, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.Events).ApplicableMetricCount);
+        Assert.Equal(0, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.Events).AvailableMetricCount);
+        Assert.Equal(0, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.Assessments).ApplicableMetricCount);
+        Assert.Equal(0, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.Assessments).AvailableMetricCount);
     }
 
     [Fact]
@@ -68,6 +72,21 @@ public sealed class MetricEvidenceV2A1Tests
         Assert.Equal(MetricApplicability.Available, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.Events).Applicability);
         Assert.Equal(MetricApplicability.Available, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.Assessments).Applicability);
         Assert.Equal(MetricApplicability.Unavailable, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.FinancialFundamental).Applicability);
+        Assert.All(intelligence.DimensionalCoverage, coverage => Assert.True(coverage.AvailableMetricCount <= coverage.ApplicableMetricCount));
+    }
+
+    [Fact]
+    public void Cvm_metric_evidence_remains_available_without_affecting_other_dimensions()
+    {
+        var asset = new Asset("CVM4", "Fundo", AssetType.Fii, "Brick");
+        asset.CvmFiiMonthlyObservations.Add(new(asset.Id, "12.345.678/0001-90", DateOnly.FromDateTime(DateTime.UtcNow.Date), 1,
+            "cvm-fingerprint", "cvm-source", "v1", DateTimeOffset.UtcNow, 100m, 10m, 20m));
+        var candidate = new ContributionCandidate(CandidateIdentity.Known(asset.Id), asset.Ticker, asset.AssetClass, 100, 10, 100, 100, 100, false, Array.Empty<ContributionAssessmentContext>(), AssetType.Fii);
+
+        var intelligence = CandidateIntelligenceBuilder.Build(candidate, asset, Array.Empty<InvestmentEvent>(), Array.Empty<ContributionAssessmentContext>());
+
+        Assert.Contains(intelligence.MetricEvidence, x => x.Metric == "NetAssetValue" && x.Canonical!.SourceType == MetricEvidenceSourceType.OfficialStructured);
+        Assert.Equal(0, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.Events).AvailableMetricCount);
     }
 
     [Fact]

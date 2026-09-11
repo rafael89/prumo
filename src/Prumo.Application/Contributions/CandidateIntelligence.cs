@@ -81,10 +81,12 @@ public static class CandidateIntelligenceBuilder
         var dimensions = Enum.GetValues<CandidateIntelligenceDimension>()
             .Where(x => x is not CandidateIntelligenceDimension.Events and not CandidateIntelligenceDimension.Assessments)
             .Select(x => MetricApplicabilityResolver.Dimension(x, asset.AssetType, fundType, metricEvidence, DateTimeOffset.UtcNow)).ToArray();
+        // Events and assessments are contextual sources, not metric universes.
+        // Their presence is represented by Applicability and their own collections.
         dimensions = dimensions.Concat(new[]
         {
-            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Events, eventCoverage(events, asset.Id), 0, events.Count(x => x.AffectedAssets.Any(a => a.Id == asset.Id)), 0, Array.Empty<string>(), null),
-            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Assessments, assessments.Count > 0 ? MetricApplicability.Available : MetricApplicability.Unavailable, assessments.Count > 0 ? 1 : 0, assessments.Count > 0 ? 1 : 0, 0, assessments.Count > 0 ? Array.Empty<string>() : new[] { "Assessments indisponíveis." }, null)
+            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Events, eventCoverage(events, asset.Id), 0, 0, 0, Array.Empty<string>(), null),
+            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Assessments, assessments.Count > 0 ? MetricApplicability.Available : MetricApplicability.Unavailable, 0, 0, 0, assessments.Count > 0 ? Array.Empty<string>() : new[] { "Assessments indisponíveis." }, null)
         }).ToArray();
         var fundamentals = FinancialSection(financial.Quality.Coverage, financial.Quality.Freshness, candidate.FinancialSnapshot?.ObservedAt,
             candidate.FinancialSnapshot?.SourceReference, "Fundamentos", financial.Quality.Evidence.Count, financial.Quality.MissingData);
