@@ -10,5 +10,8 @@ public sealed class CvmFnetOptions
     public string FnetManagerUrl { get; set; } = "https://fnet.bmfbovespa.com.br/fnet/publico/abrirGerenciadorDocumentosCVM";
     public string FnetDocumentsUrl { get; set; } = "https://fnet.bmfbovespa.com.br/fnet/publico/pesquisarGerenciadorDocumentosDados";
     public int FnetDirectLookbackDays { get; set; } = 14;
+    public bool EnetDirectDiscoveryEnabled { get; set; } = true;
+    public string EnetConsultaUrl { get; set; } = "https://www.rad.cvm.gov.br/ENETWeb/frmConsultaExternaCVM.aspx";
+    public int EnetDirectLookbackDays { get; set; } = 14;
     public Dictionary<string, string> CnpjPorTicker { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

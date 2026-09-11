@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -71,6 +72,11 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
                     var normalizedCnpj = NormalizeCnpj(cnpj);
                     var tickerRecords = records.Where(record => NormalizeCnpj(record.Cnpj) == normalizedCnpj).ToList();
+                    if (isStock && options.EnetDirectDiscoveryEnabled)
+                    {
+                        var directRecords = await FindRecentEnetRecordsAsync(asset, normalizedCnpj, cancellationToken);
+                        tickerRecords.AddRange(directRecords);
+                    }
                     if (!isStock && options.FnetDirectDiscoveryEnabled)
                     {
                         var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, cancellationToken);
@@ -114,6 +120,73 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         logger.LogInformation("Fonte {SourceName} criou {CandidateCount} candidato(s)", Name, candidates.Count);
         return candidates;
     }
+
+    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentEnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct)
+    {
+        if (normalizedCnpj.Length != 14) return Array.Empty<CvmDocumentRecord>();
+        try
+        {
+            var companyCode = await ResolveEnetCompanyCodeAsync(normalizedCnpj, ct);
+            if (string.IsNullOrWhiteSpace(companyCode)) return Array.Empty<CvmDocumentRecord>();
+            var now = DateTimeOffset.UtcNow;
+            var body = new
+            {
+                dataDe = now.AddDays(-Math.Max(1, options.EnetDirectLookbackDays)).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                dataAte = now.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                empresa = companyCode, setorAtividade = "-1", categoriaEmissor = "-1", situacaoEmissor = "-1",
+                tipoParticipante = "-1", dataReferencia = "", categoria = "IPE_-1_-1_-1", periodo = "2",
+                horaIni = "", horaFim = "", palavraChave = "", ultimaDtRef = "false", tipoEmpresa = "0", token = "", versaoCaptcha = ""
+            };
+            using var response = await httpClient.PostAsJsonAsync($"{options.EnetConsultaUrl}/ListarDocumentos", body, ct);
+            response.EnsureSuccessStatusCode();
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
+            if (!json.RootElement.TryGetProperty("d", out var result) || result.ValueKind != JsonValueKind.Object
+                || !result.TryGetProperty("dados", out var data) || data.ValueKind != JsonValueKind.String
+                || result.TryGetProperty("SolicitarCaptcha", out var captcha) && string.Equals(captcha.GetString(), "S", StringComparison.OrdinalIgnoreCase))
+                return Array.Empty<CvmDocumentRecord>();
+
+            var cutoff = now.AddDays(-Math.Max(1, options.EnetDirectLookbackDays));
+            var records = new List<CvmDocumentRecord>();
+            foreach (var row in (data.GetString() ?? string.Empty).Split("&*", StringSplitOptions.RemoveEmptyEntries))
+            {
+                var fields = row.Split("$&");
+                if (fields.Length < 11 || !TryParseEnetDate(fields[6], out var delivered) || delivered < cutoff || delivered > now.AddMinutes(5)) continue;
+                if (fields[7].StartsWith("C", StringComparison.OrdinalIgnoreCase)) continue;
+                var action = fields[10];
+                var match = System.Text.RegularExpressions.Regex.Match(action, "OpenDownloadDocumentos\\(([^)]*)\\)");
+                if (!match.Success) continue;
+                var parameters = match.Groups[1].Value.Split(',').Select(value => value.Trim().Trim('\'', '"')).ToArray();
+                if (parameters.Length < 4) continue;
+                var protocol = parameters[2];
+                var sequence = parameters[0];
+                var version = parameters[1];
+                var type = parameters[3];
+                var download = $"https://www.rad.cvm.gov.br/ENETCONSULTA/frmDownloadDocumento.aspx?Tela=ext&numSequencia={Uri.EscapeDataString(sequence)}&numVersao={Uri.EscapeDataString(version)}&numProtocolo={Uri.EscapeDataString(protocol)}&descTipo={Uri.EscapeDataString(type)}&CodigoInstituicao=1";
+                records.Add(new CvmDocumentRecord(normalizedCnpj, fields[5], fields[6], fields[3], fields[2], fields[4], null, protocol, download));
+            }
+            logger.LogInformation("ENET direto mapeou {RecordCount} documento(s) recentes para {Ticker}", records.Count, asset.Ticker);
+            return records;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "ENET direto indisponível para {Ticker}; mantendo descoberta pelo IPE", asset.Ticker);
+            return Array.Empty<CvmDocumentRecord>();
+        }
+    }
+
+    private async Task<string?> ResolveEnetCompanyCodeAsync(string cnpj, CancellationToken ct)
+    {
+        using var response = await httpClient.PostAsJsonAsync($"{options.EnetConsultaUrl}/ConsultarCompanhiaAbertaCNPJ", new { cnpj }, ct);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
+        var value = json.RootElement.TryGetProperty("d", out var result) ? result.GetString() : null;
+        var match = value is null ? null : System.Text.RegularExpressions.Regex.Match(value, "(?:^|,)C_([0-9]+)");
+        return match?.Success == true ? match.Groups[1].Value : null;
+    }
+
+    private static bool TryParseEnetDate(string? value, out DateTimeOffset date)
+        => DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
 
     private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct)
     {
