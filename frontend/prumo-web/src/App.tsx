@@ -22,6 +22,7 @@ type Feedback = { tone: 'success' | 'error'; message: string } | null
 type ThemePreference = 'system' | 'light' | 'dark'
 type RadarNotificationItem = {
   assessmentId: string
+  documentAnalysisId: string
   documentId?: string | null
   evidence?: Array<{ documentId: string }>
   attentionPriority: number | string
@@ -314,9 +315,12 @@ function App() {
     } catch {
       notified = new Set()
     }
-    const next = items.find(item => !notified.has(item.assessmentId))
+    // The assessment is versioned again when the portfolio or its target
+    // allocation changes. The document is the user-facing notification unit,
+    // so those technical replacements must not produce a new toast.
+    const next = items.find(item => !notified.has(item.documentAnalysisId))
     if (!next) return
-    notified.add(next.assessmentId)
+    notified.add(next.documentAnalysisId)
     try {
       localStorage.setItem(storageKey, JSON.stringify(Array.from(notified).slice(-200)))
     } catch {
@@ -533,7 +537,7 @@ function App() {
             <button type="button" aria-label={themePreference === 'system' ? 'Personalizar tema' : 'Seguir tema do sistema'} title={themePreference === 'system' ? `Tema do sistema: ${darkMode ? 'dark' : 'claro'}` : 'Seguir tema do sistema'} onClick={() => setThemePreference(current => current === 'system' ? (darkMode ? 'light' : 'dark') : 'system')} className="theme-toggle order-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 md:order-3"><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /></button>
           </div>
         </nav>
-        {notificationToast && <div role="status" className="fixed right-5 top-20 z-40 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg"><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={() => setNotificationToast(null)} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={() => setNotificationToast(null)} className="text-lg leading-none text-amber-800">×</button></div></div>}
+        {notificationToast && <div role="status" className="fixed left-1/2 top-20 z-40 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg"><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={() => setNotificationToast(null)} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={() => setNotificationToast(null)} className="text-lg leading-none text-amber-800">×</button></div></div>}
         {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} />}
