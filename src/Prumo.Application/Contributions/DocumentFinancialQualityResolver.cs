@@ -18,7 +18,7 @@ public static class DocumentFinancialQualityResolver
             return resolution?.Status == MetricEvidenceResolutionStatus.Conflict ? null : resolution?.Canonical?.Value;
         }
         var first = resolved[0];
-        var source = first.SourceType == MetricEvidenceSourceType.Document ? FinancialDataSource.Derived : first.SourceReference == nameof(FinancialDataSource.Provider) ? FinancialDataSource.Provider : FinancialDataSource.Manual;
+        var source = first.SourceType is MetricEvidenceSourceType.Document or MetricEvidenceSourceType.OfficialStructured ? FinancialDataSource.Derived : first.SourceReference == nameof(FinancialDataSource.Provider) ? FinancialDataSource.Provider : FinancialDataSource.Manual;
         return new(reference, period, first.ObservedAt ?? first.ExtractedAt ?? DateTimeOffset.MinValue, source,
             Value("NetIncome"), Value("Equity"), Value("TotalDebt"), Value("Cash"), Value("Roe"), Value("PriceEarnings"), Value("PriceBook"), Value("EvEbitda"), Value("DividendYield"),
             first.SourceReference, Value("Revenue"), Value("Ebitda"), Value("Roic"), Value("NetMargin"));

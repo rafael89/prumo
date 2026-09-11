@@ -33,6 +33,7 @@ public sealed class PrumoDbContext : DbContext
     public DbSet<AssetFundamentalSnapshot> AssetFundamentalSnapshots => Set<AssetFundamentalSnapshot>();
     public DbSet<AssetValuationSnapshot> AssetValuationSnapshots => Set<AssetValuationSnapshot>();
     public DbSet<DocumentFinancialFact> DocumentFinancialFacts => Set<DocumentFinancialFact>();
+    public DbSet<CvmFiiMonthlyObservation> CvmFiiMonthlyObservations => Set<CvmFiiMonthlyObservation>();
     public DbSet<ContributionGuidanceJob> ContributionGuidanceJobs => Set<ContributionGuidanceJob>();
     public DbSet<PortfolioHistoricalAnchor> PortfolioHistoricalAnchors => Set<PortfolioHistoricalAnchor>();
     public DbSet<PortfolioHistoricalAnchorItem> PortfolioHistoricalAnchorItems => Set<PortfolioHistoricalAnchorItem>();

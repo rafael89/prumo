@@ -71,6 +71,9 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.Configure<DocumentBootstrapOptions>(context.Configuration.GetSection("DocumentBootstrap"));
         services.Configure<DocumentRetentionOptions>(context.Configuration.GetSection("DocumentRetention"));
         services.AddHttpClient<CvmFnetDocumentSource>();
+        services.AddHttpClient<CvmFiiMonthlyStructuredSource>();
+        services.AddScoped<CvmFiiMonthlyIngestionService>();
+        services.Configure<CvmFiiIngestionOptions>(context.Configuration.GetSection("CvmFiiIngestion"));
         services.AddHttpClient("documents");
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));
         services.Configure<AiProviderOptions>(context.Configuration.GetSection("AI"));
@@ -95,6 +98,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
         services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(context.Configuration["Storage:RootPath"] ?? "/storage"));
         services.AddHostedService<DocumentDiscoveryWorker>();
+        services.AddHostedService<CvmFiiMonthlyIngestionWorker>();
         services.AddHostedService<DocumentStorageRepairWorker>();
         services.AddHostedService<StorageMaintenanceWorker>();
         services.AddHostedService<RadarRepairWorker>();

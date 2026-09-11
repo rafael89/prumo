@@ -424,6 +424,66 @@ namespace Prumo.Infrastructure.Migrations
                     b.ToTable("ContributionGuidanceJobs");
                 });
 
+            modelBuilder.Entity("Prumo.Domain.Entities.CvmFiiMonthlyObservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("Cash")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("FundClassCnpj")
+                        .IsRequired()
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)");
+
+                    b.Property<decimal?>("NavPerShare")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<decimal?>("NetAssetValue")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<DateTimeOffset>("ObservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("ReferenceDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("SchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("SourceVersion")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("AssetId", "FundClassCnpj", "ReferenceDate", "ObservedAt");
+
+                    b.ToTable("CvmFiiMonthlyObservations");
+                });
+
             modelBuilder.Entity("Prumo.Domain.Entities.Document", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1583,6 +1643,17 @@ namespace Prumo.Infrastructure.Migrations
                     b.Navigation("Asset");
                 });
 
+            modelBuilder.Entity("Prumo.Domain.Entities.CvmFiiMonthlyObservation", b =>
+                {
+                    b.HasOne("Prumo.Domain.Entities.Asset", "Asset")
+                        .WithMany("CvmFiiMonthlyObservations")
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
             modelBuilder.Entity("Prumo.Domain.Entities.Document", b =>
                 {
                     b.HasOne("Prumo.Domain.Entities.Asset", "Asset")
@@ -1866,6 +1937,8 @@ namespace Prumo.Infrastructure.Migrations
             modelBuilder.Entity("Prumo.Domain.Entities.Asset", b =>
                 {
                     b.Navigation("CurrencyExposures");
+
+                    b.Navigation("CvmFiiMonthlyObservations");
 
                     b.Navigation("DocumentFinancialFacts");
 

@@ -51,7 +51,7 @@ public sealed class MetricEvidenceV2A1Tests
 
         var intelligence = CandidateIntelligenceBuilder.Build(candidate, asset, Array.Empty<InvestmentEvent>(), Array.Empty<ContributionAssessmentContext>());
 
-        Assert.Equal(MetricApplicability.NotApplicable, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.FinancialFundamental).Applicability);
+        Assert.Equal(MetricApplicability.Unavailable, intelligence.DimensionalCoverage.Single(x => x.Dimension == CandidateIntelligenceDimension.FinancialFundamental).Applicability);
     }
 
     [Fact]
