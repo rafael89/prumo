@@ -117,6 +117,26 @@ public sealed class CvmFnetDocumentSourceTests
     }
 
     [Fact]
+    public async Task MantemCsvQuandoFnetRetornaHtmlEmVezDeJson()
+    {
+        const string csv = "CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;TP_DOC;NM_ARQ;ID_DOC;LINK_ARQ\n" +
+            "08.431.747/0001-06;31/07/2026;05/08/2026;Fato Relevante;fato.pdf;1306470;https://dados.cvm.gov.br/documentos/fato.pdf\n";
+        using var client = new HttpClient(new FnetHandler(csv, "<html>WAF challenge</html>"));
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            DocumentosEventuaisUrlTemplate = "https://dados.cvm.gov.br/eventual_{0}",
+            FnetManagerUrl = "https://fnet.test/manager",
+            FnetDocumentsUrl = "https://fnet.test/documents"
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidates = await source.FindAsync(new[]
+            { new DocumentSourceAsset("HGBS11", "08.431.747/0001-06", AssetClass.Fii) });
+
+        Assert.Single(candidates);
+        Assert.Equal("1306470", candidates[0].SourceIdentifier);
+    }
+
+    [Fact]
     public async Task DescartaTickerSemResolucaoCvm()
     {
         using var client = new HttpClient(new CsvHandler("header\n"));

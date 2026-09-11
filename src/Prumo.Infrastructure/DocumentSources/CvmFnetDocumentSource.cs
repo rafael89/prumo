@@ -168,6 +168,19 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             return records;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(
+                "ENET direto indisponível para {Ticker}; mantendo descoberta pelo IPE (HTTP {StatusCode})",
+                asset.Ticker,
+                (int?)exception.StatusCode ?? 0);
+            return Array.Empty<CvmDocumentRecord>();
+        }
+        catch (JsonException)
+        {
+            logger.LogWarning("ENET direto retornou uma resposta inválida para {Ticker}; mantendo descoberta pelo IPE", asset.Ticker);
+            return Array.Empty<CvmDocumentRecord>();
+        }
         catch (Exception exception)
         {
             logger.LogWarning(exception, "ENET direto indisponível para {Ticker}; mantendo descoberta pelo IPE", asset.Ticker);
@@ -230,6 +243,19 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             return records;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(
+                "FNET direto indisponível para {Ticker}; mantendo descoberta pelo CSV (HTTP {StatusCode})",
+                asset.Ticker,
+                (int?)exception.StatusCode ?? 0);
+            return Array.Empty<CvmDocumentRecord>();
+        }
+        catch (JsonException)
+        {
+            logger.LogWarning("FNET direto retornou uma resposta não-JSON para {Ticker}; mantendo descoberta pelo CSV", asset.Ticker);
+            return Array.Empty<CvmDocumentRecord>();
+        }
         catch (Exception exception)
         {
             // The public FNET grid is protected by an upstream WAF in some
