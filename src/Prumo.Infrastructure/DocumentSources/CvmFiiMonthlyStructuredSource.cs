@@ -19,11 +19,14 @@ public sealed record CvmFiiMonthlyRecord(
     string SchemaVersion,
     string Fingerprint);
 
+public sealed record CvmFiiMonthlySourceDiagnostics(string Url, int ActiveRows, int ComplementRows, int RawRows, int MatchedRows);
+
 public sealed class CvmFiiMonthlyStructuredSource
 {
     public const string SchemaVersion = "cvm-fii-inf-mensal-v2026-01";
     private readonly HttpClient httpClient;
     private readonly CvmFnetOptions options;
+    public CvmFiiMonthlySourceDiagnostics Diagnostics { get; private set; } = new(string.Empty, 0, 0, 0, 0);
 
     public CvmFiiMonthlyStructuredSource(HttpClient httpClient, Microsoft.Extensions.Options.IOptions<CvmFnetOptions> options)
     {
@@ -33,23 +36,30 @@ public sealed class CvmFiiMonthlyStructuredSource
 
     public async Task<IReadOnlyList<CvmFiiMonthlyRecord>> FindAsync(IReadOnlyCollection<CvmFiiStructuredAsset> assets, CancellationToken cancellationToken = default)
     {
-        var cnpjs = assets.Where(x => x.AssetType == AssetType.Fii)
-            .Select(x => NormalizeCnpj(x.Cnpj)).Where(x => x.Length == 14).ToHashSet();
-        if (cnpjs.Count == 0) return Array.Empty<CvmFiiMonthlyRecord>();
-
         var year = DateTimeOffset.UtcNow.Year;
         var url = string.Format(CultureInfo.InvariantCulture, options.InformeMensalFiiUrlTemplate, year);
+        var cnpjs = assets.Where(x => x.AssetType == AssetType.Fii)
+            .Select(x => NormalizeCnpj(x.Cnpj)).Where(x => x.Length == 14).ToHashSet();
+        if (cnpjs.Count == 0) { Diagnostics = new(url, 0, 0, 0, 0); return Array.Empty<CvmFiiMonthlyRecord>(); }
+
         using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        return ParseZip(bytes, cnpjs, url);
+        var records = ParseZip(bytes, cnpjs, url, out var activeRows, out var complementRows);
+        Diagnostics = new(url, activeRows, complementRows, activeRows + complementRows, records.Count);
+        return records;
     }
 
     public static IReadOnlyList<CvmFiiMonthlyRecord> ParseZip(byte[] content, IReadOnlySet<string> cnpjs, string sourceReference)
+        => ParseZip(content, cnpjs, sourceReference, out _, out _);
+
+    private static IReadOnlyList<CvmFiiMonthlyRecord> ParseZip(byte[] content, IReadOnlySet<string> cnpjs, string sourceReference, out int activeRowCount, out int complementRowCount)
     {
         using var archive = new ZipArchive(new MemoryStream(content), ZipArchiveMode.Read);
         var active = ReadCsv(archive, "inf_mensal_fii_ativo_passivo_");
         var complement = ReadCsv(archive, "inf_mensal_fii_complemento_");
+        activeRowCount = active.Count;
+        complementRowCount = complement.Count;
         var rows = new Dictionary<(string Cnpj, DateOnly Date), MutableRow>();
         foreach (var row in active.Concat(complement))
         {

@@ -72,7 +72,9 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.Configure<DocumentRetentionOptions>(context.Configuration.GetSection("DocumentRetention"));
         services.AddHttpClient<CvmFnetDocumentSource>();
         services.AddHttpClient<CvmFiiMonthlyStructuredSource>();
+        services.AddHttpClient<CvmFiiCnpjEnrichmentService>();
         services.AddScoped<CvmFiiMonthlyIngestionService>();
+        services.AddScoped<CvmFiiCnpjEnrichmentService>();
         services.Configure<CvmFiiIngestionOptions>(context.Configuration.GetSection("CvmFiiIngestion"));
         services.AddHttpClient("documents");
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));

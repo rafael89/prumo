@@ -43,7 +43,11 @@ public sealed class B3XlsxPortfolioImporter : IPortfolioImporter
                     if (string.Equals(cells.GetValueOrDefault("G"), "Direito", StringComparison.OrdinalIgnoreCase)) { warnings.Add($"Direito {ticker} ignorado: não é uma posição de ativo suportada."); continue; }
                     if (!TryDecimal(cells.GetValueOrDefault("I"), out var quantity) || !TryDecimal(cells.GetValueOrDefault("N"), out var value) || !TryDecimal(cells.GetValueOrDefault("M"), out var price))
                         return Task.FromResult(new NormalizedPortfolioImport(PortfolioImportSource.B3File, null, SnapshotCompleteness.Unknown, [], warnings, [$"Valores inválidos para {ticker}."]));
-                    items.Add(new(ticker, cells.GetValueOrDefault("A", ticker), sheet == 2 ? AssetType.Fii : AssetType.Stock, sheet == 2 ? AssetClass.Fii : AssetClass.BrazilianStock, quantity, price, value, null, cells.GetValueOrDefault("B"), cells.GetValueOrDefault("E")));
+                    // Column E is the B3 instrument identifier (ISIN), not a
+                    // fund CNPJ. Never let it cross the import boundary as a
+                    // CNPJ; FII CNPJs are enriched from the official CVM
+                    // cadastral source after import.
+                    items.Add(new(ticker, cells.GetValueOrDefault("A", ticker), sheet == 2 ? AssetType.Fii : AssetType.Stock, sheet == 2 ? AssetClass.Fii : AssetClass.BrazilianStock, quantity, price, value, null, cells.GetValueOrDefault("B"), null));
                 }
             }
             if (zip.GetEntry("xl/worksheets/sheet3.xml") is null) return Task.FromResult(Failure("O arquivo não contém a aba de Tesouro Direto esperada."));

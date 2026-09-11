@@ -28,11 +28,12 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
     {
         if (request.Amount <= 0) return BadRequest("O valor do aporte deve ser positivo.");
 
-        var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.GeographicExposures)
+        var portfolio = await db.Portfolios.AsSplitQuery().Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.GeographicExposures)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.CurrencyExposures)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.FundamentalSnapshots)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.ValuationSnapshots)
             .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.DocumentFinancialFacts)
+            .Include(x => x.Positions).ThenInclude(x => x.Asset).ThenInclude(x => x!.CvmFiiMonthlyObservations)
             .SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
         if (assetMetadataCatalog is not null) await assetMetadataCatalog.ApplyAsync(ct);
@@ -116,9 +117,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             }).ToList();
         var positionAssetIds = portfolio.Positions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
-        var catalogCandidates = await db.Assets.AsNoTracking()
+        var catalogCandidates = await db.Assets.AsNoTracking().AsSplitQuery()
             .Include(x => x.GeographicExposures).Include(x => x.CurrencyExposures)
-            .Include(x => x.FundamentalSnapshots).Include(x => x.ValuationSnapshots).Include(x => x.DocumentFinancialFacts)
+            .Include(x => x.FundamentalSnapshots).Include(x => x.ValuationSnapshots).Include(x => x.DocumentFinancialFacts).Include(x => x.CvmFiiMonthlyObservations)
             .Where(x => x.IsActive && (targetClasses.Contains(x.AssetClass) || targetClasses.Contains(AssetClass.International) && x.AssetType == AssetType.Etf) && !positionAssetIds.Contains(x.Id))
             .OrderBy(x => x.Ticker)
             .ToListAsync(ct);

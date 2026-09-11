@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using Prumo.Infrastructure.MarketData;
+using Prumo.Infrastructure.DocumentSources;
 
 namespace Prumo.Worker;
 
@@ -9,16 +11,21 @@ public sealed class CvmFiiMonthlyIngestionWorker(IServiceScopeFactory scopeFacto
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            var startedAt = Stopwatch.GetTimestamp();
             try
             {
+                logger.LogInformation("CVM FII ingestion execution started");
                 using var scope = scopeFactory.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<CvmFiiMonthlyIngestionService>().IngestAsync(stoppingToken);
+                var enrichment = await scope.ServiceProvider.GetRequiredService<CvmFiiCnpjEnrichmentService>().EnrichAsync(stoppingToken);
+                var source = scope.ServiceProvider.GetRequiredService<CvmFiiMonthlyStructuredSource>();
+                var ingestion = await scope.ServiceProvider.GetRequiredService<CvmFiiMonthlyIngestionService>().IngestAsync(stoppingToken);
+                logger.LogInformation("CVM FII ingestion execution completed: year={Year}, sourceUrl={SourceUrl}, eligibleAssets={EligibleAssets}, assetsWithCnpj={AssetsWithCnpj}, rawRows={RawRows}, matchedAssets={MatchedAssets}, observationsInserted={Inserted}, observationsSkipped={Skipped}, enrichedAssets={EnrichedAssets}, conflicts={Conflicts}, normalizationFailures={NormalizationFailures}, durationMs={DurationMs}", DateTimeOffset.UtcNow.Year, source.Diagnostics.Url, ingestion.EligibleAssets, ingestion.AssetsWithCnpj, source.Diagnostics.RawRows, ingestion.MatchedAssets, ingestion.ObservationsInserted, ingestion.ObservationsSkipped, enrichment.EnrichedAssets, enrichment.Conflicts, enrichment.NormalizationFailures, Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
                 await Task.Delay(options.Value.Interval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception exception)
             {
-                logger.LogError(exception, "Falha na ingestão estruturada de FII da CVM; nova tentativa no próximo ciclo.");
+                logger.LogError(exception, "CVM FII ingestion execution failed: durationMs={DurationMs}; retrying next cycle", Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
                 await Task.Delay(options.Value.FailureDelay, stoppingToken);
             }
         }
