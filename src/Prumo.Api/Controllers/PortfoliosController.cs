@@ -143,7 +143,16 @@ public sealed class PortfoliosController : ControllerBase
             .GroupBy(a => a.InvestmentEvent!.DocumentAnalysisId)
             .Select(SelectDashboardRepresentative)
             .ToList();
-        var attention = assessments.Where(a => a.InvestmentEvent!.DocumentAnalysis!.Importance is AnalysisImportance.Critical or AnalysisImportance.Relevant).Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(a => CreateDashboardAssessment(a, eventsByDocument.GetValueOrDefault(a.InvestmentEvent!.DocumentAnalysisId))).ToList();
+        // The card displays the document publication date, so order the Radar
+        // by that same date. Priority is only a tie-breaker; otherwise an older
+        // high-priority document can appear before a newer one.
+        var attention = assessments.Where(a => a.InvestmentEvent!.DocumentAnalysis!.Importance is AnalysisImportance.Critical or AnalysisImportance.Relevant).Where(RadarAttentionNowPolicy.RequiresAttention)
+            .OrderByDescending(a => a.InvestmentEvent!.DocumentAnalysis!.Document!.PublishedAt)
+            .ThenByDescending(a => a.AttentionPriority)
+            .ThenByDescending(a => a.InvestmentEvent!.OccurredAt)
+            .ThenByDescending(a => a.GeneratedAt)
+            .ThenByDescending(a => a.Id)
+            .Select(a => CreateDashboardAssessment(a, eventsByDocument.GetValueOrDefault(a.InvestmentEvent!.DocumentAnalysisId))).ToList();
         var attentionIds = attention.Select(x => x.AssessmentId).ToHashSet();
         // The card displays the document publication date, so use that same
         // date for the ordering shown to users.
