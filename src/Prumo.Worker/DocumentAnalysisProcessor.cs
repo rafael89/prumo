@@ -245,7 +245,7 @@ public sealed class DocumentAnalysisProcessor
             var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
             var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
             var relevantPositions = portfolio.Positions.Where(position => assetIds.Contains(position.AssetId) && position.Quantity > 0).Select(position => new RelevantPositionContext(position.AssetId, position.Asset?.Ticker ?? string.Empty, position.Asset?.AssetClass ?? AssetClass.Other, position.CurrentValue ?? 0, position.PortfolioWeight)).ToList();
-            var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health));
+            var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health, analysis.Importance, analysis.RequiresAction, analysis.SuggestedAction));
             var snapshotKey = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
             if (await dbContext.PortfolioAssessments.AnyAsync(item => item.PortfolioId == portfolio.Id && item.InvestmentEventId == investmentEvent.Id && item.PortfolioSnapshotKey == snapshotKey && item.TargetAllocationKey == targetKey && item.AssessmentVersion == portfolioImpactAssessmentService.Version, cancellationToken)) continue;
             dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, AssessmentStatus.Detected, AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, portfolioImpactAssessmentService.Version, snapshotKey, investmentEvent.Version));
@@ -292,7 +292,7 @@ public sealed class DocumentAnalysisProcessor
                     .Where(x => assetIds.Contains(x.AssetId) && x.Quantity > 0)
                     .Select(x => new RelevantPositionContext(x.AssetId, x.Asset?.Ticker ?? string.Empty, x.Asset?.AssetClass ?? AssetClass.Other, x.CurrentValue ?? 0, x.PortfolioWeight))
                     .ToList();
-                var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health));
+                var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health, analysis.Importance, analysis.RequiresAction, analysis.SuggestedAction));
                 var assessmentVersion = portfolioImpactAssessmentService.Version;
                 var portfolioSnapshotKey = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
                 if (await dbContext.PortfolioAssessments.AnyAsync(x => x.PortfolioId == portfolio.Id && x.InvestmentEventId == investmentEvent.Id && x.PortfolioSnapshotKey == portfolioSnapshotKey && x.TargetAllocationKey == targetKey && x.AssessmentVersion == assessmentVersion, cancellationToken)) continue;

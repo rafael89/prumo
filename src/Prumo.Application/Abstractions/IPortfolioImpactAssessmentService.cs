@@ -23,7 +23,10 @@ public sealed record PortfolioImpactAssessmentContext(
     InvestmentEvent InvestmentEvent,
     DomainPortfolio Portfolio,
     IReadOnlyList<RelevantPositionContext> RelevantPositions,
-    PortfolioHealthResult? PortfolioHealth);
+    PortfolioHealthResult? PortfolioHealth,
+    AnalysisImportance? AnalysisImportance = null,
+    bool? RequiresAction = null,
+    SuggestedAction? SuggestedAction = null);
 
 public sealed record PortfolioImpactAssessmentOutput(
     AttentionPriority AttentionPriority,

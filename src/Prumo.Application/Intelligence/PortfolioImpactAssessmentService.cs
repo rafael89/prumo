@@ -7,7 +7,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
 {
     // v5 reaplica a regra percentual com os limites balanceados de 3%, 5% e 10%.
     // v4 usou a regra de existência de posição e não deve ser reutilizada.
-    public const string CurrentVersion = "portfolio-impact-v5";
+    public const string CurrentVersion = "portfolio-impact-v6";
     private const decimal MediumExposureThreshold = 3m;
     private const decimal HighExposureThreshold = 5m;
     private const decimal CriticalExposureThreshold = 10m;
@@ -23,14 +23,18 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         var largestExposure = context.RelevantPositions.Count == 0 ? 0 : context.RelevantPositions.Max(x => x.PortfolioWeight);
         var hasExposure = context.RelevantPositions.Count > 0 && totalExposure > 0;
         var usesMaterialEventThreshold = context.InvestmentEvent.EventType is InvestmentEventType.CorporateAction;
+        var isInformational = context.AnalysisImportance == AnalysisImportance.Informative
+            && context.RequiresAction == false
+            && context.SuggestedAction == SuggestedAction.NoAction;
 
-        var action = context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
+        var action = isInformational ? ActionRequirement.None
+            : context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
             ? hasExposure && largestExposure >= HighExposureThreshold ? ActionRequirement.Review : ActionRequirement.Monitor
             : largestExposure >= HighExposureThreshold ? ActionRequirement.Review
             : hasExposure && largestExposure > MediumExposureThreshold ? ActionRequirement.Monitor
             : ActionRequirement.None;
 
-        var capitalImpact = context.InvestmentEvent.EventType switch
+        var capitalImpact = isInformational ? CapitalDecisionImpact.None : context.InvestmentEvent.EventType switch
         {
             InvestmentEventType.Liquidation when largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Block,
             InvestmentEventType.CorporateAction when hasExposure && largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Caution,
@@ -39,7 +43,8 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         };
 
         var attentionExposureThreshold = usesMaterialEventThreshold ? HighExposureThreshold : MediumExposureThreshold;
-        var attention = largestExposure >= CriticalExposureThreshold ? AttentionPriority.Critical
+        var attention = isInformational ? AttentionPriority.Low
+            : largestExposure >= CriticalExposureThreshold ? AttentionPriority.Critical
             : largestExposure >= HighExposureThreshold ? AttentionPriority.High
             : largestExposure > attentionExposureThreshold || action is ActionRequirement.Review or ActionRequirement.Act || capitalImpact >= CapitalDecisionImpact.Caution
                 ? AttentionPriority.Medium

@@ -89,7 +89,8 @@ public sealed class PortfolioAssessmentCurrentService
                     x.PortfolioWeight))
                 .ToList();
             var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
-            var output = impactService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(assessment.InvestmentEvent, portfolio, relevant, health));
+            var analysis = assessment.InvestmentEvent.DocumentAnalysis;
+            var output = impactService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(assessment.InvestmentEvent, portfolio, relevant, health, analysis?.Importance, analysis?.RequiresAction, analysis?.SuggestedAction));
             var previousState = stateByDocument.GetValueOrDefault(assessment.InvestmentEvent.DocumentAnalysisId);
             var replacement = new PortfolioAssessment(
                 portfolio.Id,

@@ -65,6 +65,39 @@ public sealed class PortfolioImpactAssessmentServiceTests
         Assert.Equal(AttentionPriority.Critical, result.AttentionPriority);
     }
 
+    [Theory]
+    [InlineData(2.99, AttentionPriority.Low)]
+    [InlineData(3, AttentionPriority.Low)]
+    [InlineData(5, AttentionPriority.Low)]
+    [InlineData(10, AttentionPriority.Low)]
+    public void Informative_no_action_does_not_become_attention_by_exposure(decimal weight, AttentionPriority expected)
+    {
+        var result = AssessInformative(InvestmentEventType.Distribution, weight);
+
+        Assert.Equal(expected, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.None, result.ActionRequirement);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
+    }
+
+    [Fact]
+    public void Exceptional_distribution_keeps_normal_exposure_behavior()
+    {
+        var result = Assess(InvestmentEventType.Distribution, 6m, AnalysisImportance.Relevant, requiresAction: true, action: SuggestedAction.Monitor);
+
+        Assert.Equal(AttentionPriority.High, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+    }
+
+    [Fact]
+    public void Relevant_capital_raise_is_not_suppressed()
+    {
+        var result = Assess(InvestmentEventType.CapitalRaise, 6m, AnalysisImportance.Relevant, requiresAction: true, action: SuggestedAction.Monitor);
+
+        Assert.Equal(AttentionPriority.High, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+        Assert.Equal(CapitalDecisionImpact.Caution, result.CapitalDecisionImpact);
+    }
+
     [Fact]
     public void Capital_raise_below_exposure_threshold_is_low()
     {
@@ -116,7 +149,7 @@ public sealed class PortfolioImpactAssessmentServiceTests
         var current = await service.EnsureFreshAsync(portfolio, Array.Empty<TargetAllocation>(), new[] { first, second }, CancellationToken.None);
 
         Assert.Single(current);
-        Assert.Equal("portfolio-impact-v5", current[0].AssessmentVersion);
+        Assert.Equal("portfolio-impact-v6", current[0].AssessmentVersion);
         Assert.Equal(1, await db.PortfolioAssessments.CountAsync());
     }
 
@@ -234,20 +267,26 @@ public sealed class PortfolioImpactAssessmentServiceTests
         Assert.DoesNotContain(current, assessment => assessment.UserState == AssessmentUserState.Unread);
     }
 
-    private static PortfolioImpactAssessmentOutput Assess(InvestmentEventType eventType, decimal weight, AnalysisImportance? importance = null)
+    private static PortfolioImpactAssessmentOutput Assess(InvestmentEventType eventType, decimal weight, AnalysisImportance? importance = null, bool requiresAction = false, SuggestedAction action = SuggestedAction.Monitor)
     {
         var portfolio = new Portfolio("Carteira teste");
         var asset = new Asset("TEST", "Ativo teste", AssetType.Stock, "Teste");
         var investmentEvent = new InvestmentEvent(Guid.NewGuid(), eventType, DateTimeOffset.UtcNow, "Evento teste", Array.Empty<string>());
         if (importance is not null)
             typeof(InvestmentEvent).GetProperty(nameof(InvestmentEvent.DocumentAnalysis))!.SetValue(investmentEvent,
-                new DocumentAnalysis(Guid.NewGuid(), Guid.NewGuid(), "test", "test-v1", importance.Value, AnalysisClassification.Other, false, SuggestedAction.Monitor, "Resumo", "Impacto", "Impacto", new[] { asset.Ticker }, 1, "{}"));
+                new DocumentAnalysis(Guid.NewGuid(), Guid.NewGuid(), "test", "test-v1", importance.Value, AnalysisClassification.Other, requiresAction, action, "Resumo", "Impacto", "Impacto", new[] { asset.Ticker }, 1, "{}"));
         return new PortfolioImpactAssessmentService().AssessPortfolioImpact(new(
             investmentEvent,
             portfolio,
             new[] { new RelevantPositionContext(asset.Id, asset.Ticker, asset.AssetClass, weight, weight) },
-            null));
+            null,
+            importance,
+            requiresAction,
+            action));
     }
+
+    private static PortfolioImpactAssessmentOutput AssessInformative(InvestmentEventType eventType, decimal weight)
+        => Assess(eventType, weight, AnalysisImportance.Informative, false, SuggestedAction.NoAction);
 
     private static PortfolioAssessment CreateAssessment(Guid portfolioId, InvestmentEvent investmentEvent, string version)
     {
