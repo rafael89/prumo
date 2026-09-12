@@ -122,6 +122,12 @@ public sealed class DocumentAnalysisProcessor
             result.Confidence,
             result.RawResponse);
         dbContext.DocumentAnalyses.Add(analysis);
+        foreach (var rejection in result.RejectedFinancialFacts ?? Array.Empty<AiFinancialFactRejection>())
+        {
+            logger.LogWarning(
+                "Financial fact rejected during normalization; DocumentId={DocumentId}; AssetId={AssetId}; Ticker={Ticker}; DocumentAnalysisId={DocumentAnalysisId}; Metric={Metric}; Value={Value}; Unit={Unit}; Currency={Currency}; ReferencePeriod={ReferencePeriod}; PeriodType={PeriodType}; RejectionReason={RejectionReason}; PromptVersion={PromptVersion}; Model={Model}",
+                document.Id, document.AssetId, document.Asset?.Ticker, analysis.Id, rejection.Metric, rejection.Value, rejection.Unit, rejection.Currency, rejection.ReferencePeriod, rejection.PeriodType, rejection.Reason, analysis.PromptVersion, analysis.Model);
+        }
         foreach (var fact in result.FinancialFacts ?? Array.Empty<AiFinancialFactResult>())
         {
             var exists = await dbContext.DocumentFinancialFacts.AnyAsync(x => x.DocumentId == document.Id && x.AssetId == document.AssetId && x.Metric == fact.Metric && x.ReferencePeriod == fact.ReferencePeriod && x.PeriodType == fact.PeriodType, cancellationToken);

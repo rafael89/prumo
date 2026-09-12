@@ -29,7 +29,11 @@ public sealed class AiAnalysisValidator
             if (string.IsNullOrWhiteSpace(eventPayload.Summary)) throw new InvalidOperationException("Resumo do evento ausente.");
             return new AiInvestmentEventResult(eventType, eventPayload.OccurredAt?.ToUniversalTime(), eventPayload.Summary.Trim(), (eventPayload.Facts ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToArray(), (eventPayload.AffectedAssets ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray());
         }).ToArray();
-        var financialFacts = (payload.FinancialFacts ?? Array.Empty<AiFinancialFactPayload>()).Select(DocumentFinancialFactNormalizer.Normalize).Where(x => x is not null).Select(x => x!).GroupBy(x => new { x.Metric, x.ReferencePeriod, x.PeriodType }).Select(x => x.OrderByDescending(f => f.Confidence).First()).ToArray();
+        var normalizedFinancialFacts = (payload.FinancialFacts ?? Array.Empty<AiFinancialFactPayload>())
+            .Select(fact => (Payload: fact, Result: DocumentFinancialFactNormalizer.NormalizeWithReason(fact)))
+            .ToArray();
+        var financialFacts = normalizedFinancialFacts.Where(x => x.Result.IsAccepted).Select(x => x.Result.Fact!).GroupBy(x => new { x.Metric, x.ReferencePeriod, x.PeriodType }).Select(x => x.OrderByDescending(f => f.Confidence).First()).ToArray();
+        var rejectedFinancialFacts = normalizedFinancialFacts.Where(x => !x.Result.IsAccepted).Select(x => new AiFinancialFactRejection(x.Payload.Metric, x.Payload.Value, x.Payload.Unit, x.Payload.Currency, x.Payload.ReferencePeriod, x.Payload.PeriodType, x.Result.RejectionReason!)).ToArray();
 
         if (classification == AnalysisClassification.Distribution && IsRoutineDistribution(summary, impact, events))
         {
@@ -48,7 +52,7 @@ public sealed class AiAnalysisValidator
             portfolioImpact,
             payload.AffectedAssets.Where(asset => !string.IsNullOrWhiteSpace(asset)).Select(asset => asset.Trim().ToUpperInvariant()).Distinct().ToArray(),
             payload.Confidence.Value,
-            LimitRawResponse(rawResponse), events, null, financialFacts);
+            LimitRawResponse(rawResponse), events, null, financialFacts, rejectedFinancialFacts);
     }
 
     private static string LimitRawResponse(string rawResponse) => string.IsNullOrWhiteSpace(rawResponse)

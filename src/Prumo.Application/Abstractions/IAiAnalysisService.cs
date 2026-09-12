@@ -84,6 +84,16 @@ public sealed record AiAnalysisResult(
     string RawResponse,
     IReadOnlyList<AiInvestmentEventResult>? Events = null,
     string? Model = null,
-    IReadOnlyList<AiFinancialFactResult>? FinancialFacts = null);
+    IReadOnlyList<AiFinancialFactResult>? FinancialFacts = null,
+    IReadOnlyList<AiFinancialFactRejection>? RejectedFinancialFacts = null);
 
 public sealed record AiFinancialFactResult(FinancialFactMetric Metric, DateOnly ReferencePeriod, FinancialPeriodType PeriodType, decimal Value, string? Currency, string Unit, string Evidence, decimal Confidence);
+
+public sealed record AiFinancialFactRejection(
+    string? Metric,
+    decimal? Value,
+    string? Unit,
+    string? Currency,
+    string? ReferencePeriod,
+    string? PeriodType,
+    string Reason);

@@ -45,6 +45,53 @@ public sealed class DocumentFinancialQualityTests
     }
 
     [Fact]
+    public void Ebitda_percent_is_rejected_with_metric_unit_reason()
+    {
+        var result = DocumentFinancialFactNormalizer.NormalizeWithReason(new("EBITDA", 87.2m, "2026-06-30", "Quarterly", "percent", "percent", "margem EBITDA de 87,2%", .9m));
+
+        Assert.False(result.IsAccepted);
+        Assert.Null(result.Fact);
+        Assert.Equal("InvalidUnitForMetric", result.RejectionReason);
+    }
+
+    [Fact]
+    public void Monthly_period_is_rejected_with_period_reason()
+    {
+        var result = DocumentFinancialFactNormalizer.NormalizeWithReason(new("Equity", 100m, "2026-08-31", "Monthly", "BRL", "currency", "patrimônio", .9m));
+
+        Assert.False(result.IsAccepted);
+        Assert.Null(result.Fact);
+        Assert.Equal("InvalidPeriodType", result.RejectionReason);
+    }
+
+    [Fact]
+    public void Valid_fact_is_accepted_without_rejection()
+    {
+        var result = DocumentFinancialFactNormalizer.NormalizeWithReason(new("TotalDebt", 51_796_856m, "2026-08-31", "Quarterly", "BRL", "currency", "dívida", 1m));
+
+        Assert.True(result.IsAccepted);
+        Assert.NotNull(result.Fact);
+        Assert.Null(result.RejectionReason);
+    }
+
+    [Fact]
+    public void Rejected_fact_does_not_discard_valid_facts_from_same_payload()
+    {
+        var analysis = new AiAnalysisValidator().Validate(new AiAnalysisPayload(
+            "Informative", "FinancialResult", false, "NoAction", "resumo", "impacto", null, ["AAA3"], .9m, [],
+            [
+                new("TotalDebt", 100m, "2026-08-31", "Quarterly", "BRL", "currency", "dívida", .9m),
+                new("EBITDA", 87.2m, "2026-06-30", "Quarterly", "percent", "percent", "margem", .8m),
+                new("Equity", 200m, "2026-08-31", "Monthly", "BRL", "currency", "patrimônio", .8m)
+            ]), "{}");
+
+        Assert.Single(analysis.FinancialFacts!);
+        Assert.Equal(2, analysis.RejectedFinancialFacts!.Count);
+        Assert.Contains(analysis.RejectedFinancialFacts, x => x.Reason == "InvalidUnitForMetric");
+        Assert.Contains(analysis.RejectedFinancialFacts, x => x.Reason == "InvalidPeriodType");
+    }
+
+    [Fact]
     public void Equivalent_percentage_representations_normalize_identically()
     {
         var percent = DocumentFinancialFactNormalizer.Normalize(new("Roe", 18, "2025-12-31", "Annual", null, "percent", "ROE", .9m));
