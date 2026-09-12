@@ -111,7 +111,7 @@ public sealed class PortfoliosController : ControllerBase
         var portfolio = await dbContext.Portfolios.AsNoTracking().SingleOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
         if (portfolio is null) return NotFound();
         var positionsQuery = dbContext.PortfolioPositions.AsNoTracking().Where(position => position.PortfolioId == portfolioId);
-        var allPositions = await positionsQuery.Include(position => position.Asset).OrderBy(position => position.Asset!.Ticker).ThenBy(position => position.Id).ToListAsync(cancellationToken);
+        var allPositions = await positionsQuery.Include(position => position.Asset).OrderBy(position => position.Asset == null ? string.Empty : position.Asset.Ticker).ThenBy(position => position.Id).ToListAsync(cancellationToken);
         PortfolioCalculator.RecalculateWeights(allPositions);
         var positionCount = allPositions.Count;
         var totalValue = allPositions.Sum(position => position.CurrentValue ?? 0m);
@@ -122,7 +122,18 @@ public sealed class PortfoliosController : ControllerBase
         PortfolioCalculator.RecalculateWeights(snapshotPortfolio.Positions);
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
         var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis!).ThenInclude(a => a.Document!).Where(a => a.PortfolioId == portfolioId).ToListAsync(cancellationToken);
-        var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, loadedAssessments, cancellationToken);
+        // Assessments are historical data and older databases may contain an
+        // orphaned event or an event whose analysis was removed. Such rows
+        // cannot be rendered by the dashboard, but must not break the whole
+        // portfolio response.
+        var usableAssessments = loadedAssessments
+            .Where(a => a.InvestmentEvent?.DocumentAnalysis is not null)
+            .ToList();
+        if (usableAssessments.Count != loadedAssessments.Count)
+        {
+            logger?.LogWarning("Ignorando {IgnoredAssessmentCount} assessments incompletos no dashboard da carteira {PortfolioId}", loadedAssessments.Count - usableAssessments.Count, portfolioId);
+        }
+        var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, usableAssessments, cancellationToken);
         assessments = assessments
             // Keep the dashboard aligned with the Radar: one card per analyzed
             // document, even when the document contains multiple extracted events.
