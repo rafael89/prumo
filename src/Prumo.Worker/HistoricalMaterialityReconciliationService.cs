@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Prumo.Application.Documents;
+using Microsoft.EntityFrameworkCore.Storage;
 using Prumo.Application.Abstractions;
+using Prumo.Application.Documents;
 using Prumo.Application.Intelligence;
 using Prumo.Application.Portfolio;
 using Prumo.Domain.Entities;
@@ -9,7 +10,9 @@ using Prumo.Infrastructure.Persistence;
 
 namespace Prumo.Worker;
 
-public sealed record HistoricalMaterialityReconciliationReport(int Inspected, int Changed, int RelevantToInformative, int CriticalToOther, int Unchanged, int SkippedNotReconcilable, int Failures);
+public sealed record HistoricalMaterialityReconciliationReport(
+    int Inspected, int Eligible, int Changed, int RelevantToInformative,
+    int CriticalToOther, int Unchanged, int SkippedNotReconcilable, int Failures);
 
 /// <summary>Reconciles persisted analyses using deterministic rules only; it never invokes AI or document storage.</summary>
 public sealed class HistoricalMaterialityReconciliationService
@@ -25,14 +28,24 @@ public sealed class HistoricalMaterialityReconciliationService
 
     public async Task<HistoricalMaterialityReconciliationReport> ReconcileAsync(CancellationToken ct)
     {
-        var analyses = await db.DocumentAnalyses
+        logger.LogInformation("Historical materiality reconciliation started.");
+        // Use an explicit FK join: processed historical analyses are selected
+        // by persisted status, independently of navigation fix-up.
+        var analyses = await (from analysis in db.DocumentAnalyses
+                              join document in db.Documents on analysis.DocumentId equals document.Id
+                              where document.ProcessingStatus == DocumentProcessingStatus.Processed
+                              select analysis)
             .Include(x => x.Document).ThenInclude(x => x!.Asset)
-            .Where(x => x.Document!.ProcessingStatus == DocumentProcessingStatus.Processed)
             .OrderBy(x => x.Id).ToListAsync(ct);
+        var analysisIds = analyses.Select(x => x.Id).ToList();
         var events = await db.InvestmentEvents.Include(x => x.AffectedAssets)
-            .Where(x => analyses.Select(a => a.Id).Contains(x.DocumentAnalysisId)).ToListAsync(ct);
+            .Where(x => analysisIds.Contains(x.DocumentAnalysisId)).ToListAsync(ct);
         var eventsByAnalysis = events.GroupBy(x => x.DocumentAnalysisId).ToDictionary(x => x.Key, x => x.ToList());
-        var inspected = 0; var changed = 0; var relevantToInformative = 0; var criticalToOther = 0; var unchanged = 0; var skipped = 0; var failures = 0;
+        logger.LogInformation("Historical reconciliation found {AnalysisCount} processed analyses and {EventCount} linked events.", analyses.Count, events.Count);
+
+        var inspected = 0; var eligible = 0; var changed = 0; var relevantToInformative = 0;
+        var criticalToOther = 0; var unchanged = 0; var skipped = 0; var failures = 0;
+        await using IDbContextTransaction? transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(ct) : null;
 
         foreach (var analysis in analyses)
         {
@@ -42,6 +55,8 @@ public sealed class HistoricalMaterialityReconciliationService
                 analysis.Summary, analysis.Impact,
                 eventsByAnalysis.GetValueOrDefault(analysis.Id, new()).Select(x => new MaterialityEventFacts(x.Summary, x.Facts)));
             if (!result.Reconcilable) { skipped++; continue; }
+            eligible++;
+            logger.LogDebug("Historical analysis {AnalysisId}: eligible=true, changed={Changed}, before={Importance}/{Classification}/{RequiresAction}/{SuggestedAction}, after={NewImportance}/{NewRequiresAction}/{NewSuggestedAction}.", analysis.Id, result.Changed, analysis.Importance, analysis.Classification, analysis.RequiresAction, analysis.SuggestedAction, result.Importance, result.RequiresAction, result.SuggestedAction);
             if (!result.Changed) { unchanged++; continue; }
 
             var oldImportance = analysis.Importance;
@@ -49,14 +64,24 @@ public sealed class HistoricalMaterialityReconciliationService
             changed++;
             if (oldImportance == AnalysisImportance.Relevant && result.Importance == AnalysisImportance.Informative) relevantToInformative++;
             else if (oldImportance == AnalysisImportance.Critical && result.Importance != AnalysisImportance.Critical) criticalToOther++;
-
             foreach (var investmentEvent in eventsByAnalysis.GetValueOrDefault(analysis.Id, new()))
                 await RecalculateAssessmentsAsync(analysis, investmentEvent, ct);
         }
 
-        if (changed > 0) await db.SaveChangesAsync(ct);
-        var report = new HistoricalMaterialityReconciliationReport(inspected, changed, relevantToInformative, criticalToOther, unchanged, skipped, failures);
-        logger.LogInformation("Reconciliação histórica de materialidade concluída: Inspected={Inspected} Changed={Changed} RelevantToInformative={RelevantToInformative} CriticalToOther={CriticalToOther} Unchanged={Unchanged} SkippedNotReconcilable={SkippedNotReconcilable} Failures={Failures}", report.Inspected, report.Changed, report.RelevantToInformative, report.CriticalToOther, report.Unchanged, report.SkippedNotReconcilable, report.Failures);
+        if (changed > 0)
+        {
+            logger.LogInformation("Saving {ChangedCount} materiality changes; tracked entities={TrackedCount}.", changed, db.ChangeTracker.Entries().Count());
+            var saved = await db.SaveChangesAsync(ct);
+            logger.LogInformation("SaveChangesAsync completed with {SavedCount} database changes.", saved);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(ct);
+                logger.LogInformation("Historical reconciliation transaction committed.");
+            }
+        }
+
+        var report = new HistoricalMaterialityReconciliationReport(inspected, eligible, changed, relevantToInformative, criticalToOther, unchanged, skipped, failures);
+        logger.LogInformation("Historical materiality reconciliation completed: Inspected={Inspected} Eligible={Eligible} Changed={Changed} RelevantToInformative={RelevantToInformative} CriticalToOther={CriticalToOther} Unchanged={Unchanged} SkippedNotReconcilable={SkippedNotReconcilable} Failures={Failures}", report.Inspected, report.Eligible, report.Changed, report.RelevantToInformative, report.CriticalToOther, report.Unchanged, report.SkippedNotReconcilable, report.Failures);
         return report;
     }
 
@@ -81,10 +106,8 @@ public sealed class HistoricalMaterialityReconciliationService
                 current.ApplyRecalculatedValues(output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, investmentEvent.Version);
                 continue;
             }
-
             var previous = await db.PortfolioAssessments.Where(x => x.PortfolioId == portfolio.Id && x.InvestmentEventId == investmentEvent.Id).OrderByDescending(x => x.GeneratedAt).FirstOrDefaultAsync(ct);
-            var replacement = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact,
-                previous?.Status ?? AssessmentStatus.Detected, previous?.UserState ?? AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, impactService.Version, snapshot, investmentEvent.Version);
+            var replacement = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, previous?.Status ?? AssessmentStatus.Detected, previous?.UserState ?? AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, impactService.Version, snapshot, investmentEvent.Version);
             replacement.AttachInvestmentEvent(investmentEvent);
             db.PortfolioAssessments.Add(replacement);
         }
@@ -98,12 +121,23 @@ public sealed class HistoricalMaterialityReconciliationWorker : BackgroundServic
     public HistoricalMaterialityReconciliationWorker(IServiceScopeFactory scopeFactory, ILogger<HistoricalMaterialityReconciliationWorker> logger) { this.scopeFactory = scopeFactory; this.logger = logger; }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        try
+        logger.LogInformation("HistoricalMaterialityReconciliationWorker invoked during startup.");
+        for (var attempt = 1; attempt <= 10 && !stoppingToken.IsCancellationRequested; attempt++)
         {
-            using var scope = scopeFactory.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<HistoricalMaterialityReconciliationService>().ReconcileAsync(stoppingToken);
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<HistoricalMaterialityReconciliationService>().ReconcileAsync(stoppingToken);
+                logger.LogInformation("HistoricalMaterialityReconciliationWorker completed successfully during startup.");
+                return;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+            catch (Exception exception) when (attempt < 10)
+            {
+                logger.LogWarning(exception, "Historical reconciliation startup attempt {Attempt}/10 failed; retrying in 2s.", attempt);
+                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+            }
+            catch (Exception exception) { logger.LogError(exception, "Historical reconciliation failed definitively during startup."); }
         }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-        catch (Exception exception) { logger.LogError(exception, "Falha na reconciliação histórica de materialidade."); }
     }
 }
