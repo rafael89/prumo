@@ -33,6 +33,20 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         => await FindAsync(tickers.Select(ticker => new DocumentSourceAsset(ticker, null)).ToArray(), cancellationToken);
 
     public async Task<IReadOnlyList<DocumentCandidate>> FindAsync(IReadOnlyCollection<DocumentSourceAsset> assets, CancellationToken cancellationToken = default)
+        => await FindAsync(assets, null, null, cancellationToken);
+
+    public async Task<IReadOnlyList<DocumentCandidate>> FindAsync(
+        IReadOnlyCollection<DocumentSourceAsset> assets,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken = default)
+        => await FindAsync(assets, (DateTimeOffset?)from, (DateTimeOffset?)to, cancellationToken);
+
+    private async Task<IReadOnlyList<DocumentCandidate>> FindAsync(
+        IReadOnlyCollection<DocumentSourceAsset> assets,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
     {
         if (assets.Count == 0)
         {
@@ -75,12 +89,12 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     var tickerRecords = records.Where(record => NormalizeCnpj(record.Cnpj) == normalizedCnpj).ToList();
                     if (isStock && options.EnetDirectDiscoveryEnabled)
                     {
-                        var directRecords = await FindRecentEnetRecordsAsync(asset, normalizedCnpj, cancellationToken, directFailureWarnings);
+                        var directRecords = await FindRecentEnetRecordsAsync(asset, normalizedCnpj, from, to, cancellationToken, directFailureWarnings);
                         tickerRecords.AddRange(directRecords);
                     }
                     if (!isStock && options.FnetDirectDiscoveryEnabled)
                     {
-                        var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, cancellationToken, directFailureWarnings);
+                        var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, from, to, cancellationToken, directFailureWarnings);
                         tickerRecords.AddRange(directRecords);
                     }
                     logger.LogInformation("Recurso CVM mapeou {RecordCount} registro(s) para o ticker {Ticker}", tickerRecords.Count, asset.Ticker);
@@ -122,17 +136,18 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         return candidates;
     }
 
-    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentEnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct, ISet<string> directFailureWarnings)
+    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentEnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct, ISet<string> directFailureWarnings)
     {
         if (normalizedCnpj.Length != 14) return Array.Empty<CvmDocumentRecord>();
         try
         {
             var companyCode = await ResolveEnetCompanyCodeAsync(normalizedCnpj, ct);
             if (string.IsNullOrWhiteSpace(companyCode)) return Array.Empty<CvmDocumentRecord>();
-            var now = DateTimeOffset.UtcNow;
+            var now = to ?? DateTimeOffset.UtcNow;
+            var queryFrom = from ?? now.AddDays(-Math.Max(1, options.EnetDirectLookbackDays));
             var body = new
             {
-                dataDe = now.AddDays(-Math.Max(1, options.EnetDirectLookbackDays)).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                dataDe = queryFrom.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 dataAte = now.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                 empresa = companyCode, setorAtividade = "-1", categoriaEmissor = "-1", situacaoEmissor = "-1",
                 tipoParticipante = "-1", dataReferencia = "", categoria = "IPE_-1_-1_-1", periodo = "2",
@@ -146,7 +161,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                 || result.TryGetProperty("SolicitarCaptcha", out var captcha) && string.Equals(captcha.GetString(), "S", StringComparison.OrdinalIgnoreCase))
                 return Array.Empty<CvmDocumentRecord>();
 
-            var cutoff = now.AddDays(-Math.Max(1, options.EnetDirectLookbackDays));
+            var cutoff = queryFrom;
             var records = new List<CvmDocumentRecord>();
             foreach (var row in (data.GetString() ?? string.Empty).Split("&*", StringSplitOptions.RemoveEmptyEntries))
             {
@@ -202,7 +217,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
     private static bool TryParseEnetDate(string? value, out DateTimeOffset date)
         => DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
 
-    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, CancellationToken ct, ISet<string> directFailureWarnings)
+    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct, ISet<string> directFailureWarnings)
     {
         if (normalizedCnpj.Length != 14) return Array.Empty<CvmDocumentRecord>();
 
@@ -231,14 +246,15 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             if (!json.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
                 return Array.Empty<CvmDocumentRecord>();
 
-            var cutoff = DateTimeOffset.UtcNow.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
+            var upperBound = to ?? DateTimeOffset.UtcNow;
+            var cutoff = from ?? upperBound.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
             var records = new List<CvmDocumentRecord>();
             foreach (var item in data.EnumerateArray())
             {
                 var id = ReadString(item, "id");
                 var delivered = ReadString(item, "dataEntrega");
                 var reference = ReadString(item, "dataReferencia");
-                if (string.IsNullOrWhiteSpace(id) || !TryParseFnetDate(delivered, out var publishedAt) || publishedAt < cutoff || publishedAt > DateTimeOffset.UtcNow.AddMinutes(5)) continue;
+                if (string.IsNullOrWhiteSpace(id) || !TryParseFnetDate(delivered, out var publishedAt) || publishedAt < cutoff || publishedAt > upperBound.AddMinutes(5)) continue;
                 if (ReadString(item, "status")?.StartsWith("C", StringComparison.OrdinalIgnoreCase) == true) continue;
 
                 records.Add(new CvmDocumentRecord(

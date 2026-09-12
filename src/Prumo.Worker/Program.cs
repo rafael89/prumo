@@ -99,6 +99,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IPdfTextExtractor, PdfPigTextExtractor>();
         services.AddSingleton<ITextQualityValidator>(provider => new TextQualityValidator(provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<TextQualityOptions>>().Value));
         services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
+        services.AddScoped<DocumentDiscoveryService>();
         services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(context.Configuration["Storage:RootPath"] ?? "/storage"));
         services.AddHostedService<DocumentDiscoveryWorker>();
         services.AddHostedService<CvmFiiMonthlyIngestionWorker>();
