@@ -134,20 +134,16 @@ public sealed class PortfoliosController : ControllerBase
             logger?.LogWarning("Ignorando {IgnoredAssessmentCount} assessments incompletos no dashboard da carteira {PortfolioId}", loadedAssessments.Count - usableAssessments.Count, portfolioId);
         }
         var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, usableAssessments, cancellationToken);
+        var eventsByDocument = assessments
+            .GroupBy(a => a.InvestmentEvent!.DocumentAnalysisId)
+            .ToDictionary(group => group.Key, BuildDashboardEvents);
         assessments = assessments
             // Keep the dashboard aligned with the Radar: one card per analyzed
             // document, even when the document contains multiple extracted events.
             .GroupBy(a => a.InvestmentEvent!.DocumentAnalysisId)
-            .Select(group => group
-                .OrderByDescending(a => a.Status != AssessmentStatus.Closed)
-                .ThenByDescending(a => a.UserState == AssessmentUserState.Unread)
-                .ThenByDescending(a => a.AttentionPriority)
-                .ThenByDescending(a => a.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
-                .ThenByDescending(a => a.GeneratedAt)
-                .ThenByDescending(a => a.Id)
-                .First())
+            .Select(SelectDashboardRepresentative)
             .ToList();
-        var attention = assessments.Where(a => a.InvestmentEvent!.DocumentAnalysis!.Importance is AnalysisImportance.Critical or AnalysisImportance.Relevant).Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(CreateDashboardAssessment).ToList();
+        var attention = assessments.Where(a => a.InvestmentEvent!.DocumentAnalysis!.Importance is AnalysisImportance.Critical or AnalysisImportance.Relevant).Where(RadarAttentionNowPolicy.RequiresAttention).OrderByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt).ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).Select(a => CreateDashboardAssessment(a, eventsByDocument.GetValueOrDefault(a.InvestmentEvent!.DocumentAnalysisId))).ToList();
         var attentionIds = attention.Select(x => x.AssessmentId).ToHashSet();
         // The card displays the document publication date, so use that same
         // date for the ordering shown to users.
@@ -156,7 +152,7 @@ public sealed class PortfoliosController : ControllerBase
             .ThenByDescending(a => a.InvestmentEvent!.OccurredAt)
             .ThenByDescending(a => a.GeneratedAt)
             .ThenByDescending(a => a.Id)
-            .Select(CreateDashboardAssessment)
+            .Select(a => CreateDashboardAssessment(a, eventsByDocument.GetValueOrDefault(a.InvestmentEvent!.DocumentAnalysisId)))
             .ToList();
         // Últimas notícias is a document feed, not a filtered Radar feed.
         // Include analyzed documents of every importance and keep the latest
@@ -177,7 +173,7 @@ public sealed class PortfoliosController : ControllerBase
             .GroupBy(assessment => assessment.InvestmentEvent!.DocumentAnalysisId)
             .ToDictionary(group => group.Key, group => group.OrderByDescending(assessment => assessment.GeneratedAt).First());
         recent = analyzedDocuments.Select(analysis => assessmentByDocument.TryGetValue(analysis.Id, out var assessment)
-                ? CreateDashboardAssessment(assessment)
+                ? CreateDashboardAssessment(assessment, eventsByDocument.GetValueOrDefault(analysis.Id))
                 : CreateDashboardDocument(analysis))
             .ToList();
         var primaryNeed = health.CapitalNeeds.OrderBy(x => x.PriorityOrder).FirstOrDefault();
@@ -199,10 +195,37 @@ public sealed class PortfoliosController : ControllerBase
         return portfolioHealthCalculator.Calculate(portfolio, targets);
     }
 
-    private static DashboardAssessment CreateDashboardAssessment(PortfolioAssessment assessment)
+    private static PortfolioAssessment SelectDashboardRepresentative(IEnumerable<PortfolioAssessment> assessments)
+        => assessments
+            .OrderByDescending(a => a.Status != AssessmentStatus.Closed)
+            .ThenByDescending(a => a.UserState == AssessmentUserState.Unread)
+            .ThenByDescending(a => a.AttentionPriority)
+            .ThenByDescending(a => a.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
+            .ThenByDescending(a => a.GeneratedAt)
+            .ThenByDescending(a => a.Id)
+            .First();
+
+    private static IReadOnlyList<RadarEventDto> BuildDashboardEvents(IEnumerable<PortfolioAssessment> assessments)
+    {
+        var representative = SelectDashboardRepresentative(assessments);
+        return assessments
+            .Where(a => a.InvestmentEvent is not null)
+            .Select(a => a.InvestmentEvent!)
+            .GroupBy(e => e.Id)
+            .Select(group => group.First())
+            .OrderByDescending(e => e.Id == representative.InvestmentEventId)
+            .ThenByDescending(e => e.OccurredAt.HasValue)
+            .ThenByDescending(e => e.OccurredAt)
+            .ThenByDescending(e => e.CreatedAt)
+            .ThenByDescending(e => e.Id)
+            .Select(e => new RadarEventDto(e.Id, e.EventType, e.OccurredAt, e.Summary))
+            .ToList();
+    }
+
+    private static DashboardAssessment CreateDashboardAssessment(PortfolioAssessment assessment, IReadOnlyList<RadarEventDto>? events = null)
         // The overview is document-oriented. An extracted event can have a different
         // occurrence date, so use the document publication date in its card.
-        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.DocumentAnalysis?.Document?.PublishedAt ?? assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Status, assessment.UserState, assessment.InvestmentEvent?.DocumentAnalysis?.Importance.ToString() ?? "Unknown");
+        => new(assessment.Id, assessment.InvestmentEventId, assessment.InvestmentEvent?.Evidence.FirstOrDefault()?.DocumentId, assessment.InvestmentEvent?.AffectedAssets.FirstOrDefault()?.Ticker ?? "Carteira", assessment.InvestmentEvent?.Summary ?? assessment.Summary, assessment.WhyItMatters, assessment.SuggestedBehavior, assessment.InvestmentEvent?.DocumentAnalysis?.Document?.PublishedAt ?? assessment.InvestmentEvent?.OccurredAt, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact, assessment.Status, assessment.UserState, assessment.InvestmentEvent?.DocumentAnalysis?.Importance.ToString() ?? "Unknown", true, events ?? Array.Empty<RadarEventDto>());
 
     private static DashboardAssessment CreateDashboardDocument(DocumentAnalysis analysis)
         => new(analysis.Id, analysis.Id, analysis.DocumentId, analysis.Document?.Asset?.Ticker ?? "Carteira", analysis.Summary, analysis.Impact, analysis.SuggestedAction.ToString(), analysis.Document?.PublishedAt, AttentionPriority.Low, ActionRequirement.None, CapitalDecisionImpact.None, AssessmentStatus.Active, AssessmentUserState.Unread, analysis.Importance.ToString(), false);
@@ -421,7 +444,7 @@ public enum DashboardState { Ready, FirstUse, Processing, StrategyNotConfigured 
 public enum ContributionPreviewStatus { Available, NotConfigured, NoNeeds, EmptyPortfolio }
 public sealed record PortfolioOverview(Guid PortfolioId, string PortfolioName, decimal CurrentValue, string HealthStatus, string HealthSummary, string? MainDeviationSummary, DateTimeOffset? LastPortfolioUpdate);
 public sealed record ContributionPreview(ContributionPreviewStatus Status, AssetClass? PrimaryCapitalNeed, string Summary);
-public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, string DocumentImportance = "Unknown", bool HasRadarAssessment = true);
+public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, string DocumentImportance = "Unknown", bool HasRadarAssessment = true, IReadOnlyList<RadarEventDto>? Events = null);
 public sealed record PortfolioHealthSummary(string Status, string Summary, IReadOnlyList<AllocationDeviation> AllocationDeviations, MainDeviation? MainDeviation);
 public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0, DashboardState State = DashboardState.Ready, PortfolioOverview? PortfolioOverview = null, IReadOnlyList<DashboardAssessment>? AttentionNow = null, ContributionPreview? ContributionPreview = null, PortfolioHealthSummary? PortfolioHealthSummary = null, IReadOnlyList<DashboardAssessment>? RecentUpdates = null, DateTimeOffset? GeneratedAt = null);
 public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight, ExposureMetadataResponse? Exposure = null);

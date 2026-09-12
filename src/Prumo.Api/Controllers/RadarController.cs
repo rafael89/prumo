@@ -37,29 +37,22 @@ public sealed class RadarController : ControllerBase
         var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var loadedAssessments = await query.ToListAsync(ct);
         var currentAssessments = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct);
-        var assessments = currentAssessments
+        var groupedAssessments = currentAssessments
             .Concat(loadedAssessments.Where(x => x.Status == AssessmentStatus.Closed))
             // The user-facing Radar is document-oriented. A single document may
             // contain several extracted events, but it must not create several
             // cards for the same asset/document.
             .GroupBy(x => x.InvestmentEvent!.DocumentAnalysisId)
-            .Select(group => group
-                .OrderByDescending(x => x.Status != AssessmentStatus.Closed)
-                .ThenByDescending(x => x.UserState == AssessmentUserState.Unread)
-                .ThenByDescending(x => x.AttentionPriority)
-                .ThenByDescending(x => x.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
-                .ThenByDescending(x => x.GeneratedAt)
-                .ThenByDescending(x => x.Id)
-                .First())
+            .Select(group => new RadarGroup(SelectRepresentative(group), BuildEvents(group)))
             .Where(x => !priority.HasValue || x.AttentionPriority == priority.Value)
             .Where(x => !status.HasValue || x.Status == status.Value)
             .Where(x => !userState.HasValue || x.UserState == userState.Value)
-            .OrderByDescending(x => x.AttentionPriority)
-            .ThenByDescending(x => x.InvestmentEvent!.OccurredAt)
-            .ThenByDescending(x => x.GeneratedAt)
-            .ThenByDescending(x => x.Id)
+            .OrderByDescending(x => x.Representative.AttentionPriority)
+            .ThenByDescending(x => x.Representative.InvestmentEvent!.OccurredAt)
+            .ThenByDescending(x => x.Representative.GeneratedAt)
+            .ThenByDescending(x => x.Representative.Id)
             .ToList();
-        var items = assessments.Select(ToDto).ToList();
+        var items = groupedAssessments.Select(x => ToDto(x.Representative, x.Events)).ToList();
         if (requiresAttention.HasValue) items = items.Where(x => x.RequiresAttention == requiresAttention.Value).ToList();
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100);
         var total = items.Count; var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
@@ -101,10 +94,11 @@ public sealed class RadarController : ControllerBase
         if (assessment is null) return NotFound();
         var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
         var relatedAssessments = await db.PortfolioAssessments
+            .Include(x => x.InvestmentEvent)
             .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
             .ToListAsync(ct);
         foreach (var related in relatedAssessments) related.MarkSeen();
-        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
+        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment, BuildEvents(relatedAssessments)));
     }
 
     [HttpPatch("seen-all")]
@@ -124,10 +118,11 @@ public sealed class RadarController : ControllerBase
         if (assessment is null) return NotFound();
         var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
         var relatedAssessments = await db.PortfolioAssessments
+            .Include(x => x.InvestmentEvent)
             .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
             .ToListAsync(ct);
         foreach (var related in relatedAssessments) related.SetStatus(status);
-        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment));
+        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment, BuildEvents(relatedAssessments)));
     }
 
     [HttpPatch("status-all")]
@@ -143,13 +138,41 @@ public sealed class RadarController : ControllerBase
         return Ok(new RadarBulkUpdateResponse(assessments.Count));
     }
 
-    private static RadarItemDto ToDto(PortfolioAssessment x)
+    private static PortfolioAssessment SelectRepresentative(IEnumerable<PortfolioAssessment> assessments)
+        => assessments
+            .OrderByDescending(x => x.Status != AssessmentStatus.Closed)
+            .ThenByDescending(x => x.UserState == AssessmentUserState.Unread)
+            .ThenByDescending(x => x.AttentionPriority)
+            .ThenByDescending(x => x.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
+            .ThenByDescending(x => x.GeneratedAt)
+            .ThenByDescending(x => x.Id)
+            .First();
+
+    private static IReadOnlyList<RadarEventDto> BuildEvents(IEnumerable<PortfolioAssessment> assessments)
+    {
+        var representative = SelectRepresentative(assessments);
+        var events = assessments
+            .Where(x => x.InvestmentEvent is not null)
+            .Select(x => x.InvestmentEvent!)
+            .GroupBy(x => x.Id)
+            .Select(group => group.First())
+            .OrderByDescending(x => x.Id == representative.InvestmentEventId)
+            .ThenByDescending(x => x.OccurredAt.HasValue)
+            .ThenByDescending(x => x.OccurredAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new RadarEventDto(x.Id, x.EventType, x.OccurredAt, x.Summary))
+            .ToList();
+        return events;
+    }
+
+    private static RadarItemDto ToDto(PortfolioAssessment x, IReadOnlyList<RadarEventDto> events)
     {
         var attention = RadarAttentionNowPolicy.RequiresAttention(x);
         var eventItem = x.InvestmentEvent!;
         var evidence = eventItem.Evidence.Select(e => new RadarEvidenceDto(e.DocumentId, e.DocumentAnalysisId, e.Reference)).ToList();
         var references = evidence.Select(e => new EvidenceReference("Document", e.DocumentId.ToString(), e.Reference, e.Reference, eventItem.OccurredAt)).ToList();
-        return new(x.Id, eventItem.Id, eventItem.DocumentAnalysisId, eventItem.AffectedAssets.Select(a => a.Ticker).ToList(), eventItem.EventType, eventItem.OccurredAt, x.AttentionPriority, x.ActionRequirement, x.CapitalDecisionImpact, x.Status, x.UserState, attention, eventItem.Summary, x.Summary, x.WhyItMatters, x.SuggestedBehavior, x.Confidence, x.GeneratedAt, evidence, FreshnessStatus.Fresh, Array.Empty<FreshnessReason>(), references, eventItem.DocumentAnalysis?.Importance.ToString() ?? "Unknown");
+        return new(x.Id, eventItem.Id, eventItem.DocumentAnalysisId, eventItem.AffectedAssets.Select(a => a.Ticker).ToList(), eventItem.EventType, eventItem.OccurredAt, x.AttentionPriority, x.ActionRequirement, x.CapitalDecisionImpact, x.Status, x.UserState, attention, eventItem.Summary, x.Summary, x.WhyItMatters, x.SuggestedBehavior, x.Confidence, x.GeneratedAt, evidence, FreshnessStatus.Fresh, Array.Empty<FreshnessReason>(), references, eventItem.DocumentAnalysis?.Importance.ToString() ?? "Unknown", events);
     }
 }
 
@@ -158,4 +181,11 @@ public sealed record RadarResponse(IReadOnlyList<RadarItemDto> AttentionNow, IRe
 public sealed record RadarRepairResponse(int QueuedCount);
 public sealed record RadarBulkUpdateResponse(int UpdatedCount);
 public sealed record RadarEvidenceDto(Guid DocumentId, Guid DocumentAnalysisId, string Reference);
-public sealed record RadarItemDto(Guid AssessmentId, Guid InvestmentEventId, Guid DocumentAnalysisId, IReadOnlyList<string> AffectedAssets, InvestmentEventType EventType, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, bool RequiresAttention, string EventSummary, string Summary, string WhyItMatters, string SuggestedBehavior, IntelligenceConfidence Confidence, DateTimeOffset GeneratedAt, IReadOnlyList<RadarEvidenceDto> Evidence, FreshnessStatus Freshness = FreshnessStatus.Fresh, IReadOnlyList<FreshnessReason>? FreshnessReasons = null, IReadOnlyList<EvidenceReference>? EvidenceReferences = null, string DocumentImportance = "Unknown");
+public sealed record RadarEventDto(Guid InvestmentEventId, InvestmentEventType EventType, DateTimeOffset? OccurredAt, string Summary);
+public sealed record RadarItemDto(Guid AssessmentId, Guid InvestmentEventId, Guid DocumentAnalysisId, IReadOnlyList<string> AffectedAssets, InvestmentEventType EventType, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, AssessmentUserState UserState, bool RequiresAttention, string EventSummary, string Summary, string WhyItMatters, string SuggestedBehavior, IntelligenceConfidence Confidence, DateTimeOffset GeneratedAt, IReadOnlyList<RadarEvidenceDto> Evidence, FreshnessStatus Freshness = FreshnessStatus.Fresh, IReadOnlyList<FreshnessReason>? FreshnessReasons = null, IReadOnlyList<EvidenceReference>? EvidenceReferences = null, string DocumentImportance = "Unknown", IReadOnlyList<RadarEventDto>? Events = null);
+internal sealed record RadarGroup(PortfolioAssessment Representative, IReadOnlyList<RadarEventDto> Events)
+{
+    public AttentionPriority AttentionPriority => Representative.AttentionPriority;
+    public AssessmentStatus Status => Representative.Status;
+    public AssessmentUserState UserState => Representative.UserState;
+}
