@@ -102,7 +102,7 @@ public sealed class DocumentAnalysisProcessor
             throw new InvalidOperationException(quality.Error ?? "Texto do documento invalido.");
         }
 
-        var context = await BuildDocumentContextAsync(document.AssetId, cancellationToken);
+        var context = await BuildDocumentContextAsync(document, cancellationToken);
         logger.LogInformation("Iniciando analise do documento {DocumentId}; providerModel={Model}; promptVersion={PromptVersion}.", document.Id, aiAnalysisService.Model, aiAnalysisService.PromptVersion);
 
         var result = await aiAnalysisService.AnalyzeAsync(extraction.Text, context, cancellationToken);
@@ -296,15 +296,17 @@ public sealed class DocumentAnalysisProcessor
         }
     }
 
-    private async Task<PortfolioAnalysisContext> BuildDocumentContextAsync(Guid assetId, CancellationToken cancellationToken)
+    private async Task<PortfolioAnalysisContext> BuildDocumentContextAsync(Document document, CancellationToken cancellationToken)
     {
-        var asset = await dbContext.Assets.AsNoTracking().SingleOrDefaultAsync(item => item.Id == assetId, cancellationToken)
+        var asset = await dbContext.Assets.AsNoTracking().SingleOrDefaultAsync(item => item.Id == document.AssetId, cancellationToken)
             ?? throw new InvalidOperationException("Ativo do documento nao encontrado.");
 
         // Document analysis is global. Never load a portfolio here: the same
         // analysis can be consumed by multiple portfolios and users.
         return new PortfolioAnalysisContext(
             Guid.Empty, string.Empty, 0, 0, asset.Ticker, asset.AssetType.ToString(), asset.Sector,
-            0, 0, null, null, 0, Array.Empty<PortfolioAnalysisPositionContext>(), 0, 0);
+            0, 0, null, null, 0, Array.Empty<PortfolioAnalysisPositionContext>(), 0, 0,
+            document.DocumentType, document.PublishedAt, document.SourceName,
+            document.SourceCategory, document.SourceType, document.SourceSpecies);
     }
 }

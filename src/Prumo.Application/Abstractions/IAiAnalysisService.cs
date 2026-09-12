@@ -48,7 +48,13 @@ public sealed record PortfolioAnalysisContext(
     decimal PortfolioWeight,
     IReadOnlyList<PortfolioAnalysisPositionContext> TopPositions,
     decimal LargestPositionWeight,
-    decimal TopThreePositionWeight)
+    decimal TopThreePositionWeight,
+    DocumentType? DocumentType = null,
+    DateTimeOffset? DocumentPublishedAt = null,
+    string? DocumentSource = null,
+    string? DocumentSourceCategory = null,
+    string? DocumentSourceType = null,
+    string? DocumentSourceSpecies = null)
 {
     public const int MaxTopPositions = 5;
 
