@@ -156,7 +156,7 @@ public sealed class DocumentAnalysisProcessor
         logger.LogInformation("PDF temporário liberado para o documento {DocumentId}; compartilhado={Shared}.", document.Id, shared);
     }
 
-    private async Task SaveChangesHandlingConcurrentAssessmentsAsync(CancellationToken cancellationToken)
+    private async Task SaveChangesHandlingConcurrentAssessmentsAsync(CancellationToken cancellationToken, int attempt = 1)
     {
         RemoveDuplicatePendingAssessments(dbContext);
 
@@ -189,7 +189,18 @@ public sealed class DocumentAnalysisProcessor
                 if (!alreadyPersisted) dbContext.PortfolioAssessments.Add(assessment);
             }
             logger.LogInformation("Avaliação de carteira concorrente ignorada; o registro já existente foi preservado.");
-            await PostgresTransientFailure.SaveChangesWithDeadlockRetryAsync(dbContext, cancellationToken);
+            try
+            {
+                await PostgresTransientFailure.SaveChangesWithDeadlockRetryAsync(dbContext, cancellationToken);
+            }
+            catch (DbUpdateException retryException) when (IsPortfolioAssessmentUniqueViolation(retryException))
+            {
+                // The winner may have been inserted between AnyAsync and this retry.
+                // Re-enter the same reconciliation path so this second race is also
+                // treated as an idempotent concurrent write.
+                if (attempt >= 3) throw;
+                await SaveChangesHandlingConcurrentAssessmentsAsync(cancellationToken, attempt + 1);
+            }
         }
     }
 
