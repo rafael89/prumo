@@ -63,11 +63,11 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
             Content = JsonContent.Create(new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = DocumentAnalysisJsonSchemas.CreateForGemini() } })
         };
         request.Headers.Add("x-goog-api-key", options.ApiKey);
-        logger.LogInformation("Enviando análise ao provider {Provider}; model={Model}; textLength={TextLength}", "Gemini", options.Model, documentText.Length);
+        logger.LogInformation("Enviando análise ao provider {Provider}; model={Model}; textLength={TextLength}", "Gemini", model, documentText.Length);
         var startedAt = Stopwatch.GetTimestamp();
         using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
-        logger.LogInformation("Provider {Provider} respondeu HTTP {StatusCode}; durationMs={DurationMs}", "Gemini", (int)response.StatusCode, Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+        logger.LogInformation("Provider {Provider} respondeu HTTP {StatusCode}; model={Model}; durationMs={DurationMs}", "Gemini", (int)response.StatusCode, model, Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
         if (response.StatusCode == (HttpStatusCode)429) throw new AiProviderRateLimitException("Gemini limitou a requisição (HTTP 429).", response.StatusCode, ParseRetryAfter(response, rawResponse));
         if (!response.IsSuccessStatusCode) throw CreateHttpException(response.StatusCode, rawResponse);
         var envelope = ParseEnvelope(rawResponse);
