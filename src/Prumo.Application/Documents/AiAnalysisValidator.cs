@@ -35,12 +35,12 @@ public sealed class AiAnalysisValidator
         var financialFacts = normalizedFinancialFacts.Where(x => x.Result.IsAccepted).Select(x => x.Result.Fact!).GroupBy(x => new { x.Metric, x.ReferencePeriod, x.PeriodType }).Select(x => x.OrderByDescending(f => f.Confidence).First()).ToArray();
         var rejectedFinancialFacts = normalizedFinancialFacts.Where(x => !x.Result.IsAccepted).Select(x => new AiFinancialFactRejection(x.Payload.Metric, x.Payload.Value, x.Payload.Unit, x.Payload.Currency, x.Payload.ReferencePeriod, x.Payload.PeriodType, x.Result.RejectionReason!)).ToArray();
 
-        if (classification == AnalysisClassification.Distribution && IsRoutineDistribution(summary, impact, events))
-        {
-            importance = AnalysisImportance.Informative;
-            suggestedAction = SuggestedAction.NoAction;
-            payload = payload with { RequiresAction = false };
-        }
+        var normalization = DocumentMaterialityNormalization.Normalize(
+            importance, classification, payload.RequiresAction.Value, suggestedAction, summary, impact,
+            events.Select(item => new MaterialityEventFacts(item.Summary, item.Facts)));
+        importance = normalization.Importance;
+        suggestedAction = normalization.SuggestedAction;
+        payload = payload with { RequiresAction = normalization.RequiresAction };
 
         return new AiAnalysisResult(
             importance,

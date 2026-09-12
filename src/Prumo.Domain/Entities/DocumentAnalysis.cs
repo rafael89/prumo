@@ -75,4 +75,10 @@ public sealed class DocumentAnalysis
     public string RawResponse { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; private set; }
     public Document? Document { get; private set; }
+    public void ApplyDeterministicMateriality(AnalysisImportance importance, bool requiresAction, SuggestedAction suggestedAction)
+    {
+        Importance = importance;
+        RequiresAction = requiresAction;
+        SuggestedAction = suggestedAction;
+    }
 }

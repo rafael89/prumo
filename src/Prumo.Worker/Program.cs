@@ -93,6 +93,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IAiRequestRateLimiter, AiRequestRateLimiter>();
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));
         services.AddScoped<DocumentAnalysisProcessor>();
+        services.AddScoped<HistoricalMaterialityReconciliationService>();
         services.AddSingleton<WorkerMetrics>();
         services.AddSingleton<AiAnalysisValidator>();
         services.AddSingleton<IPortfolioImpactAssessmentService, PortfolioImpactAssessmentService>();
@@ -106,6 +107,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddHostedService<DocumentStorageRepairWorker>();
         services.AddHostedService<StorageMaintenanceWorker>();
         services.AddHostedService<RadarRepairWorker>();
+        services.AddHostedService<HistoricalMaterialityReconciliationWorker>();
         services.AddHostedService<DocumentDownloadWorker>();
         services.AddHostedService<DocumentAnalysisWorker>();
         services.AddHostedService<ContributionGuidanceWorker>();
