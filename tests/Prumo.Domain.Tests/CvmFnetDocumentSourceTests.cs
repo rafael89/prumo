@@ -175,7 +175,7 @@ public sealed class CvmFnetDocumentSourceTests
         public FnetHandler(string csv, string fnet) { this.csv = Encoding.Latin1.GetBytes(csv); this.fnet = Encoding.UTF8.GetBytes(fnet); }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (request.RequestUri!.Host == "fnet.test")
+            if (request.RequestUri!.Host == "fnet.test" && request.RequestUri.AbsolutePath.Contains("documents", StringComparison.OrdinalIgnoreCase))
             {
                 var query = request.RequestUri.Query;
                 Assert.Contains("d=0", query);
@@ -183,6 +183,7 @@ public sealed class CvmFnetDocumentSourceTests
                 Assert.Contains("l=100", query);
                 Assert.Contains("idCategoriaDocumento=0", query);
                 Assert.Contains("idTipoDocumento=0", query);
+                Assert.Contains("idEspecieDocumento=0", query);
                 Assert.DoesNotContain("draw=", query);
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(fnet) });
             }

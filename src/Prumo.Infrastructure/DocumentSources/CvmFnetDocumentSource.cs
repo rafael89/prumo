@@ -208,10 +208,22 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
         try
         {
+            // FNET establishes the session used by the grid when its manager
+            // page is opened. Without this request the JSON endpoint may
+            // return the upstream WAF page instead of the grid payload.
+            using var managerRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{options.FnetManagerUrl}?cnpjFundo={Uri.EscapeDataString(normalizedCnpj)}");
+            managerRequest.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            managerRequest.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
+            using var managerResponse = await httpClient.SendAsync(managerRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+            managerResponse.EnsureSuccessStatusCode();
+
             using var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj));
             request.Headers.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
             request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
             request.Headers.TryAddWithoutValidation("Referer", $"{options.FnetManagerUrl}?cnpjFundo={normalizedCnpj}");
+            request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -275,7 +287,8 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             // rather than the DataTables names (draw/start/length).
             ["d"] = "0", ["s"] = "0", ["l"] = "100",
             ["tipoFundo"] = "1", ["cnpj"] = cnpj, ["cnpjFundo"] = cnpj,
-            ["idCategoriaDocumento"] = "0", ["idTipoDocumento"] = "0",
+            ["idCategoriaDocumento"] = "0", ["idTipoDocumento"] = "0", ["idEspecieDocumento"] = "0",
+            ["situacao"] = "", ["dataReferencia"] = "", ["dataInicial"] = "", ["dataFinal"] = "",
             ["isSession"] = "true", ["paginaCertificados"] = "false"
         };
         return options.FnetDocumentsUrl + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));

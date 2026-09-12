@@ -4,6 +4,7 @@ using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.MarketData;
 using Prumo.Infrastructure.PortfolioImports;
 
 namespace Prumo.Worker;
@@ -57,6 +58,21 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
         }
         try
         {
+        // Recurring discovery must not race the periodic CNPJ enrichment.
+        // Older positions may have been created before their official fund
+        // identifier was available and would otherwise be silently skipped.
+        try
+        {
+            await scope.ServiceProvider.GetRequiredService<CvmFiiCnpjEnrichmentService>().EnrichAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Enriquecimento de CNPJ falhou antes da descoberta; continuando com os CNPJs já persistidos");
+        }
         var source = scope.ServiceProvider.GetRequiredService<IDocumentSource>();
         var assets = await dbContext.PortfolioPositions
             .Include(position => position.Asset)
@@ -117,7 +133,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
             .Where(document => document.SourceName == source.Name && assets.Select(asset => asset.Id).Contains(document.AssetId))
             .Select(document => new { document.AssetId, document.Fingerprint, document.SourceIdentifier, document.SourceUrl })
             .ToListAsync(cancellationToken);
-        var latestCandidates = LatestDocumentSelector.SelectLatestUnseen(recentCandidates, candidate =>
+        var latestCandidates = LatestDocumentSelector.SelectUnseen(recentCandidates, candidate =>
         {
             if (!assetByTickerForSelection.TryGetValue(candidate.Ticker, out var asset)) return true;
             var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);
