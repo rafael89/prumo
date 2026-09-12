@@ -172,19 +172,19 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         catch (HttpRequestException exception)
         {
             if (directFailureWarnings.Add($"ENET:http:{(int?)exception.StatusCode ?? 0}"))
-                logger.LogWarning("ENET direto indisponível; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
+                logger.LogDebug("ENET direto indisponível; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (JsonException)
         {
             if (directFailureWarnings.Add("ENET:json"))
-                logger.LogWarning("ENET direto retornou uma resposta inválida; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker})", asset.Ticker);
+                logger.LogDebug("ENET direto retornou uma resposta inválida; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (Exception exception)
         {
             if (directFailureWarnings.Add("ENET:other"))
-                logger.LogWarning(exception, "ENET direto indisponível; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker})", asset.Ticker);
+                logger.LogDebug(exception, "ENET direto indisponível; mantendo descoberta pelo IPE (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
     }
@@ -259,13 +259,13 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         catch (HttpRequestException exception)
         {
             if (directFailureWarnings.Add($"FNET:http:{(int?)exception.StatusCode ?? 0}"))
-                logger.LogWarning("FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
+                logger.LogDebug("FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (JsonException)
         {
             if (directFailureWarnings.Add("FNET:json"))
-                logger.LogWarning("FNET direto retornou uma resposta não-JSON; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
+                logger.LogDebug("FNET direto retornou uma resposta não-JSON; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (Exception exception)
@@ -274,7 +274,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             // environments. Its failure must not interrupt the reliable CVM
             // CSV discovery path.
             if (directFailureWarnings.Add("FNET:other"))
-                logger.LogWarning(exception, "FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
+                logger.LogDebug(exception, "FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
             return Array.Empty<CvmDocumentRecord>();
         }
     }
