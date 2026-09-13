@@ -184,6 +184,8 @@ public sealed class CvmFnetDocumentSourceTests
                 Assert.Contains("idCategoriaDocumento=0", query);
                 Assert.Contains("idTipoDocumento=0", query);
                 Assert.Contains("idEspecieDocumento=0", query);
+                Assert.DoesNotContain("dataInicial=", query);
+                Assert.DoesNotContain("dataFinal=", query);
                 Assert.DoesNotContain("draw=", query);
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(fnet) });
             }

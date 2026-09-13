@@ -310,8 +310,6 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
     private string BuildFnetDocumentsUrl(string cnpj, DateTimeOffset? from = null, DateTimeOffset? to = null)
     {
-        var upperBound = to ?? DateTimeOffset.UtcNow;
-        var lowerBound = from ?? upperBound.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
         var query = new Dictionary<string, string>
         {
             // The public FNET endpoint uses its legacy paging names (d/s/l),
@@ -320,8 +318,6 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             ["tipoFundo"] = "1", ["cnpj"] = cnpj, ["cnpjFundo"] = cnpj,
             ["idCategoriaDocumento"] = "0", ["idTipoDocumento"] = "0", ["idEspecieDocumento"] = "0",
             ["situacao"] = "", ["dataReferencia"] = "",
-            ["dataInicial"] = lowerBound.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
-            ["dataFinal"] = upperBound.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
             ["isSession"] = "true", ["paginaCertificados"] = "false"
         };
         return options.FnetDocumentsUrl + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));
