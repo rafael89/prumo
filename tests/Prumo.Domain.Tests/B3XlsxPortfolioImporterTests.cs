@@ -20,8 +20,8 @@ public sealed class B3XlsxPortfolioImporterTests
         Assert.Equal(123.5m, result.Items[1].Quantity);
         Assert.Equal(9876.54m, result.Items[1].CurrentValue);
         Assert.Equal("Corretora Sanitizada", result.Items[0].Institution);
-        Assert.Null(result.Items[0].Cnpj);
-        Assert.Null(result.Items[1].Cnpj);
+        Assert.Equal("12345678000190", result.Items[0].Cnpj);
+        Assert.Equal("98765432000110", result.Items[1].Cnpj);
     }
 
     [Fact]
