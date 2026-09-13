@@ -314,7 +314,7 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
     queryKey: ['dashboard-document', item.documentId],
     queryFn: async () => {
       const response = await fetch(`${contributionApiUrl}/api/documents/${item.documentId}`)
-      if (!response.ok) throw new Error('NÃ£o foi possÃ­vel carregar o documento.')
+      if (!response.ok) throw new Error('Não foi possível carregar o documento.')
       return response.json() as Promise<RecentDocument>
     },
     enabled: Boolean(item.documentId),

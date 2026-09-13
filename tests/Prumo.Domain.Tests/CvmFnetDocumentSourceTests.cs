@@ -212,6 +212,21 @@ public sealed class CvmFnetDocumentSourceTests
         Assert.Equal(candidate.SourceUrl, candidate.DownloadUrl);
     }
 
+    [Fact]
+    public async Task IgnoraArquivoAnualAindaNaoPublicado()
+    {
+        using var client = new HttpClient(new NotFoundHandler());
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            CompanhiasIpeUrlTemplate = "https://dados.cvm.gov.br/ipe_{0}.zip"
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidates = await source.FindAsync(new[]
+            { new DocumentSourceAsset("BBSE3", "02.916.265/0001-60", AssetClass.BrazilianStock) });
+
+        Assert.Empty(candidates);
+    }
+
     private sealed class ZipHandler : HttpMessageHandler
     {
         private readonly byte[] content;
@@ -230,5 +245,11 @@ public sealed class CvmFnetDocumentSourceTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) });
+    }
+
+    private sealed class NotFoundHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
     }
 }

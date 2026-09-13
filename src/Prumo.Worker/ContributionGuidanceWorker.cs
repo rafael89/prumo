@@ -410,12 +410,12 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         if (!document.RootElement.TryGetProperty("positions", out _))
         {
             var projected = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(json)
-                ?? throw new InvalidOperationException("Contexto projetado da orientaÃ§Ã£o de aporte invÃ¡lido.");
+                ?? throw new InvalidOperationException("Contexto projetado da orientação de aporte inválido.");
             return projected.ToRuntime();
         }
 
         return JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(json)
-            ?? throw new InvalidOperationException("Contexto da orientaÃ§Ã£o de aporte invÃ¡lido.");
+            ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
     }
 
     private async Task<(ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount)> SelectValidatedScenarioAsync(

@@ -67,12 +67,24 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
 
             try
             {
-                using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                response.EnsureSuccessStatusCode();
-                var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-                var records = isStock
-                    ? await ParseZipCsvAsync(content, cancellationToken)
-                    : ParseCsv(Encoding.Latin1.GetString(content));
+                IReadOnlyList<CvmDocumentRecord> records;
+                try
+                {
+                    using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                    response.EnsureSuccessStatusCode();
+                    var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                    records = isStock
+                        ? await ParseZipCsvAsync(content, cancellationToken)
+                        : ParseCsv(Encoding.Latin1.GetString(content));
+                }
+                catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    // CVM publishes the annual archive only after the year has
+                    // progressed. Recent documents can still be obtained from
+                    // the direct ENET/FNET endpoints below.
+                    logger.LogInformation("Arquivo anual CVM ainda não publicado; continuando pela consulta direta: {RequestUrl}", uri);
+                    records = Array.Empty<CvmDocumentRecord>();
+                }
                 logger.LogInformation("Recurso CVM {ResourceUrl} retornou {RecordCount} registro(s)", uri, records.Count);
 
                 foreach (var asset in groupAssets)
