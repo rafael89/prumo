@@ -72,8 +72,8 @@ public sealed class CvmFnetDocumentSourceTests
 
         var candidate = Assert.Single(await source.FindAsync(new[] { "XPLG11" }));
 
-        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1306470", candidate.SourceUrl);
-        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1306470", candidate.DownloadUrl);
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1306470&cvm=true", candidate.SourceUrl);
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1306470&cvm=true", candidate.DownloadUrl);
     }
 
     [Fact]
@@ -112,8 +112,8 @@ public sealed class CvmFnetDocumentSourceTests
 
         Assert.Equal("1315141", candidate.SourceIdentifier);
         Assert.Equal(DocumentType.ManagementReport, candidate.DocumentType);
-        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1315141", candidate.SourceUrl);
-        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1315141", candidate.DownloadUrl);
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1315141&cvm=true", candidate.SourceUrl);
+        Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1315141&cvm=true", candidate.DownloadUrl);
     }
 
     [Fact]

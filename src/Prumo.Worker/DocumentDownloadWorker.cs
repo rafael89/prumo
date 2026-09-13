@@ -145,7 +145,15 @@ public sealed class DocumentDownloadWorker : BackgroundService
         }
 
         var client = httpClientFactory.CreateClient("documents");
-        using var response = await client.GetAsync(job.Document.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, job.Document.DownloadUrl);
+        if (Uri.TryCreate(job.Document.DownloadUrl, UriKind.Absolute, out var downloadUri)
+            && downloadUri.Host.Contains("fnet.bmfbovespa.com.br", StringComparison.OrdinalIgnoreCase))
+        {
+            request.Headers.TryAddWithoutValidation("Accept", "application/pdf,application/octet-stream,*/*");
+            request.Headers.TryAddWithoutValidation("Referer", $"https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id={Uri.EscapeDataString(GetFnetDocumentId(downloadUri))}&cvm=true");
+            request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
+        }
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         await using var content = await response.Content.ReadAsStreamAsync(cancellationToken);
         var storedFile = await storage.SaveAsync(job.Document.Id, content, "pdf", cancellationToken);
@@ -164,6 +172,13 @@ public sealed class DocumentDownloadWorker : BackgroundService
 
     private static Task<bool> HasActivePositionAsync(PrumoDbContext dbContext, Guid assetId, CancellationToken cancellationToken) =>
         dbContext.PortfolioPositions.AnyAsync(position => position.AssetId == assetId && position.Quantity > 0, cancellationToken);
+
+    private static string GetFnetDocumentId(Uri uri) =>
+        uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(parameter => parameter.Split('=', 2))
+            .Where(parameter => parameter.Length == 2 && string.Equals(parameter[0], "id", StringComparison.OrdinalIgnoreCase))
+            .Select(parameter => Uri.UnescapeDataString(parameter[1]))
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
 }
 

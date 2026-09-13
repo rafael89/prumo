@@ -126,7 +126,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                             publishedAt,
                             string.IsNullOrWhiteSpace(record.IdDocumento) ? record.NomeArquivo : record.IdDocumento,
                             ToOfficialViewerUrl(documentUrl),
-                            documentUrl,
+                            ToFnetDownloadUrl(documentUrl),
                             record.Categoria,
                             record.TipoDocumento,
                             record.Especie));
@@ -278,7 +278,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     ReadString(item, "especieDocumento"),
                     null,
                     id,
-                    $"https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={Uri.EscapeDataString(id)}"));
+                    $"https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={Uri.EscapeDataString(id)}&cvm=true"));
             }
             logger.LogInformation("FNET direto mapeou {RecordCount} documento(s) recentes para {Ticker}", records.Count, asset.Ticker);
             return records;
@@ -420,7 +420,22 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
         return string.IsNullOrWhiteSpace(id)
             ? documentUrl
-            : $"https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id={Uri.EscapeDataString(id)}";
+            : $"https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id={Uri.EscapeDataString(id)}&cvm=true";
+    }
+
+    private static string ToFnetDownloadUrl(string documentUrl)
+    {
+        if (!Uri.TryCreate(documentUrl, UriKind.Absolute, out var uri)
+            || !uri.Host.Contains("fnet.bmfbovespa.com.br", StringComparison.OrdinalIgnoreCase)) return documentUrl;
+
+        var id = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(parameter => parameter.Split('=', 2))
+            .Where(parameter => parameter.Length == 2 && string.Equals(parameter[0], "id", StringComparison.OrdinalIgnoreCase))
+            .Select(parameter => Uri.UnescapeDataString(parameter[1]))
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        return string.IsNullOrWhiteSpace(id)
+            ? documentUrl
+            : $"https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={Uri.EscapeDataString(id)}&cvm=true";
     }
 
     private static bool TryParseDate(string? value, out DateTimeOffset date)

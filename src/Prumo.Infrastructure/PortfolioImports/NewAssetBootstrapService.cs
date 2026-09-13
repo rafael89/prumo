@@ -35,7 +35,7 @@ public sealed class NewAssetBootstrapService
             var existing = await db.Documents.FirstOrDefaultAsync(d => d.Fingerprint == fingerprint || (d.AssetId == asset.Id && d.SourceName == source.Name && ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && d.SourceIdentifier == candidate.SourceIdentifier) || d.SourceUrl == candidate.SourceUrl)), ct);
             if (existing is not null)
             {
-                existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType);
+                existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType, candidate.DownloadUrl);
                 await RequeueIgnoredDocumentAsync(existing, ct);
                 continue;
             }

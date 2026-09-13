@@ -111,11 +111,12 @@ public sealed class Document
         DocumentType = documentType;
     }
 
-    public void UpdateSourceMetadata(string? sourceCategory, string? sourceType, string? sourceSpecies, DocumentType canonicalDocumentType)
+    public void UpdateSourceMetadata(string? sourceCategory, string? sourceType, string? sourceSpecies, DocumentType canonicalDocumentType, string? downloadUrl = null)
     {
         SourceCategory = Clean(sourceCategory) ?? SourceCategory;
         SourceType = Clean(sourceType) ?? SourceType;
         SourceSpecies = Clean(sourceSpecies) ?? SourceSpecies;
+        DownloadUrl = Clean(downloadUrl) ?? DownloadUrl;
         if (canonicalDocumentType != DocumentType.Other && (DocumentType == DocumentType.Other || DocumentType != canonicalDocumentType))
         {
             DocumentType = canonicalDocumentType;

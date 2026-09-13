@@ -120,7 +120,7 @@ public sealed class DocumentDiscoveryService
                         || document.SourceUrl == candidate.SourceUrl), cancellationToken);
                 if (existing is not null)
                 {
-                    existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType);
+                    existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType, candidate.DownloadUrl);
                     reclassifiedDocuments++;
                 }
             }
