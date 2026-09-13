@@ -126,7 +126,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
   if (!portfolioId) return null
 
   return (
-    <div className="grid min-w-0 items-start gap-3 lg:grid-cols-2 *:min-w-0">
+    <div className="grid w-full min-w-0 items-start gap-3 *:min-w-0">
       <div id="documentos" className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Documentos recentes</h2>

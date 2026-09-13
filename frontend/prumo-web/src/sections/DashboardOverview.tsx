@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleInfo, faRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleInfo, faEye, faEyeSlash, faRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl } from '../api/client'
 import { TransactionReconciliationSection } from './TransactionReconciliationSection'
@@ -108,6 +108,8 @@ type DashboardOverviewProps = {
   dashboard: { data?: Dashboard; isLoading: boolean; isError: boolean }
   activePortfolio: { id: string; positionCount: number } | null
   portfoliosLoading?: boolean
+  privacyHidden?: boolean
+  togglePrivacy?: () => void
 }
 
 const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros ativos' }
@@ -240,6 +242,8 @@ function PortfolioHealthCard({ data }: { data: Dashboard }) {
   </article>
 }
 
+void PortfolioHealthCard
+
 function priorityClasses(priority: number) {
   if (priority >= 3) return 'bg-rose-100 text-rose-700'
   if (priority === 2) return 'bg-orange-100 text-orange-700'
@@ -259,7 +263,7 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
   const [visibleCount, setVisibleCount] = useState(3)
   const queryClient = useQueryClient()
   const statusMutation = useMutation({ mutationFn: ({ id, resolved }: { id: string; resolved: boolean }) => fetch(`${contributionApiUrl}/api/radar/${id}/${resolved ? 'status' : 'seen'}?portfolioId=${portfolioId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(resolved ? { status: 'Closed' } : { status: 'Seen' }) }).then(response => { if (!response.ok) throw new Error('Não foi possível atualizar o Radar.'); return response }), onSuccess: (_, variables) => { void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }); if (variables.resolved) setSelectedItem(null); else setSelectedItem(current => current ? { ...current, userState: 'Seen' } : current) } })
-  return <article className="order-1 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:col-span-1">
+  return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Radar</p>
     {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
@@ -399,7 +403,7 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
       void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] })
     },
   })
-  return <article className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  return <article className="order-3 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhum documento recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
       {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
@@ -417,7 +421,22 @@ function ContributionWidget() {
   return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm sm:p-6 lg:col-span-2"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Próximo passo</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Planeje seu próximo aporte.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Simule uma distribuição usando suas alocações-alvo, posições atuais e a inteligência da carteira.</p></div><Link to="/contributions" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700">Ir para aportes <FontAwesomeIcon icon={faArrowRight} /></Link></div></article>
 }
 
-export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false }: DashboardOverviewProps) {
+function PortfolioAllocationCard({ data, privacyHidden = false, togglePrivacy }: { data: Dashboard; privacyHidden?: boolean; togglePrivacy?: () => void }) {
+  const deviations = data.portfolioHealthSummary?.allocationDeviations ?? []
+  const money = privacyHidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.totalValue)
+
+  return <article className="order-1 min-w-0 self-start overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+    <header className="bg-[#10182d] px-5 py-4 text-white sm:px-6 sm:py-5">
+      <div className="flex items-center justify-between gap-4"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-400">Carteira</p><div className="flex items-center gap-3"><span className="hidden text-xs text-[#a9bfdf] sm:inline">{data.portfolioOverview?.lastPortfolioUpdate ? `Carteira atualizada em ${formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}` : ''}</span>{togglePrivacy && <button type="button" aria-label={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} title={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} onClick={togglePrivacy} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-600 text-slate-200 transition hover:bg-white/10"><FontAwesomeIcon icon={privacyHidden ? faEyeSlash : faEye} /></button>}</div></div>
+      <div className="mt-7 grid gap-5 sm:grid-cols-[3fr_1.1fr]"><div><p className="text-sm text-[#8ca9cd]">Patrimônio da carteira</p><p className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{money}</p></div><div className="border-t border-slate-700 pt-4 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"><p className="text-sm text-[#8ca9cd]">Ativos na carteira</p><p className="mt-2 text-3xl font-bold sm:text-4xl">{privacyHidden ? '••••' : data.positionCount}</p></div></div>
+    </header>
+    <div className="px-5 py-6 sm:px-6"><div className="flex items-center justify-between gap-4"><h2 className="text-xs font-bold uppercase tracking-[0.2em] text-orange-700">Alocação por classe</h2></div>
+      {deviations.length > 0 ? <><div className="mt-4 flex justify-end gap-4 text-xs text-slate-500"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-sky-600" />Atual</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-orange-500" />Excesso</span><span><i className="mr-1 inline-block h-4 w-px bg-slate-700 align-middle" />Meta</span></div><div className="mt-2 space-y-1">{deviations.map(item => { const current = Math.min(Math.max(item.currentPercentage, 0), 100); const target = Math.min(Math.max(item.targetPercentage, 0), 100); const base = Math.min(current, target); const gap = Math.abs(target - current); const underweight = current < target; return <div key={item.assetClass} className="grid min-h-10 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[6.5rem_minmax(0,1fr)_7.5rem]"><strong className="text-sm text-slate-900">{assetClassLabels[item.assetClass] ?? 'Outros ativos'}</strong><div className="relative h-3 overflow-hidden rounded-full bg-slate-100"><span className="absolute inset-y-0 left-0 bg-sky-600" style={{ width: `${base}%` }} />{gap > 0 && <span className={`absolute inset-y-0 ${underweight ? 'bg-[repeating-linear-gradient(-45deg,#d7e0ea_0,#d7e0ea_3px,#f3f6f9_3px,#f3f6f9_6px)]' : 'bg-orange-500'}`} style={{ left: `${base}%`, width: `${gap}%` }} />}<span className="absolute inset-y-0 w-0.5 bg-slate-700" style={{ left: `${target}%` }} /></div><div className="col-start-2 flex gap-1 text-xs sm:col-start-3 sm:justify-end sm:text-sm"><strong className="text-slate-900">{formatPercentage(current)}%</strong><span className="text-slate-400">/</span><span className="text-slate-500">{formatPercentage(target)}%</span></div></div> })}</div></> : <div className="mt-5 rounded-2xl bg-stone-50 p-4 text-sm leading-6 text-slate-600">{data.portfolioOverview?.healthSummary ?? 'Configure as alocações-alvo para acompanhar a distribuição da carteira.'}<Link to="/portfolio" className="mt-2 flex w-fit items-center gap-2 font-semibold text-slate-900">Configurar alocação-alvo <FontAwesomeIcon icon={faArrowRight} /></Link></div>}
+    </div>
+  </article>
+}
+
+export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, privacyHidden = false, togglePrivacy }: DashboardOverviewProps) {
   if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
   if (dashboard.isLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
@@ -426,17 +445,16 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
   const data = dashboard.data
   if (data.positionCount === 0) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Importar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
 
-  return <section className="mx-auto max-w-358 px-4 pb-16 pt-3 sm:px-6">
+  return <section className="dashboard-overview mx-auto max-w-358 px-4 pb-16 pt-3 sm:px-6">
     <header className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1></div>
-      {data.portfolioOverview?.lastPortfolioUpdate && <p className="text-xs text-slate-500">Carteira atualizada em {formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}</p>}
     </header>
-    <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[7fr_3fr]">
-      <PortfolioHealthCard data={data} />
+    <div className="grid min-w-0 items-start gap-4">
+      <PortfolioAllocationCard data={data} privacyHidden={privacyHidden} togglePrivacy={togglePrivacy} />
       <RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} />
-      <div className="order-2 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
+      <div className="order-3 min-w-0 self-start"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
     </div>
-    <TransactionReconciliationSection portfolioId={activePortfolio.id} />
     <ContributionWidget />
+    <TransactionReconciliationSection portfolioId={activePortfolio.id} />
   </section>
 }
