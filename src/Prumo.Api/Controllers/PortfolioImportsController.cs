@@ -73,12 +73,12 @@ public sealed class PortfolioImportsController : ControllerBase
         if (session.Status != PortfolioImportStatus.Previewed && session.Status != PortfolioImportStatus.Completed)
             return Conflict("A sessão de importação não está disponível para confirmação.");
         var portfolio = await db.Portfolios.Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, ct);
-        var createdAssets = 0; var addedToPortfolio = 0; var updated = 0; var addedAssetIds = new List<Guid>();
+        var createdAssets = 0; var addedToPortfolio = 0; var updated = 0; var cnpjsRecorded = 0; var addedAssetIds = new List<Guid>();
         foreach (var item in normalized.Items)
         {
             var asset = await db.Assets.SingleOrDefaultAsync(a => a.Ticker == item.Ticker, ct);
-            if (asset is null) { asset = new Asset(item.Ticker, item.AssetName, item.AssetType, null, item.AssetClass, item.Cnpj); db.Assets.Add(asset); createdAssets++; }
-            else if (!string.IsNullOrWhiteSpace(item.Cnpj) && string.IsNullOrWhiteSpace(asset.Cnpj)) asset.SetCnpj(item.Cnpj);
+            if (asset is null) { asset = new Asset(item.Ticker, item.AssetName, item.AssetType, null, item.AssetClass, item.Cnpj); db.Assets.Add(asset); createdAssets++; if (!string.IsNullOrWhiteSpace(asset.Cnpj)) cnpjsRecorded++; }
+            else if (!string.IsNullOrWhiteSpace(item.Cnpj) && string.IsNullOrWhiteSpace(asset.Cnpj)) { asset.SetCnpj(item.Cnpj); cnpjsRecorded++; }
             var position = portfolio.Positions.SingleOrDefault(p => p.AssetId == asset.Id);
             if (position is null) { position = new PortfolioPosition(portfolio.Id, asset.Id, item.Quantity, item.AveragePrice ?? 0, item.CurrentPrice); db.PortfolioPositions.Add(position); portfolio.Positions.Add(position); addedToPortfolio++; addedAssetIds.Add(asset.Id); }
             else { position.Update(item.Quantity, item.AveragePrice ?? position.AveragePrice, item.CurrentPrice ?? position.CurrentPrice); updated++; }
@@ -124,7 +124,7 @@ public sealed class PortfolioImportsController : ControllerBase
         {
             logger.LogError(exception, "Falha no discovery pós-importação: ImportSessionId={ImportSessionId}, PortfolioId={PortfolioId}", session.Id, portfolioId);
         }
-        return Ok(new ImportConfirmationDto("Completed", createdAssets, addedToPortfolio, updated, importedTransactions, ignoredDuplicateTransactions, autoReconciled));
+        return Ok(new ImportConfirmationDto("Completed", createdAssets, addedToPortfolio, updated, importedTransactions, ignoredDuplicateTransactions, autoReconciled, cnpjsRecorded));
     }
 
     [HttpGet]
@@ -151,5 +151,5 @@ public sealed class PortfolioImportsController : ControllerBase
 }
 
 public sealed record ImportPreviewDto(Guid ImportSessionId, PortfolioImportSource Source, DateTimeOffset? ReferenceDate, IReadOnlyList<string> NewAssets, IReadOnlyList<string> UpdatedPositions, IReadOnlyList<string> UnchangedPositions, IReadOnlyList<string> Warnings, IReadOnlyList<string> Errors, bool CanConfirm);
-public sealed record ImportConfirmationDto(string Status, int CreatedAssets, int AddedToPortfolioAssets, int UpdatedPositions, int ImportedTransactions = 0, int IgnoredDuplicateTransactions = 0, int AutoReconciledTransactions = 0);
+public sealed record ImportConfirmationDto(string Status, int CreatedAssets, int AddedToPortfolioAssets, int UpdatedPositions, int ImportedTransactions = 0, int IgnoredDuplicateTransactions = 0, int AutoReconciledTransactions = 0, int CnpjsRecorded = 0);
 public sealed record ImportSessionDto(Guid Id, PortfolioImportSource Source, string OriginalFileName, PortfolioImportStatus Status, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
