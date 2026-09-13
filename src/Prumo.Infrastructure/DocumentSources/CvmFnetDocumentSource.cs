@@ -246,7 +246,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             using var managerResponse = await httpClient.SendAsync(managerRequest, HttpCompletionOption.ResponseHeadersRead, ct);
             managerResponse.EnsureSuccessStatusCode();
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj));
+            using var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj, from, to));
             request.Headers.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
             request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
             request.Headers.TryAddWithoutValidation("Referer", $"{options.FnetManagerUrl}?cnpjFundo={normalizedCnpj}");
@@ -255,7 +255,8 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             response.EnsureSuccessStatusCode();
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (!json.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            if (!TryGetArray(json.RootElement, "data", out var data)
+                && !TryGetArray(json.RootElement, "aaData", out data))
                 return Array.Empty<CvmDocumentRecord>();
 
             var upperBound = to ?? DateTimeOffset.UtcNow;
@@ -307,8 +308,10 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         }
     }
 
-    private string BuildFnetDocumentsUrl(string cnpj)
+    private string BuildFnetDocumentsUrl(string cnpj, DateTimeOffset? from = null, DateTimeOffset? to = null)
     {
+        var upperBound = to ?? DateTimeOffset.UtcNow;
+        var lowerBound = from ?? upperBound.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
         var query = new Dictionary<string, string>
         {
             // The public FNET endpoint uses its legacy paging names (d/s/l),
@@ -316,20 +319,44 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             ["d"] = "0", ["s"] = "0", ["l"] = "100",
             ["tipoFundo"] = "1", ["cnpj"] = cnpj, ["cnpjFundo"] = cnpj,
             ["idCategoriaDocumento"] = "0", ["idTipoDocumento"] = "0", ["idEspecieDocumento"] = "0",
-            ["situacao"] = "", ["dataReferencia"] = "", ["dataInicial"] = "", ["dataFinal"] = "",
+            ["situacao"] = "", ["dataReferencia"] = "",
+            ["dataInicial"] = lowerBound.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+            ["dataFinal"] = upperBound.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
             ["isSession"] = "true", ["paginaCertificados"] = "false"
         };
         return options.FnetDocumentsUrl + "?" + string.Join("&", query.Select(item => $"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(item.Value)}"));
     }
 
+    private static bool TryGetArray(JsonElement element, string property, out JsonElement value)
+    {
+        foreach (var candidate in element.EnumerateObject())
+        {
+            if (string.Equals(candidate.Name, property, StringComparison.OrdinalIgnoreCase)
+                && candidate.Value.ValueKind == JsonValueKind.Array)
+            {
+                value = candidate.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
+    }
+
     private static string? ReadString(JsonElement item, string property)
     {
-        if (!item.TryGetProperty(property, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+        var value = item.EnumerateObject()
+            .FirstOrDefault(candidate => string.Equals(candidate.Name, property, StringComparison.OrdinalIgnoreCase)).Value;
+        if (value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) return null;
         return value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() : value.ToString().Trim();
     }
 
     private static bool TryParseFnetDate(string? value, out DateTimeOffset date)
-        => DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy", "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
+        => DateTimeOffset.TryParseExact(value?.Trim(), new[]
+        {
+            "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy",
+            "yyyy-MM-dd", "yyyy-MM-dd HH:mm", "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-ddTHH:mm", "yyyy-MM-ddTHH:mm:ss", "yyyy-MM-ddTHH:mm:ss.FFFFFFFK"
+        }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
 
     private static async Task<List<CvmDocumentRecord>> ParseZipCsvAsync(byte[] content, CancellationToken cancellationToken)
     {
