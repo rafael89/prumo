@@ -25,7 +25,7 @@ public sealed class CvmFiiMonthlyIngestionWorker(IServiceScopeFactory scopeFacto
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception exception)
             {
-                logger.LogError(exception, "CVM FII ingestion execution failed: durationMs={DurationMs}; retrying next cycle", Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+                logger.LogWarning(exception, "CVM FII ingestion execution failed: durationMs={DurationMs}; retrying next cycle", Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
                 await Task.Delay(options.Value.FailureDelay, stoppingToken);
             }
         }

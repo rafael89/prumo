@@ -30,7 +30,7 @@ public sealed class CvmFiiMonthlyIngestionService
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)
         {
-            logger.LogError(exception, "CVM FII structured ingestion download/parse failure: sourceUrl={SourceUrl}", source.Diagnostics.Url);
+            logger.LogWarning(exception, "CVM FII structured ingestion download/parse failure: sourceUrl={SourceUrl}", source.Diagnostics.Url);
             throw;
         }
         var known = await db.CvmFiiMonthlyObservations.Select(x => x.Fingerprint).ToHashSetAsync(cancellationToken);
