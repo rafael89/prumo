@@ -77,8 +77,11 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                         ? await ParseZipCsvAsync(content, cancellationToken)
                         : ParseCsv(Encoding.Latin1.GetString(content));
                 }
-                catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+                catch (HttpRequestException exception)
                 {
+                    if (exception.StatusCode != System.Net.HttpStatusCode.NotFound)
+                        logger.LogWarning(exception, "Arquivo anual CVM indisponível; continuando pela consulta direta: {RequestUrl}", uri);
+
                     // CVM publishes the annual archive only after the year has
                     // progressed. Recent documents can still be obtained from
                     // the direct ENET/FNET endpoints below.
