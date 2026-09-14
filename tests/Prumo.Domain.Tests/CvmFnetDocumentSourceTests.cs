@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Prumo.Domain.Enums;
@@ -117,6 +118,29 @@ public sealed class CvmFnetDocumentSourceTests
     }
 
     [Fact]
+    public async Task PaginaTodasAsPaginasEEncontraDocumentoNaUltimaPagina()
+    {
+        var handler = new PagedFnetHandler(487, 1316192);
+        using var client = new HttpClient(handler);
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            DocumentosEventuaisUrlTemplate = "https://cvm.test/eventual_{0}.csv",
+            FnetManagerUrl = "https://fnet.test/manager",
+            FnetDocumentsUrl = "https://fnet.test/documents"
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidates = await source.FindAsync(
+            new[] { new DocumentSourceAsset("VGIP11", "34.197.811/0001-46", AssetClass.Fii) },
+            new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 9, 14, 0, 0, 0, TimeSpan.Zero));
+
+        var candidate = Assert.Single(candidates);
+        Assert.Equal("1316192", candidate.SourceIdentifier);
+        Assert.Equal(DocumentType.Other, candidate.DocumentType);
+        Assert.Equal(new[] { 0, 100, 200, 300, 400 }, handler.Starts);
+    }
+
+    [Fact]
     public async Task MantemCsvQuandoFnetRetornaHtmlEmVezDeJson()
     {
         const string csv = "CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;TP_DOC;NM_ARQ;ID_DOC;LINK_ARQ\n" +
@@ -148,6 +172,46 @@ public sealed class CvmFnetDocumentSourceTests
         var candidates = await source.FindAsync(new[] { "BBSE3" });
 
         Assert.Empty(candidates);
+    }
+
+    private sealed class PagedFnetHandler : HttpMessageHandler
+    {
+        private readonly int total;
+        private readonly int targetId;
+        public List<int> Starts { get; } = new();
+
+        public PagedFnetHandler(int total, int targetId)
+        {
+            this.total = total;
+            this.targetId = targetId;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("manager", StringComparison.OrdinalIgnoreCase))
+                return JsonResponse("{}");
+            if (!request.RequestUri.AbsolutePath.Contains("documents", StringComparison.OrdinalIgnoreCase))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("CNPJ_FUNDO_CLASSE;DT_COMPTC;DT_RECEB;TP_DOC;NM_ARQ;ID_DOC;LINK_ARQ\n") });
+
+            var start = int.Parse(request.RequestUri.Query.Split('&').First(item => item.StartsWith("?s=", StringComparison.Ordinal) || item.StartsWith("s=", StringComparison.Ordinal)).Split('=')[1]);
+            Starts.Add(start);
+            var count = Math.Min(100, Math.Max(0, total - start));
+            var rows = Enumerable.Range(start, count)
+                .Select(index => new
+                {
+                    id = index == total - 1 ? targetId : 100000 + index,
+                    dataEntrega = index == total - 1 ? "11/09/2026 17:09" : "11/09/2020 17:09",
+                    dataReferencia = index == total - 1 ? "11/09/2026" : "11/09/2020",
+                    tipoDocumento = "Rendimentos e Amortizações",
+                    categoriaDocumento = "Aviso aos Cotistas - Estruturado",
+                    especieDocumento = "",
+                    status = "Ativo"
+                });
+            return JsonResponse(JsonSerializer.Serialize(new { recordsTotal = total, data = rows }));
+        }
+
+        private static Task<HttpResponseMessage> JsonResponse(string content) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(content, Encoding.UTF8, "application/json") });
     }
 
     private sealed class CsvHandler : HttpMessageHandler

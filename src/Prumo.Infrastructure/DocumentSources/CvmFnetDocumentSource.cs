@@ -246,41 +246,87 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             using var managerResponse = await httpClient.SendAsync(managerRequest, HttpCompletionOption.ResponseHeadersRead, ct);
             managerResponse.EnsureSuccessStatusCode();
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj, from, to));
-            request.Headers.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
-            request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
-            request.Headers.TryAddWithoutValidation("Referer", $"{options.FnetManagerUrl}?cnpjFundo={normalizedCnpj}");
-            request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
-            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.EnsureSuccessStatusCode();
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (!TryGetArray(json.RootElement, "data", out var data)
-                && !TryGetArray(json.RootElement, "aaData", out data))
-                return Array.Empty<CvmDocumentRecord>();
-
             var upperBound = to ?? DateTimeOffset.UtcNow;
             var cutoff = from ?? upperBound.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
             var records = new List<CvmDocumentRecord>();
-            foreach (var item in data.EnumerateArray())
-            {
-                var id = ReadString(item, "id");
-                var delivered = ReadString(item, "dataEntrega");
-                var reference = ReadString(item, "dataReferencia");
-                if (string.IsNullOrWhiteSpace(id) || !TryParseFnetDate(delivered, out var publishedAt) || publishedAt < cutoff || publishedAt > upperBound.AddMinutes(5)) continue;
-                if (ReadString(item, "status")?.StartsWith("C", StringComparison.OrdinalIgnoreCase) == true) continue;
+            var pageSize = 100;
+            var start = 0;
+            var pageCount = 0;
+            int? recordsTotal = null;
+            var pageSignatures = new HashSet<string>(StringComparer.Ordinal);
+            var documentIds = new HashSet<string>(StringComparer.Ordinal);
 
-                records.Add(new CvmDocumentRecord(
-                    normalizedCnpj,
-                    reference,
-                    delivered,
-                    ReadString(item, "tipoDocumento"),
-                    ReadString(item, "categoriaDocumento"),
-                    ReadString(item, "especieDocumento"),
-                    null,
-                    id,
-                    $"https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={Uri.EscapeDataString(id)}&cvm=true"));
+            while (true)
+            {
+                if (pageCount++ >= 1000)
+                    throw new InvalidOperationException("Paginação FNET excedeu o limite defensivo de páginas.");
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj, from, to, start, pageSize));
+                request.Headers.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
+                request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+                request.Headers.TryAddWithoutValidation("Referer", $"{options.FnetManagerUrl}?cnpjFundo={normalizedCnpj}");
+                request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
+                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                response.EnsureSuccessStatusCode();
+                await using var pageStream = await response.Content.ReadAsStreamAsync(ct);
+                using var pageJson = await JsonDocument.ParseAsync(pageStream, cancellationToken: ct);
+                if (!TryGetArray(pageJson.RootElement, "data", out var pageData)
+                    && !TryGetArray(pageJson.RootElement, "aaData", out pageData))
+                {
+                    if (start == 0) return Array.Empty<CvmDocumentRecord>();
+                    logger.LogWarning("FNET retornou uma página sem dados em s={Start}; encerrando paginação após {RecordCount} registro(s).", start, records.Count);
+                    break;
+                }
+
+                if (start == 0)
+                {
+                    recordsTotal = ReadInt(pageJson.RootElement, "recordsTotal");
+                    if (!recordsTotal.HasValue)
+                        logger.LogWarning("FNET não informou recordsTotal; usando tamanho das páginas para encerrar a paginação.");
+                }
+
+                var pageSignature = pageData.GetRawText();
+                if (!pageSignatures.Add(pageSignature))
+                {
+                    logger.LogWarning("FNET repetiu a página s={Start}; encerrando paginação defensivamente após {RecordCount} registro(s).", start, records.Count);
+                    break;
+                }
+
+                var pageCountReturned = pageData.GetArrayLength();
+                foreach (var item in pageData.EnumerateArray())
+                {
+                    var id = ReadString(item, "id");
+                    var delivered = ReadString(item, "dataEntrega");
+                    var reference = ReadString(item, "dataReferencia");
+                    if (string.IsNullOrWhiteSpace(id) || !documentIds.Add(id)) continue;
+                    if (ReadString(item, "status")?.StartsWith("C", StringComparison.OrdinalIgnoreCase) == true) continue;
+
+                    records.Add(new CvmDocumentRecord(
+                        normalizedCnpj,
+                        reference,
+                        delivered,
+                        ReadString(item, "tipoDocumento"),
+                        ReadString(item, "categoriaDocumento"),
+                        ReadString(item, "especieDocumento"),
+                        null,
+                        id,
+                        $"https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id={Uri.EscapeDataString(id)}&cvm=true"));
+                }
+
+                start += pageCountReturned;
+                if (pageCountReturned == 0 && recordsTotal.HasValue && start < recordsTotal.Value)
+                    logger.LogWarning("FNET retornou página vazia antes de recordsTotal: s={Start}, cobertos={Covered}, total={Total}.", start, start, recordsTotal.Value);
+                if (pageCountReturned == 0
+                    || recordsTotal.HasValue && start >= recordsTotal.Value
+                    || pageCountReturned < pageSize)
+                    break;
             }
+
+            records = records
+                .Where(record => TryParseFnetDate(record.DataRecebimento, out var publishedAt)
+                    && publishedAt >= cutoff
+                    && publishedAt <= upperBound.AddMinutes(5))
+                .ToList();
             logger.LogInformation("FNET direto mapeou {RecordCount} documento(s) recentes para {Ticker}", records.Count, asset.Ticker);
             return records;
         }
@@ -288,7 +334,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         catch (HttpRequestException exception)
         {
             if (directFailureWarnings.Add($"FNET:http:{(int?)exception.StatusCode ?? 0}"))
-                logger.LogDebug("FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
+                logger.LogWarning(exception, "FNET direto indisponível durante a paginação; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
             return Array.Empty<CvmDocumentRecord>();
         }
         catch (JsonException)
@@ -308,13 +354,13 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
         }
     }
 
-    private string BuildFnetDocumentsUrl(string cnpj, DateTimeOffset? from = null, DateTimeOffset? to = null)
+    private string BuildFnetDocumentsUrl(string cnpj, DateTimeOffset? from = null, DateTimeOffset? to = null, int start = 0, int pageSize = 100)
     {
         var query = new Dictionary<string, string>
         {
             // The public FNET endpoint uses its legacy paging names (d/s/l),
             // rather than the DataTables names (draw/start/length).
-            ["d"] = "0", ["s"] = "0", ["l"] = "100",
+            ["d"] = "0", ["s"] = start.ToString(CultureInfo.InvariantCulture), ["l"] = pageSize.ToString(CultureInfo.InvariantCulture),
             ["tipoFundo"] = "1", ["cnpj"] = cnpj, ["cnpjFundo"] = cnpj,
             ["idCategoriaDocumento"] = "0", ["idTipoDocumento"] = "0", ["idEspecieDocumento"] = "0",
             ["situacao"] = "", ["dataReferencia"] = "",
@@ -344,6 +390,18 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             .FirstOrDefault(candidate => string.Equals(candidate.Name, property, StringComparison.OrdinalIgnoreCase)).Value;
         if (value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) return null;
         return value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() : value.ToString().Trim();
+    }
+
+    private static int? ReadInt(JsonElement item, string property)
+    {
+        var value = item.EnumerateObject()
+            .FirstOrDefault(candidate => string.Equals(candidate.Name, property, StringComparison.OrdinalIgnoreCase)).Value;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number >= 0 ? number : null;
+        return value.ValueKind == JsonValueKind.String
+            && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
+            && number >= 0
+            ? number
+            : null;
     }
 
     private static bool TryParseFnetDate(string? value, out DateTimeOffset date)
