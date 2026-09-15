@@ -125,7 +125,14 @@ public sealed class DocumentDownloadWorker : BackgroundService
             var retry = persistedJob.Fail(DateTimeOffset.UtcNow, exception.Message, options.MaxAttempts, options.RetryDelay);
             if (persistedJob.Document is not null) persistedJob.Document.MarkError();
             await dbContext.SaveChangesAsync(cancellationToken);
-            logger.LogError(exception, "Falha no job {JobId}; retry={Retry}; tentativa={Attempt}/{MaxAttempts}", persistedJob.Id, retry, persistedJob.Attempts, options.MaxAttempts);
+            if (retry)
+            {
+                logger.LogWarning(exception, "Falha transitória no job {JobId}; retry=true; tentativa={Attempt}/{MaxAttempts}", persistedJob.Id, persistedJob.Attempts, options.MaxAttempts);
+            }
+            else
+            {
+                logger.LogError(exception, "Falha permanente no job {JobId}; retry=false; tentativa={Attempt}/{MaxAttempts}", persistedJob.Id, persistedJob.Attempts, options.MaxAttempts);
+            }
         }
     }
 

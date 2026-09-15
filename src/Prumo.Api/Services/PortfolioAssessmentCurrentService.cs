@@ -126,6 +126,7 @@ public sealed class PortfolioAssessmentCurrentService
             .AsSplitQuery()
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis!).ThenInclude(x => x.Document!)
             .Where(x => x.PortfolioId == portfolio.Id
                 && eventIds.Contains(x.InvestmentEventId)
                 && x.PortfolioSnapshotKey == snapshot
@@ -165,6 +166,7 @@ public sealed class PortfolioAssessmentCurrentService
                 .AsSplitQuery()
                 .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
                 .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
+                .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis!).ThenInclude(x => x.Document!)
                 .Where(x => x.PortfolioId == portfolio.Id
                     && eventIds.Contains(x.InvestmentEventId)
                     && x.PortfolioSnapshotKey == snapshot

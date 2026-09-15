@@ -21,6 +21,9 @@ using Prumo.Infrastructure.Reconciliation;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// GlobalExceptionHandler records the exception with the request path. The
+// framework middleware would otherwise emit the same exception a second time.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
 
 builder.Services.AddControllers();
 builder.Services.AddScoped<PortfolioHistoryService>();

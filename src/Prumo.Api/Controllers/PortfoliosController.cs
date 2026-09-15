@@ -133,7 +133,14 @@ public sealed class PortfoliosController : ControllerBase
         {
             logger?.LogWarning("Ignorando {IgnoredAssessmentCount} assessments incompletos no dashboard da carteira {PortfolioId}", loadedAssessments.Count - usableAssessments.Count, portfolioId);
         }
-        var assessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, usableAssessments, cancellationToken);
+        var refreshedAssessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, usableAssessments, cancellationToken);
+        var assessments = refreshedAssessments
+            .Where(a => a.InvestmentEvent?.DocumentAnalysis?.Document is not null)
+            .ToList();
+        if (assessments.Count != refreshedAssessments.Count)
+        {
+            logger?.LogWarning("Ignorando {IgnoredAssessmentCount} assessments incompletos após atualização no dashboard da carteira {PortfolioId}", refreshedAssessments.Count - assessments.Count, portfolioId);
+        }
         var eventsByDocument = assessments
             .GroupBy(a => a.InvestmentEvent!.DocumentAnalysisId)
             .ToDictionary(group => group.Key, BuildDashboardEvents);
