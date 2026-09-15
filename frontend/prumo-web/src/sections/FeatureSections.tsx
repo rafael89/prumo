@@ -65,6 +65,15 @@ export function RadarSection({ portfolioId }: { portfolioId: string | null }) {
   })
   const rawItems = radar.data ? [...radar.data.attentionNow, ...radar.data.recentUpdates] : []
   const items = rawItems.filter(item => filter === 'attention' ? item.requiresAttention : filter === 'unread' ? item.userState === 0 : filter === 'read' ? item.userState === 1 : filter === 'resolved' ? item.status === 3 || item.status === 'Closed' : true).map(item => ({ ...item, documentId: item.evidence[0]?.documentId ?? '', documentAnalysisId: item.assessmentId, assetTicker: item.affectedAssets[0] ?? 'Carteira', publishedAt: item.occurredAt, priority: normalizeRadarPriority(item.attentionPriority), score: 0, reasons: [], status: item.status === 3 || item.status === 'Closed' ? 'Resolved' : item.userState === 0 ? 'Unread' : 'Read', requiresAction: item.actionRequirement >= 2, summary: item.eventSummary, portfolioImpact: item.whyItMatters, actionLabel: ['Nenhuma ação', 'Acompanhar', 'Revisar', 'Agir'][item.actionRequirement] ?? 'Nenhuma ação', capitalLabel: ['Favorável a aumentar exposição', 'Sem impacto relevante', 'Cautela ao aumentar exposição', 'Evitar aumentar exposição agora'][item.capitalDecisionImpact] ?? 'Sem impacto relevante' }))
+  items.sort((left, right) => {
+    const priorityOrder: Record<string, number> = { Low: 0, Medium: 1, High: 2, Critical: 3 }
+    const priorityDifference = priorityOrder[right.priority] - priorityOrder[left.priority]
+    if (priorityDifference !== 0) return priorityDifference
+    const rightDate = right.publishedAt ? Date.parse(right.publishedAt) : Number.NEGATIVE_INFINITY
+    const leftDate = left.publishedAt ? Date.parse(left.publishedAt) : Number.NEGATIVE_INFINITY
+    if (rightDate !== leftDate) return rightDate - leftDate
+    return right.assessmentId.localeCompare(left.assessmentId)
+  })
   const [selectedItem, setSelectedItem] = useState<(typeof items)[number] | null>(null)
   const selectedModalItem: DashboardAssessment | null = selectedItem && selectedItem.evidence[0]?.documentId ? { assessmentId: selectedItem.assessmentId, documentId: selectedItem.evidence[0].documentId, asset: selectedItem.affectedAssets[0] ?? 'Carteira', eventSummary: selectedItem.eventSummary, whyItMatters: selectedItem.whyItMatters, suggestedBehavior: selectedItem.suggestedBehavior, occurredAt: selectedItem.occurredAt, attentionPriority: typeof selectedItem.attentionPriority === 'number' ? selectedItem.attentionPriority : radarPriorityValues.indexOf(selectedItem.attentionPriority), actionRequirement: selectedItem.actionRequirement, capitalDecisionImpact: selectedItem.capitalDecisionImpact, status: selectedItem.status === 'Resolved' ? 'Closed' : 'Active', userState: selectedItem.userState === 0 ? 'Unread' : 'Seen', documentImportance: selectedItem.documentImportance } : null
   const selectedItemId = selectedItem?.assessmentId

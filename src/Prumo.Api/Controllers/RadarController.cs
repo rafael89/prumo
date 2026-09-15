@@ -49,7 +49,6 @@ public sealed class RadarController : ControllerBase
             .Where(x => !userState.HasValue || x.UserState == userState.Value)
             .OrderByDescending(x => x.Representative.AttentionPriority)
             .ThenByDescending(x => x.Representative.InvestmentEvent!.OccurredAt)
-            .ThenByDescending(x => x.Representative.GeneratedAt)
             .ThenByDescending(x => x.Representative.Id)
             .ToList();
         var items = groupedAssessments.Select(x => ToDto(x.Representative, x.Events)).ToList();
