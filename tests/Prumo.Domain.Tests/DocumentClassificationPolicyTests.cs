@@ -21,4 +21,18 @@ public sealed class DocumentClassificationPolicyTests
     {
         Assert.Equal(DocumentType.Other, DocumentClassificationPolicy.Map("Relatórios", "Anúncio de Encerramento", null));
     }
+
+    [Theory]
+    [InlineData("Anúncio de Início")]
+    [InlineData("Instrumento Particular de Emissão de Cotas")]
+    public void Identifies_operational_issuance_documents(string sourceType)
+    {
+        Assert.True(DocumentClassificationPolicy.IsOperationalIssuanceDocument(null, sourceType, null));
+    }
+
+    [Fact]
+    public void Does_not_skip_relevant_fact_with_issuance_wording()
+    {
+        Assert.False(DocumentClassificationPolicy.IsOperationalIssuanceDocument("Fatos Relevantes", "Fato Relevante", null));
+    }
 }

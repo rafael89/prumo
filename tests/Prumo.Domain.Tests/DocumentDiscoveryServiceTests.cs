@@ -68,6 +68,30 @@ public sealed class DocumentDiscoveryServiceTests
         Assert.Empty(db.ProcessingJobs);
     }
 
+    [Fact]
+    public async Task Keeps_operational_issuance_document_without_downloading_or_analyzing()
+    {
+        await using var db = CreateDb();
+        var asset = AddPositionedAsset(db, "AAA3");
+        var source = new FakeDocumentSource(new DocumentCandidate(
+            asset.Ticker,
+            DocumentType.Other,
+            From.AddDays(3),
+            "issuance-start",
+            "https://example.test/issuance-start",
+            "https://example.test/issuance-start.pdf",
+            "Ofertas Públicas",
+            "Anúncio de Início",
+            null));
+
+        var result = await CreateService(db, source).DiscoverAsync(From, To);
+
+        Assert.Equal(1, result.NewDocuments);
+        Assert.Empty(db.ProcessingJobs);
+        var document = Assert.Single(db.Documents);
+        Assert.Equal(DocumentProcessingStatus.Ignored, document.ProcessingStatus);
+    }
+
     private static DocumentDiscoveryService CreateService(PrumoDbContext db, FakeDocumentSource source)
     {
         var enrichment = new CvmFiiCnpjEnrichmentService(

@@ -7,6 +7,7 @@ using Prumo.Infrastructure.DocumentSources;
 using Prumo.Infrastructure.MarketData;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.PortfolioImports;
+using Prumo.Application.Documents;
 
 namespace Prumo.Worker;
 
@@ -163,7 +164,15 @@ public sealed class DocumentDiscoveryService
 
                 var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl, candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
                 dbContext.Documents.Add(document);
-                dbContext.ProcessingJobs.Add(new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow));
+                if (DocumentClassificationPolicy.IsOperationalIssuanceDocument(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies))
+                {
+                    document.MarkIgnored();
+                    logger.LogInformation("Documento operacional de emissão mantido apenas como histórico: ticker={Ticker}; tipo={SourceType}; identificador={SourceIdentifier}", candidate.Ticker, candidate.SourceType, candidate.SourceIdentifier);
+                }
+                else
+                {
+                    dbContext.ProcessingJobs.Add(new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow));
+                }
                 await dbContext.SaveChangesAsync(cancellationToken);
                 existingDocuments.Add(new { AssetId = asset.Id, Fingerprint = fingerprint, SourceIdentifier = candidate.SourceIdentifier, SourceUrl = candidate.SourceUrl });
                 newDocuments++;

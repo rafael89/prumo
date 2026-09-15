@@ -29,6 +29,22 @@ public static class DocumentClassificationPolicy
         return DocumentType.Other;
     }
 
+    // These CVM/FNET filings describe operational steps of a public offering.
+    // They are useful as an audit trail, but normally repeat the material fact
+    // that should feed the Radar. Keep the metadata record and skip the PDF/AI
+    // pipeline for them.
+    public static bool IsOperationalIssuanceDocument(string? sourceCategory, string? sourceType, string? sourceSpecies)
+    {
+        var values = new[] { sourceCategory, sourceType, sourceSpecies }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(Normalize)
+            .ToArray();
+
+        return values.Any(value =>
+            value.Contains("ANUNCIO DE INICIO", StringComparison.Ordinal)
+            || value.Contains("INSTRUMENTO PARTICULAR DE EMISSAO DE COTAS", StringComparison.Ordinal));
+    }
+
     private static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return string.Empty;
