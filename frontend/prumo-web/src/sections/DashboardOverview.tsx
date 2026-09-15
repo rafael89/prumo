@@ -108,6 +108,8 @@ type DashboardOverviewProps = {
   dashboard: { data?: Dashboard; isLoading: boolean; isError: boolean }
   activePortfolio: { id: string; positionCount: number } | null
   portfoliosLoading?: boolean
+  portfoliosError?: boolean
+  retryPortfolios?: () => void
   privacyHidden?: boolean
   togglePrivacy?: () => void
 }
@@ -436,8 +438,9 @@ function PortfolioAllocationCard({ data, privacyHidden = false, togglePrivacy }:
   </article>
 }
 
-export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, privacyHidden = false, togglePrivacy }: DashboardOverviewProps) {
+export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, portfoliosError = false, retryPortfolios, privacyHidden = false, togglePrivacy }: DashboardOverviewProps) {
   if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
+  if (portfoliosError) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-rose-200 bg-rose-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-700">Serviço temporariamente indisponível</p><h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Não conseguimos carregar sua carteira.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">O Prumo está com dificuldade para se conectar ao serviço neste momento. Seus dados não foram apagados. Tente novamente em alguns instantes.</p>{retryPortfolios && <button type="button" onClick={retryPortfolios} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Tentar novamente</button>}</div></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
   if (dashboard.isLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
   if (dashboard.isError || !dashboard.data) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-rose-50 p-6 text-rose-800">Não foi possível carregar a visão geral.</p></section>

@@ -540,11 +540,11 @@ function App() {
         {notificationToast && <div role="status" className="fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6"><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={() => setNotificationToast(null)} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={() => setNotificationToast(null)} className="text-lg leading-none text-amber-800">×</button></div></div>}
         {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
         {route === '/dashboard' && <Navigate to="/" replace />}
-        {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} />}
+        {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} portfoliosError={portfolios.isError} retryPortfolios={() => void portfolios.refetch()} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} />}
         {route === '/about' && <AboutSection />}
         {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={handleHistoryPageInfo} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
         {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
-        {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !activePortfolio && <EmptyPortfolioRoute />}
+        {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !portfolios.isError && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') || route === '/radar' ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>
           {feedback && (
             <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
@@ -552,7 +552,7 @@ function App() {
             </div>
           )}
           {portfolios.isLoading && <p className="text-slate-500">Carregando carteiras...</p>}
-          {portfolios.isError && <p className="text-rose-700">API indisponível. Inicie o backend em `http://localhost:5200`.</p>}
+          {portfolios.isError && <p className="text-rose-700">Não foi possível conectar ao serviço do Prumo. Tente novamente em alguns instantes.</p>}
 
           {route === '/portfolio' && portfolios.isLoading && <p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua carteira...</p>}
           {route === '/portfolio' && !portfolios.isLoading && !portfolios.isError && <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start *:min-w-0">
