@@ -445,11 +445,11 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
   const data = dashboard.data
   if (data.positionCount === 0) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Importar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
 
-  return <section className="dashboard-overview mx-auto basis-full max-w-358 px-6 pb-12 pt-3">
+  return <section className="dashboard-overview mx-auto w-full basis-full max-w-358 px-6 pb-12 pt-3">
     <header className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1></div>
     </header>
-    <div className="grid min-w-0 items-start gap-4">
+    <div className="grid w-full min-w-0 items-start gap-4">
       <PortfolioAllocationCard data={data} privacyHidden={privacyHidden} togglePrivacy={togglePrivacy} />
       <RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} />
       <div className="order-3 min-w-0 self-start"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
