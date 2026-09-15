@@ -66,7 +66,7 @@ public static class DocumentAnalysisJsonSchemas
             ["type"] = "object",
             ["properties"] = new Dictionary<string, object>
             {
-                ["metric"] = StringSchema(), ["value"] = new Dictionary<string, object> { ["type"] = new[] { "number", "null" } }, ["referencePeriod"] = StringSchema(), ["periodType"] = StringSchema(), ["currency"] = new Dictionary<string, object> { ["type"] = new[] { "string", "null" } }, ["unit"] = StringSchema(), ["evidence"] = StringSchema(), ["confidence"] = new Dictionary<string, object> { ["type"] = "number", ["minimum"] = 0, ["maximum"] = 1 }
+                ["metric"] = StringSchema(), ["value"] = new Dictionary<string, object> { ["type"] = new[] { "number", "null" } }, ["referencePeriod"] = StringSchema(), ["periodType"] = EnumSchema(["Annual", "Quarterly", "Ttm", "PointInTime"]), ["currency"] = new Dictionary<string, object> { ["type"] = new[] { "string", "null" } }, ["unit"] = StringSchema(), ["evidence"] = StringSchema(), ["confidence"] = new Dictionary<string, object> { ["type"] = "number", ["minimum"] = 0, ["maximum"] = 1 }
             },
             ["required"] = new[] { "metric", "value", "referencePeriod", "periodType", "currency", "unit", "evidence", "confidence" }
         }

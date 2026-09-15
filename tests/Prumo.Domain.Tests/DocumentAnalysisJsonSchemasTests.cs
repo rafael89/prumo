@@ -41,6 +41,16 @@ public sealed class DocumentAnalysisJsonSchemasTests
         Assert.Equal(StringValues(geminiDate.GetProperty("type")), StringValues(openAiDate.GetProperty("type")));
     }
 
+    [Fact]
+    public void Financial_fact_schema_requires_supported_period_type()
+    {
+        var schema = JsonSerializer.SerializeToElement(DocumentAnalysisJsonSchemas.CreateForOpenAi());
+        var periodType = schema.GetProperty("properties").GetProperty("financialFacts")
+            .GetProperty("items").GetProperty("properties").GetProperty("periodType");
+
+        Assert.Equal(new[] { "Annual", "PointInTime", "Quarterly", "Ttm" }, StringValues(periodType.GetProperty("enum")));
+    }
+
     private static JsonElement EventItem(JsonElement schema) => schema.GetProperty("properties").GetProperty("events").GetProperty("items");
     private static string[] PropertyNames(JsonElement element) => element.EnumerateObject().Select(property => property.Name).Order().ToArray();
     private static string[] StringValues(JsonElement element) => element.EnumerateArray().Select(value => value.GetString()!).Order().ToArray();
