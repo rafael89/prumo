@@ -16,5 +16,8 @@ ENTRYPOINT ["dotnet", "Prumo.Api.dll"]
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS worker
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/worker .
 ENTRYPOINT ["dotnet", "Prumo.Worker.dll"]
