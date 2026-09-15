@@ -127,7 +127,7 @@ public sealed class PortfoliosController : ControllerBase
         // cannot be rendered by the dashboard, but must not break the whole
         // portfolio response.
         var usableAssessments = loadedAssessments
-            .Where(a => a.InvestmentEvent?.DocumentAnalysis is not null)
+            .Where(a => a.InvestmentEvent?.DocumentAnalysis?.Document is not null)
             .ToList();
         if (usableAssessments.Count != loadedAssessments.Count)
         {

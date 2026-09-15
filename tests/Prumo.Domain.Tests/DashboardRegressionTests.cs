@@ -4,11 +4,31 @@ using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
+using Prumo.Api.Controllers;
 
 namespace Prumo.Domain.Tests;
 
 public sealed class DashboardRegressionTests
 {
+    [Fact]
+    public async Task Dashboard_ignores_assessment_when_analysis_document_is_missing()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrumoDbContext(options);
+        var portfolio = new Portfolio("Carteira sem documento");
+        var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento legado", Array.Empty<string>());
+        db.AddRange(portfolio, investmentEvent, CreateAssessment(portfolio.Id, investmentEvent, "portfolio-impact-v1"));
+        await db.SaveChangesAsync();
+
+        var result = await new Prumo.Api.Controllers.PortfoliosController(db).GetDashboard(portfolio.Id);
+
+        var response = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.IsType<DashboardResponse>(response.Value);
+    }
+
     [Fact]
     public async Task Current_assessments_deduplicate_one_event()
     {
