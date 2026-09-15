@@ -7,7 +7,7 @@ using Prumo.Infrastructure.Persistence;
 
 namespace Prumo.Worker;
 
-/// <summary>Moves only unreferenced, old local files to quarantine; it never deletes them.</summary>
+/// <summary>Deletes only unreferenced, old local files.</summary>
 public sealed class StorageMaintenanceWorker : BackgroundService
 {
     private readonly IServiceScopeFactory scopeFactory;
@@ -30,8 +30,8 @@ public sealed class StorageMaintenanceWorker : BackgroundService
             var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
             await ApplyRetentionAsync(db, storage, stoppingToken);
             var references = (await db.Documents.AsNoTracking().Where(document => document.FilePath != null).Select(document => document.FilePath!).ToListAsync(stoppingToken)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var moved = await storage.MoveUnreferencedAsync(references, TimeSpan.FromHours(24), stoppingToken);
-            logger.LogInformation("Manutenção do storage concluída: {MovedCount} arquivo(s) antigo(s) sem referência movido(s) para quarantine.", moved.Count);
+            var moved = await storage.DeleteUnreferencedAsync(references, TimeSpan.FromHours(24), stoppingToken);
+            logger.LogInformation("Manutenção do storage concluída: {DeletedCount} arquivo(s) antigo(s) sem referência removido(s).", moved.Count);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {

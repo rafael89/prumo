@@ -61,30 +61,19 @@ public sealed class LocalFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
-    public async Task<IReadOnlyList<string>> MoveUnreferencedAsync(IReadOnlySet<string> referencedPaths, TimeSpan minimumAge, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<string>> DeleteUnreferencedAsync(IReadOnlySet<string> referencedPaths, TimeSpan minimumAge, CancellationToken cancellationToken = default)
     {
-        var quarantineRoot = Path.Combine(rootPath, "quarantine", DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss"));
-        var moved = new List<string>();
+        var deleted = new List<string>();
         var normalizedReferences = referencedPaths.Select(NormalizePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var quarantinePrefix = NormalizePath(Path.Combine(rootPath, "quarantine")) + Path.DirectorySeparatorChar;
         foreach (var path in Directory.EnumerateFiles(rootPath, "*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (NormalizePath(path).StartsWith(quarantinePrefix, StringComparison.OrdinalIgnoreCase)) continue;
             var info = new FileInfo(path);
             if (info.LastWriteTimeUtc > DateTime.UtcNow.Subtract(minimumAge) || normalizedReferences.Contains(NormalizePath(path))) continue;
-            if (info.Extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase))
-            {
-                File.Delete(path);
-                moved.Add(path);
-                continue;
-            }
-            var destination = Path.Combine(quarantineRoot, Path.GetRelativePath(rootPath, path));
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Move(path, destination);
-            moved.Add(path);
+            File.Delete(path);
+            deleted.Add(path);
         }
-        return moved;
+        return deleted;
     }
 
     private static string NormalizePath(string path) => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

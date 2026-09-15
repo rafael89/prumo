@@ -7,6 +7,7 @@ using Prumo.Application.PortfolioImports;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
+using Prumo.Infrastructure.Documents;
 
 namespace Prumo.Worker;
 
@@ -157,17 +158,18 @@ public sealed class DocumentDownloadWorker : BackgroundService
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        if (!LooksLikePdf(payload))
+        if (!DocumentPayloadDetector.TryDetect(payload, response.Content.Headers.ContentType?.MediaType, out var payloadKind))
         {
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "<ausente>";
             var preview = Encoding.UTF8.GetString(payload, 0, Math.Min(payload.Length, 120))
                 .Replace('\r', ' ')
                 .Replace('\n', ' ');
-            throw new InvalidOperationException($"Download do documento não retornou PDF válido; contentType={contentType}; preview={preview}");
+            throw new InvalidOperationException($"Download do documento não retornou PDF/XML válido; contentType={contentType}; preview={preview}");
         }
 
         await using var content = new MemoryStream(payload, writable: false);
-        var storedFile = await storage.SaveAsync(job.Document.Id, content, "pdf", cancellationToken);
+        var extension = payloadKind == DocumentPayloadKind.Xml ? "xml" : "pdf";
+        var storedFile = await storage.SaveAsync(job.Document.Id, content, extension, cancellationToken);
         var duplicate = await dbContext.Documents.AsNoTracking()
             .Where(document => document.Id != job.Document.Id && document.FileHash == storedFile.Hash && document.FilePath != null)
             .Select(document => document.FilePath)
@@ -183,20 +185,6 @@ public sealed class DocumentDownloadWorker : BackgroundService
 
     private static Task<bool> HasActivePositionAsync(PrumoDbContext dbContext, Guid assetId, CancellationToken cancellationToken) =>
         dbContext.PortfolioPositions.AnyAsync(position => position.AssetId == assetId && position.Quantity > 0, cancellationToken);
-
-    private static bool LooksLikePdf(byte[] payload)
-    {
-        var limit = Math.Min(payload.Length - 5, 1024);
-        for (var index = 0; index <= limit; index++)
-        {
-            if (payload[index] == (byte)'%'
-                && payload[index + 1] == (byte)'P'
-                && payload[index + 2] == (byte)'D'
-                && payload[index + 3] == (byte)'F'
-                && payload[index + 4] == (byte)'-') return true;
-        }
-        return false;
-    }
 
     private static string GetFnetDocumentId(Uri uri) =>
         uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)

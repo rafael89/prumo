@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Xml.Linq;
 using Prumo.Application.Abstractions;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Core;
@@ -20,6 +21,12 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             await using var buffer = new MemoryStream();
             await pdf.CopyToAsync(buffer, cancellationToken);
             var bytes = buffer.ToArray();
+
+            if (DocumentPayloadDetector.TryParseXml(bytes, out var xml))
+            {
+                var text = ExtractXmlText(xml!);
+                return new PdfTextExtractionResult(true, text, null);
+            }
 
             try
             {
@@ -78,6 +85,16 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         using var document = PdfDocument.Open(stream);
         return string.Join(Environment.NewLine, document.GetPages().Select(page => page.Text));
     }
+
+    private static string ExtractXmlText(XDocument document) =>
+        string.Join(Environment.NewLine, document.Descendants()
+            .Where(element => !element.Elements().Any())
+            .Select(element =>
+            {
+                var value = string.Join(" ", element.Nodes().OfType<XText>().Select(node => node.Value.Trim()).Where(value => value.Length > 0));
+                return string.IsNullOrWhiteSpace(value) ? null : $"{element.Name.LocalName}: {value}";
+            })
+            .Where(value => value is not null));
 
     private static async Task<string?> TryExtractWithPopplerAsync(byte[] bytes, CancellationToken cancellationToken)
     {
