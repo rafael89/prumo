@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: prumo
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: dev123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d prumo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore backend
+        run: dotnet restore Prumo.sln
+
+      - name: Build backend
+        run: dotnet build Prumo.sln --no-restore
+
+      - name: Test backend and relational suite
+        env:
+          PRUMO_RUN_RELATIONAL_TESTS: '1'
+        run: dotnet test Prumo.sln --no-build
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/prumo-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend/prumo-web
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend/prumo-web
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: frontend/prumo-web
+        run: npm run build
