@@ -100,6 +100,7 @@ jobs:
             exit 1
           fi
 
+          git config --global --add safe.directory "$PRUMO_DEPLOY_PATH"
           cd "$PRUMO_DEPLOY_PATH"
           git fetch --prune origin main
 
@@ -182,7 +183,7 @@ jobs:
             --arg sha "${GITHUB_SHA}" \
             --arg ci_status "${{ needs.validate.result }}" \
             --arg deploy_status "${{ needs.deploy.result }}" \
-            '{content: ("Prumo CI/deploy\\nRepositório: " + $repository + "\\nEvento: " + $event + "\\nSHA: " + $sha + "\\nCI: " + $ci_status + "\\nDeploy: " + $deploy_status)}')"
+            '{content: ("Prumo CI/deploy\nRepositorio: " + $repository + "\nEvento: " + $event + "\nSHA: " + $sha + "\nCI: " + $ci_status + "\nDeploy: " + $deploy_status)}')"
 
           curl --fail-with-body --silent --show-error \
             -H 'Content-Type: application/json' \
