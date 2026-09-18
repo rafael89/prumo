@@ -90,6 +90,7 @@ public sealed class DocumentDiscoveryServiceTests
         Assert.Empty(db.ProcessingJobs);
         var document = Assert.Single(db.Documents);
         Assert.Equal(DocumentProcessingStatus.Ignored, document.ProcessingStatus);
+        Assert.Equal("Documento operacional de emissão; mantido apenas como histórico e não enviado para análise.", document.IgnoredReason);
     }
 
     private static DocumentDiscoveryService CreateService(PrumoDbContext db, FakeDocumentSource source)

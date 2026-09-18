@@ -64,7 +64,7 @@ public sealed class DocumentAnalysisWorker : BackgroundService
         {
             if (job.Document is not null && !await HasActivePositionAsync(dbContext, job.Document.AssetId, cancellationToken))
             {
-                job.Document.MarkIgnored();
+                job.Document.MarkIgnored("O ativo não possui posição positiva na carteira no momento do processamento.");
                 job.Complete(DateTimeOffset.UtcNow);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 logger.LogInformation("Job de analise {JobId} ignorado: ativo {AssetId} nao possui posicao positiva.", job.Id, job.Document.AssetId);

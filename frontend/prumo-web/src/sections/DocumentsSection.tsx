@@ -6,7 +6,7 @@ import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass, faRotate, fa
 
 import { apiBaseUrl } from '../api/client'
 const apiUrl = apiBaseUrl
-type DocumentItem = { id: string; ticker: string; assetName: string; documentType: number; sourceType: string | null; sourceName: string; publishedAt: string; processingStatus: number; processedAt: string | null; sourceUrl: string; lastError: string | null; jobStatus: string | null; retryAt: string | null }
+type DocumentItem = { id: string; ticker: string; assetName: string; documentType: number; sourceType: string | null; sourceName: string; publishedAt: string; processingStatus: number; processedAt: string | null; sourceUrl: string; ignoredReason: string | null; lastError: string | null; jobStatus: string | null; retryAt: string | null }
 type DocumentsResponse = { items: DocumentItem[]; page: number; totalItems: number; totalPages: number }
 type ProcessingStatus = { failedCount: number }
 type PortfolioAssessment = { priority: string; currentWeight: number; currentValue: number | null; requiresAttention: boolean; portfolioImpactText: string }
@@ -60,8 +60,8 @@ function documentTypeLabel(document: DocumentItem) {
 }
 
 function DocumentJobDetails({ document }: { document: DocumentItem | null }) {
-  if (!document?.lastError) return null
-  return <div className="document-job-details mt-8 mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p className="font-semibold">Último erro ({document.jobStatus ?? 'Falha'})</p><p className="mt-2 wrap-break-word">{document.lastError}</p>{document.retryAt && <p className="mt-2 text-xs">Próxima tentativa: {formatDate(document.retryAt)}</p>}</div>
+  if (!document?.lastError && !document?.ignoredReason) return null
+  return <div className={`document-job-details mt-8 mb-6 rounded-2xl border p-4 text-sm ${document.ignoredReason ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>{document.ignoredReason && <><p className="font-semibold">Documento ignorado</p><p className="mt-2 wrap-break-word">{document.ignoredReason}</p></>}{document.lastError && <><p className="font-semibold">Último erro ({document.jobStatus ?? 'Falha'})</p><p className="mt-2 wrap-break-word">{document.lastError}</p>{document.retryAt && <p className="mt-2 text-xs">Próxima tentativa: {formatDate(document.retryAt)}</p>}</>}</div>
 }
 
 export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedDocumentId }: DocumentsSectionProps) {

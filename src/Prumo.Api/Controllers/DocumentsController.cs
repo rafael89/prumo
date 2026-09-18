@@ -251,6 +251,7 @@ public sealed class DocumentsController : ControllerBase
             document.SourceUrl,
             document.FilePath,
             document.ProcessingStatus,
+            document.IgnoredReason,
             document.DiscoveredAt,
             document.ProcessedAt);
     }
@@ -313,6 +314,7 @@ public sealed record DocumentResponse(
     string SourceUrl,
     string? FilePath,
     DocumentProcessingStatus ProcessingStatus,
+    string? IgnoredReason,
     DateTimeOffset DiscoveredAt,
     DateTimeOffset? ProcessedAt,
     string? JobStatus = null,

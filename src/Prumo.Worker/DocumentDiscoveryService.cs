@@ -166,7 +166,7 @@ public sealed class DocumentDiscoveryService
                 dbContext.Documents.Add(document);
                 if (DocumentClassificationPolicy.IsOperationalIssuanceDocument(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies))
                 {
-                    document.MarkIgnored();
+                    document.MarkIgnored("Documento operacional de emissão; mantido apenas como histórico e não enviado para análise.");
                     logger.LogInformation("Documento operacional de emissão mantido apenas como histórico: ticker={Ticker}; tipo={SourceType}; identificador={SourceIdentifier}", candidate.Ticker, candidate.SourceType, candidate.SourceIdentifier);
                 }
                 else

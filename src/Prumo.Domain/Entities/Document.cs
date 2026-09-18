@@ -60,6 +60,7 @@ public sealed class Document
     public string? FileHash { get; private set; }
     public string Fingerprint { get; private set; } = string.Empty;
     public DocumentProcessingStatus ProcessingStatus { get; private set; }
+    public string? IgnoredReason { get; private set; }
     public DateTimeOffset DiscoveredAt { get; private set; }
     public DateTimeOffset? ProcessedAt { get; private set; }
     public Asset? Asset { get; private set; }
@@ -71,16 +72,22 @@ public sealed class Document
 
         FilePath = filePath.Trim();
         FileHash = fileHash.Trim().ToLowerInvariant();
+        IgnoredReason = null;
         ProcessingStatus = DocumentProcessingStatus.Downloaded;
     }
 
-    public void MarkWaitingProcessing() => ProcessingStatus = DocumentProcessingStatus.WaitingProcessing;
+    public void MarkWaitingProcessing()
+    {
+        IgnoredReason = null;
+        ProcessingStatus = DocumentProcessingStatus.WaitingProcessing;
+    }
 
     public void MarkPendingDownload()
     {
         FilePath = null;
         FileHash = null;
         ProcessedAt = null;
+        IgnoredReason = null;
         ProcessingStatus = DocumentProcessingStatus.Discovered;
     }
 
@@ -94,16 +101,31 @@ public sealed class Document
         }
     }
 
-    public void MarkProcessing() => ProcessingStatus = DocumentProcessingStatus.Processing;
+    public void MarkProcessing()
+    {
+        IgnoredReason = null;
+        ProcessingStatus = DocumentProcessingStatus.Processing;
+    }
 
     public void MarkProcessed()
     {
+        IgnoredReason = null;
         ProcessingStatus = DocumentProcessingStatus.Processed;
         ProcessedAt = DateTimeOffset.UtcNow;
     }
 
-    public void MarkError() => ProcessingStatus = DocumentProcessingStatus.Error;
-    public void MarkIgnored() => ProcessingStatus = DocumentProcessingStatus.Ignored;
+    public void MarkError()
+    {
+        IgnoredReason = null;
+        ProcessingStatus = DocumentProcessingStatus.Error;
+    }
+    public void MarkIgnored(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("O motivo da ignorância é obrigatório.", nameof(reason));
+
+        IgnoredReason = reason.Trim();
+        ProcessingStatus = DocumentProcessingStatus.Ignored;
+    }
 
     public void Reclassify(DocumentType documentType)
     {
