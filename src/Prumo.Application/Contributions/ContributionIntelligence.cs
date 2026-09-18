@@ -96,7 +96,12 @@ public sealed record ContributionCandidateEvaluation(CandidateKey CandidateKey, 
     public ContributionCandidateEvaluation(Guid assetId, int rank, decimal amount, string reason, decimal confidence, IReadOnlyList<EvidenceReference> evidence)
         : this(CandidateIdentity.Known(assetId).Key, rank, amount, reason, confidence, evidence) { }
 }
-public sealed record ContributionIntelligenceMetadata(string EngineVersion, string PolicyVersion, string PromptVersion, string Provider, string Model, DateTimeOffset GeneratedAt);
+public sealed record ContributionIntelligenceMetadata(string EngineVersion, string PolicyVersion, string PromptVersion, string Provider, string Model, DateTimeOffset GeneratedAt)
+{
+    public string? ConfiguredModel { get; init; }
+    public string? FallbackModel { get; init; }
+    public bool UsedFallback { get; init; }
+}
 public sealed record ContributionIntelligenceResult(IReadOnlyList<ContributionCandidateEvaluation> CandidateEvaluations, string OverallReasoning, ContributionIntelligenceAvailability Availability, ContributionIntelligenceMetadata Metadata);
 public sealed record ContributionScenarioOption(
     string ScenarioKey,

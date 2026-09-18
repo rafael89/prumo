@@ -22,43 +22,63 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
         http.Timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
     }
 
+    private string ContributionModel => string.IsNullOrWhiteSpace(settings.Contribution.Model) ? settings.Model : settings.Contribution.Model;
+    private string ContributionFallbackModel => string.IsNullOrWhiteSpace(settings.Contribution.FallbackModel) ? settings.FallbackModel : settings.Contribution.FallbackModel;
+
+    private object CreateReasoningGenerationConfig(object schema) => new
+    {
+        responseMimeType = "application/json",
+        responseJsonSchema = schema,
+        thinkingConfig = new { thinkingLevel = settings.Contribution.ThinkingLevel }
+    };
+
+    private ContributionIntelligenceMetadata CreateMetadata(string engineVersion, string policyVersion, string promptVersion, string model)
+        => new(engineVersion, policyVersion, promptVersion, "Gemini", model, DateTimeOffset.UtcNow)
+        {
+            ConfiguredModel = ContributionModel,
+            FallbackModel = ContributionFallbackModel,
+            UsedFallback = !string.Equals(model, ContributionModel, StringComparison.OrdinalIgnoreCase)
+        };
+
     public async Task<ContributionIntelligenceResult> EvaluateAsync(Guid portfolioId, decimal amount, IReadOnlyList<ContributionCandidate> candidates, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
+        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(ContributionModel)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
         var prompt = ContributionIntelligencePrompt.Build(portfolioId, amount, candidates);
         var estimatedTokens = AiRequestRateLimiter.EstimateTokens(prompt) + 2000;
         var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = Schema } };
-        var raw = await SendAsync(settings.Model, request, estimatedTokens, timeout.Token);
-        return Parse(raw, settings.Model);
+        var response = await SendAsync(ContributionModel, request, estimatedTokens, timeout.Token);
+        return Parse(response.Raw, response.Model);
     }
 
     public async Task<ContributionScenarioSelection> SelectScenarioAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionScenarioOption> scenarios, IReadOnlyList<ContributionCandidate> candidates, InvestorPolicy? investorPolicy = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
+        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(ContributionModel)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
         var prompt = ContributionIntelligencePrompt.BuildScenarioSelection(portfolioId, contributionAmount, scenarios, candidates, investorPolicy ?? InvestorPolicy.Current);
         var estimatedTokens = AiRequestRateLimiter.EstimateTokens(prompt) + 2000;
         var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = ScenarioSchema } };
-        var raw = await SendAsync(settings.Model, request, estimatedTokens, timeout.Token);
+        var response = await SendAsync(ContributionModel, request, estimatedTokens, timeout.Token);
+        var raw = response.Raw;
         using var document = JsonDocument.Parse(raw);
         var text = document.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
         if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Resposta Gemini vazia.");
         var payload = JsonSerializer.Deserialize<ScenarioPayload>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidOperationException("Resposta Gemini inválida.");
         if (string.IsNullOrWhiteSpace(payload.SelectedScenarioKey)) throw new InvalidOperationException("Resposta Gemini sem scenarioKey.");
-        return new(payload.SelectedScenarioKey, payload.Reason ?? string.Empty, payload.Considerations?.ToArray() ?? Array.Empty<string>(), ContributionIntelligenceAvailability.IntelligenceAvailable, new("R17.8", "contribution-scenario", ContributionIntelligencePrompt.Version, "Gemini", settings.Model, DateTimeOffset.UtcNow));
+        return new(payload.SelectedScenarioKey, payload.Reason ?? string.Empty, payload.Considerations?.ToArray() ?? Array.Empty<string>(), ContributionIntelligenceAvailability.IntelligenceAvailable, CreateMetadata("R17.8", "contribution-scenario", ContributionIntelligencePrompt.Version, response.Model));
     }
 
     public async Task<AllocationProposal> ProposeAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
+        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(ContributionModel)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
         var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(portfolioId, contributionAmount, candidates, deterministicReferences, investorPolicy ?? InvestorPolicy.Current, rejectionReason);
-        var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = AllocationProposalSchema } };
-        var raw = await SendAsync(settings.Model, request, AiRequestRateLimiter.EstimateTokens(prompt) + 2000, timeout.Token);
+        var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = CreateReasoningGenerationConfig(AllocationProposalSchema) };
+        var response = await SendAsync(ContributionModel, request, AiRequestRateLimiter.EstimateTokens(prompt) + 2000, timeout.Token);
+        var raw = response.Raw;
         using var document = JsonDocument.Parse(raw);
         var text = document.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
         if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Resposta Gemini vazia.");
@@ -67,17 +87,18 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
             payload.Allocations?.Select(x => new AllocationProposalAllocation(new CandidateKey(x.CandidateKey ?? string.Empty), x.Amount)).ToArray() ?? Array.Empty<AllocationProposalAllocation>(),
             payload.Reason ?? string.Empty, payload.PrimaryFactors?.ToArray() ?? Array.Empty<string>(), payload.Confidence ?? "low",
             ContributionIntelligenceAvailability.IntelligenceAvailable,
-            new("R5-ai-allocation-v2", "contribution-allocation", ContributionIntelligencePrompt.AllocationVersion, "Gemini", settings.Model, DateTimeOffset.UtcNow));
+            CreateMetadata("R5-ai-allocation-v2", "contribution-allocation", ContributionIntelligencePrompt.AllocationVersion, response.Model));
     }
 
     public async Task<AllocationReview> ReviewAllocationAsync(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy investorPolicy, CompositionProjection projection, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(settings.Model)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
+        if (string.IsNullOrWhiteSpace(settings.ApiKey) || string.IsNullOrWhiteSpace(ContributionModel)) throw new InvalidOperationException("Gemini não configurado para Contribution Intelligence.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds)));
         var prompt = ContributionIntelligencePrompt.BuildAllocationReview(portfolioId, contributionAmount, candidates, deterministicReferences, investorPolicy, projection);
-        var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = new { responseMimeType = "application/json", responseJsonSchema = AllocationReviewSchema } };
-        var raw = await SendAsync(settings.Model, request, AiRequestRateLimiter.EstimateTokens(prompt) + 1500, timeout.Token);
+        var request = new { contents = new[] { new { parts = new[] { new { text = prompt } } } }, generationConfig = CreateReasoningGenerationConfig(AllocationReviewSchema) };
+        var response = await SendAsync(ContributionModel, request, AiRequestRateLimiter.EstimateTokens(prompt) + 1500, timeout.Token);
+        var raw = response.Raw;
         using var document = JsonDocument.Parse(raw);
         var text = document.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
         if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("Resposta Gemini vazia.");
@@ -87,10 +108,10 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
             payload.Reason ?? string.Empty,
             payload.Considerations?.ToArray() ?? Array.Empty<string>(),
             ContributionIntelligenceAvailability.IntelligenceAvailable,
-            new("R5-ai-allocation-v2", "contribution-composition-review", ContributionIntelligencePrompt.AllocationReviewVersion, "Gemini", settings.Model, DateTimeOffset.UtcNow));
+            CreateMetadata("R5-ai-allocation-v2", "contribution-composition-review", ContributionIntelligencePrompt.AllocationReviewVersion, response.Model));
     }
 
-    private async Task<string> SendAsync(string model, object body, int estimatedTokens, CancellationToken ct)
+    private async Task<GeminiResponse> SendAsync(string model, object body, int estimatedTokens, CancellationToken ct)
     {
         HttpStatusCode lastStatus = HttpStatusCode.ServiceUnavailable;
         var lastRaw = string.Empty;
@@ -103,17 +124,17 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
             var raw = await response.Content.ReadAsStringAsync(ct);
             lastStatus = response.StatusCode;
             lastRaw = raw;
-            if (response.IsSuccessStatusCode) return raw;
+            if (response.IsSuccessStatusCode) return new GeminiResponse(raw, model);
 
             var transient = response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
             if (!transient || attempt == 1) break;
             await Task.Delay(TimeSpan.FromMilliseconds(500 * (attempt + 1)), ct);
         }
 
-        if (IsTransient(lastStatus) && !string.IsNullOrWhiteSpace(settings.FallbackModel) && !string.Equals(model, settings.FallbackModel, StringComparison.OrdinalIgnoreCase))
-            return await SendAsync(settings.FallbackModel, body, estimatedTokens, ct);
+        if (IsTransient(lastStatus) && !string.IsNullOrWhiteSpace(ContributionFallbackModel) && !string.Equals(model, ContributionFallbackModel, StringComparison.OrdinalIgnoreCase))
+            return await SendAsync(ContributionFallbackModel, body, estimatedTokens, ct);
         if (lastStatus != HttpStatusCode.OK) throw new HttpRequestException($"Gemini HTTP {(int)lastStatus}: {TrimError(lastRaw)}", null, lastStatus);
-        return lastRaw;
+        return new GeminiResponse(lastRaw, model);
     }
 
     private static bool IsTransient(HttpStatusCode statusCode) => statusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
@@ -130,6 +151,7 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
     }
 
     private static string TrimError(string value) => string.IsNullOrWhiteSpace(value) ? "resposta vazia" : value.Length <= 500 ? value : value[..500];
+    private sealed record GeminiResponse(string Raw, string Model);
 
     private sealed record Payload(List<Evaluation>? CandidateEvaluations, string? OverallReasoning, string? IntelligenceAvailability);
     private sealed record ScenarioPayload(string? SelectedScenarioKey, string? Reason, List<string>? Considerations);

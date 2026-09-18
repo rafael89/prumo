@@ -8,6 +8,14 @@ public sealed class AiProviderOptions
     public string FallbackModel { get; set; } = string.Empty;
     public int TimeoutSeconds { get; set; } = 60;
     public AiRateLimitOptions RateLimit { get; set; } = new();
+    public ContributionAiOptions Contribution { get; set; } = new();
+}
+
+public sealed class ContributionAiOptions
+{
+    public string Model { get; set; } = string.Empty;
+    public string FallbackModel { get; set; } = string.Empty;
+    public string ThinkingLevel { get; set; } = "medium";
 }
 
 public sealed class AiRateLimitOptions
