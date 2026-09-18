@@ -195,29 +195,31 @@ jobs:
             --arg deploy_status "$deploy_status" \
             --arg run_url "$run_url" \
             --arg timestamp "$timestamp" \
-            '(
-              if $ci_status == "success" and $deploy_status == "success" then
-                {title: "✅ Prumo — deploy concluído", color: 3066993}
-              elif $ci_status != "success" then
-                {title: "❌ Prumo — CI falhou", color: 15158332}
-              else
-                {title: "⚠️ Prumo — deploy não executado", color: 16776960}
-              end
-              + {
-                url: $run_url,
-                description: "Execução automática do GitHub Actions",
-                fields: [
-                  {name: "CI / testes", value: $ci_status, inline: true},
-                  {name: "Deploy", value: $deploy_status, inline: true},
-                  {name: "Branch", value: ("`" + $branch + "`"), inline: true},
-                  {name: "Commit", value: ("`" + $short_sha + "`"), inline: true},
-                  {name: "Autor", value: ("`" + $actor + "`"), inline: true},
-                  {name: "Repositório", value: $repository, inline: true}
-                ],
-                footer: {text: "Prumo • GitHub Actions"},
-                timestamp: $timestamp
-              }
-            )')"
+            '{embeds: [
+              (
+                if $ci_status == "success" and $deploy_status == "success" then
+                  {title: "✅ Prumo — deploy concluído", color: 3066993}
+                elif $ci_status != "success" then
+                  {title: "❌ Prumo — CI falhou", color: 15158332}
+                else
+                  {title: "⚠️ Prumo — deploy não executado", color: 16776960}
+                end
+                + {
+                  url: $run_url,
+                  description: "Execução automática do GitHub Actions",
+                  fields: [
+                    {name: "CI / testes", value: $ci_status, inline: true},
+                    {name: "Deploy", value: $deploy_status, inline: true},
+                    {name: "Branch", value: ("`" + $branch + "`"), inline: true},
+                    {name: "Commit", value: ("`" + $short_sha + "`"), inline: true},
+                    {name: "Autor", value: ("`" + $actor + "`"), inline: true},
+                    {name: "Repositório", value: $repository, inline: true}
+                  ],
+                  footer: {text: "Prumo • GitHub Actions"},
+                  timestamp: $timestamp
+                }
+              )
+            ]}')"
 
           curl --fail-with-body --silent --show-error \
             -H 'Content-Type: application/json' \
