@@ -69,3 +69,122 @@ jobs:
       - name: Build frontend
         working-directory: frontend/prumo-web
         run: npm run build
+
+  deploy:
+    name: Deploy Prumo
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.validate.result == 'success'
+    runs-on:
+      - self-hosted
+      - linux
+      - prumo-deploy
+    concurrency:
+      group: prumo-production-deploy
+      cancel-in-progress: true
+    env:
+      PRUMO_DEPLOY_PATH: ${{ vars.PRUMO_DEPLOY_PATH }}
+
+    steps:
+      - name: Deploy approved commit with Docker Compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ -z "${PRUMO_DEPLOY_PATH:-}" ]]; then
+            echo "Repository variable PRUMO_DEPLOY_PATH is not configured."
+            exit 1
+          fi
+
+          if [[ ! -d "$PRUMO_DEPLOY_PATH/.git" ]]; then
+            echo "Deploy checkout not found: $PRUMO_DEPLOY_PATH"
+            exit 1
+          fi
+
+          cd "$PRUMO_DEPLOY_PATH"
+          git fetch --prune origin main
+
+          if ! git cat-file -e "${GITHUB_SHA}^{commit}"; then
+            echo "Approved commit was not fetched: $GITHUB_SHA"
+            exit 1
+          fi
+
+          git reset --hard "$GITHUB_SHA"
+          checked_out_sha="$(git rev-parse HEAD)"
+          echo "Approved SHA: $GITHUB_SHA"
+          echo "Checked out SHA: $checked_out_sha"
+          [[ "$checked_out_sha" == "$GITHUB_SHA" ]]
+
+          docker compose up -d --build
+
+          services=(postgres api worker frontend)
+          for attempt in {1..60}; do
+            all_running=true
+            for service in "${services[@]}"; do
+              container_id="$(docker compose ps -q "$service")"
+              if [[ -z "$container_id" ]]; then
+                all_running=false
+                continue
+              fi
+
+              status="$(docker inspect -f '{{.State.Status}}' "$container_id")"
+              if [[ "$status" != "running" ]]; then
+                all_running=false
+              fi
+
+              health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")"
+              if [[ "$service" == "postgres" || "$service" == "api" ]] && [[ "$health" != "healthy" ]]; then
+                all_running=false
+              fi
+            done
+
+            if [[ "$all_running" == true ]] && curl --fail --silent http://127.0.0.1:5200/health >/dev/null; then
+              break
+            fi
+
+            if [[ "$attempt" == 60 ]]; then
+              echo "Prumo services did not become healthy."
+              docker compose ps --all
+              exit 1
+            fi
+            sleep 5
+          done
+
+          docker compose ps --all
+
+      - name: Cleanup old Docker artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker image prune --all --force
+          docker builder prune --all --force
+
+  notify-discord:
+    name: Notify Discord
+    needs:
+      - validate
+      - deploy
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_CI_WEBHOOK_URL: ${{ secrets.DISCORD_CI_WEBHOOK_URL }}
+
+    steps:
+      - name: Report CI and deploy status
+        if: env.DISCORD_CI_WEBHOOK_URL != ''
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          payload="$(jq -n \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg event "${{ github.event_name }}" \
+            --arg sha "${GITHUB_SHA}" \
+            --arg ci_status "${{ needs.validate.result }}" \
+            --arg deploy_status "${{ needs.deploy.result }}" \
+            '{content: ("Prumo CI/deploy\\nRepositório: " + $repository + "\\nEvento: " + $event + "\\nSHA: " + $sha + "\\nCI: " + $ci_status + "\\nDeploy: " + $deploy_status)}')"
+
+          curl --fail-with-body --silent --show-error \
+            -H 'Content-Type: application/json' \
+            --data "$payload" \
+            "$DISCORD_CI_WEBHOOK_URL"
