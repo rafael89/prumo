@@ -39,7 +39,8 @@ public sealed class ExternalLifecyclePersistenceAcceptanceTests
         var asset = await db.Assets.SingleAsync(x => x.Ticker == "EXT11");
         Assert.Equal("Empresa Externa", asset.Name);
         Assert.Single(await db.PortfolioTransactions.Where(x => x.ContributionGuidanceId == guidance.Id).ToListAsync());
-        Assert.Equal(100, (await db.PortfolioTransactions.SingleAsync()).TotalAmount);
+        Assert.Equal(10, (await db.PortfolioTransactions.SingleAsync()).TotalAmount);
+        Assert.Equal(1, (await db.PortfolioPositions.SingleAsync()).Quantity);
 
         var second = await new PortfolioTransactionsController(db).Confirm(portfolio.Id,
             new ConfirmContributionRequest(guidance.Id, new[] { new ContributionPurchaseRequest(Guid.Empty, 1, 10, identity.Key.Value) }), CancellationToken.None);

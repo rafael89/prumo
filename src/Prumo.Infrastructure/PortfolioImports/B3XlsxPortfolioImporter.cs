@@ -69,15 +69,21 @@ public sealed class B3XlsxPortfolioImporter : IPortfolioImporter
                         var cells = Cells(row, shared);
                         var ticker = cells.GetValueOrDefault("A", "").Trim().ToUpperInvariant();
                         if (!System.Text.RegularExpressions.Regex.IsMatch(ticker, "^[A-Z]{4}[0-9]{1,2}$")) continue;
-                        if (!TryDecimal(cells.GetValueOrDefault("E"), out var quantity) || quantity <= 0) continue;
-                        if (!TryDecimal(cells.GetValueOrDefault("H"), out var unitPrice) || unitPrice <= 0) continue;
+                        TryDecimal(cells.GetValueOrDefault("E"), out var quantity);
+                        TryDecimal(cells.GetValueOrDefault("H"), out var unitPrice);
+                        var hasBuy = quantity > 0 && unitPrice > 0;
+                        var soldQuantity = 0m; var soldPrice = 0m;
+                        var hasSell = sellQuantityColumn is not null && sellPriceColumn is not null
+                            && TryDecimal(cells.GetValueOrDefault(sellQuantityColumn), out soldQuantity) && soldQuantity > 0
+                            && TryDecimal(cells.GetValueOrDefault(sellPriceColumn), out soldPrice) && soldPrice > 0;
+                        if (!hasBuy && !hasSell) continue;
                         if (!DateTimeOffset.TryParseExact(cells.GetValueOrDefault("B"), "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var occurredAt))
                         {
                             warnings.Add($"Negociação de {ticker} ignorada: período inicial inválido.");
                             continue;
                         }
-                        transactions.Add(new(ticker, occurredAt, quantity, unitPrice, decimal.Round(quantity * unitPrice, 2), cells.GetValueOrDefault("D"), PortfolioTransactionType.Buy));
-                        if (sellQuantityColumn is not null && sellPriceColumn is not null && TryDecimal(cells.GetValueOrDefault(sellQuantityColumn), out var soldQuantity) && soldQuantity > 0 && TryDecimal(cells.GetValueOrDefault(sellPriceColumn), out var soldPrice) && soldPrice > 0)
+                        if (hasBuy) transactions.Add(new(ticker, occurredAt, quantity, unitPrice, decimal.Round(quantity * unitPrice, 2), cells.GetValueOrDefault("D"), PortfolioTransactionType.Buy));
+                        if (hasSell)
                             transactions.Add(new(ticker, occurredAt, soldQuantity, soldPrice, decimal.Round(soldQuantity * soldPrice, 2), cells.GetValueOrDefault("D"), PortfolioTransactionType.Sell));
                     }
                 }

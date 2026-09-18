@@ -56,6 +56,8 @@ public sealed class PortfolioImportsController : ControllerBase
     public async Task<ActionResult<ImportConfirmationDto>> Confirm(Guid portfolioId, Guid importSessionId, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (db.Database.IsRelational())
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", ct);
         var session = await db.PortfolioImportSessions.SingleOrDefaultAsync(s => s.Id == importSessionId && s.PortfolioId == portfolioId, ct);
         if (session is null) return NotFound();
         var normalized = JsonSerializer.Deserialize<NormalizedPortfolioImport>(session.NormalizedJson);

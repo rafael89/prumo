@@ -102,6 +102,43 @@ public sealed class CvmFiiMonthlyStructuredIngestionTests
         Assert.Contains(resolution.Alternatives, x => x.Value == 100m);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void Restatements_preserve_whole_versions_and_canonical_selection_ignores_ingestion_order(bool reverseRows, bool reverseIngestion)
+    {
+        var rows = new[] { "14.217.108/0001-45;2026-01-01;1;100;10", "14.217.108/0001-45;2026-01-01;2;110;11" };
+        if (reverseRows) Array.Reverse(rows);
+        var records = CvmFiiMonthlyStructuredSource.ParseZip(CreateZip(
+            ("inf_mensal_fii_ativo_passivo_2026.csv", "CNPJ_Fundo_Classe;Data_Referencia;Versao;Disponibilidades\n14.217.108/0001-45;2026-01-01;1;2\n"),
+            ("inf_mensal_fii_complemento_2026.csv", "CNPJ_Fundo_Classe;Data_Referencia;Versao;Patrimonio_Liquido;Valor_Patrimonial_Cotas\n" + string.Join('\n', rows) + "\n")),
+            new HashSet<string> { "14217108000145" }, "https://cvm.test/data.zip");
+        Assert.Equal(2, records.Count);
+        var old = records.Single(x => x.SourceVersion == 1); var current = records.Single(x => x.SourceVersion == 2);
+        Assert.Equal(100, old.NetAssetValue); Assert.Equal(2, old.Cash);
+        Assert.Equal(110, current.NetAssetValue); Assert.Equal(11, current.NavPerShare); Assert.Null(current.Cash);
+        Assert.Contains("version=2", current.SourceReference);
+        Assert.NotEqual(old.Fingerprint, current.Fingerprint);
+        var asset = new Asset("FIIB11", "FII", AssetType.Fii, "Industrial Real Estate");
+        var ordered = reverseIngestion ? records.Reverse().ToArray() : records.ToArray();
+        for (var i = 0; i < ordered.Length; i++)
+        {
+            var r = ordered[i];
+            asset.CvmFiiMonthlyObservations.Add(new(asset.Id, r.FundClassCnpj, r.ReferenceDate, r.SourceVersion, r.Fingerprint,
+                r.SourceReference, r.SchemaVersion, DateTimeOffset.UtcNow.AddMinutes(i), r.NetAssetValue, r.NavPerShare, r.Cash));
+        }
+        var evidence = MetricEvidenceResolver.Resolve(asset);
+        var nav = evidence.Metrics.Single(x => x.Metric == "NetAssetValue");
+        Assert.Equal(110, nav.Canonical!.Value); Assert.Equal(2, nav.Canonical.SourceVersion);
+        Assert.Equal(current.SourceReference, nav.Canonical.SourceReference);
+        Assert.Contains(nav.Alternatives, x => x.Value == 100 && x.SourceVersion == 1);
+        var cash = evidence.Metrics.Single(x => x.Metric == "Cash");
+        Assert.Null(cash.Canonical); Assert.Equal(MetricEvidenceResolutionStatus.Unavailable, cash.Status);
+        Assert.Equal(2, Assert.Single(cash.Alternatives).Value);
+    }
+
     private static byte[] CreateZip(params (string FileName, string Content)[] files)
     {
         using var stream = new MemoryStream();

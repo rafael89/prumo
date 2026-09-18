@@ -268,6 +268,9 @@ public sealed class PortfoliosController : ControllerBase
         PositionRequest request,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (dbContext.Database.IsRelational())
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", cancellationToken);
         var portfolio = await LoadPortfolio(portfolioId, cancellationToken);
         if (portfolio is null) return NotFound("Carteira não encontrada.");
 
@@ -313,6 +316,7 @@ public sealed class PortfoliosController : ControllerBase
         }
         Recalculate(portfolio);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         if (documentBootstrap is not null)
         {
             try
@@ -335,6 +339,9 @@ public sealed class PortfoliosController : ControllerBase
         PositionUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (dbContext.Database.IsRelational())
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", cancellationToken);
         var portfolio = await LoadPortfolio(portfolioId, cancellationToken);
         var position = portfolio?.Positions.SingleOrDefault(item => item.Id == positionId);
         if (position is null) return NotFound();
@@ -359,6 +366,7 @@ public sealed class PortfoliosController : ControllerBase
             }
             Recalculate(portfolio!);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return Ok(CreatePositionResponse(position));
         }
         catch (ArgumentOutOfRangeException exception)
@@ -370,6 +378,9 @@ public sealed class PortfoliosController : ControllerBase
     [HttpDelete("{portfolioId:guid}/positions/{positionId:guid}")]
     public async Task<IActionResult> DeletePosition(Guid portfolioId, Guid positionId, CancellationToken cancellationToken)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (dbContext.Database.IsRelational())
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", cancellationToken);
         var portfolio = await LoadPortfolio(portfolioId, cancellationToken);
         var position = portfolio?.Positions.SingleOrDefault(item => item.Id == positionId);
         if (position is null) return NotFound();
@@ -378,6 +389,7 @@ public sealed class PortfoliosController : ControllerBase
         portfolio!.Positions.Remove(position);
         Recalculate(portfolio);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return NoContent();
     }
 

@@ -111,6 +111,7 @@ public sealed class ContributionGuidanceCalculator
             {
                 if (positions.Any(x => x.AssetClass == selectedNeed.AssetClass)) break;
                 classAllocations[selectedNeed.AssetClass] = classAllocations.GetValueOrDefault(selectedNeed.AssetClass) + allocation;
+                classAllocated[selectedNeed.AssetClass] = classAllocated.GetValueOrDefault(selectedNeed.AssetClass) + allocation;
                 remaining = Money(remaining - allocation);
                 reasons.Add($"{ContributionText.AssetClassLabel(selectedNeed.AssetClass)} recebe uma reserva de {allocation:0.00} porque ainda não há um ativo cadastrado nessa classe para indicar.");
                 continue;

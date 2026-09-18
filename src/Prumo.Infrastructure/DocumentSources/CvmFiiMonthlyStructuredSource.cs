@@ -60,14 +60,13 @@ public sealed class CvmFiiMonthlyStructuredSource
         var complement = ReadCsv(archive, "inf_mensal_fii_complemento_");
         activeRowCount = active.Count;
         complementRowCount = complement.Count;
-        var rows = new Dictionary<(string Cnpj, DateOnly Date), MutableRow>();
+        var rows = new Dictionary<(string Cnpj, DateOnly Date, int Version), MutableRow>();
         foreach (var row in active.Concat(complement))
         {
             var cnpj = NormalizeCnpj(row.Get("CNPJ_Fundo_Classe"));
             if (!cnpjs.Contains(cnpj) || !DateOnly.TryParseExact(row.Get("Data_Referencia"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)) continue;
-            var key = (cnpj, date);
+            var key = (cnpj, date, ParseInt(row.Get("Versao")));
             if (!rows.TryGetValue(key, out var target)) rows[key] = target = new(cnpj, date, ParseInt(row.Get("Versao")));
-            target.SourceVersion = Math.Max(target.SourceVersion, ParseInt(row.Get("Versao")));
             target.NetAssetValue ??= ParseDecimal(row.Get("Patrimonio_Liquido"));
             target.NavPerShare ??= ParseDecimal(row.Get("Valor_Patrimonial_Cotas"));
             target.Cash ??= ParseDecimal(row.Get("Disponibilidades"));
@@ -79,7 +78,7 @@ public sealed class CvmFiiMonthlyStructuredSource
             var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
             return new CvmFiiMonthlyRecord(row.Cnpj, row.Date, row.SourceVersion, row.NetAssetValue, row.NavPerShare, row.Cash,
                 $"{sourceReference}#cnpj={row.Cnpj}&referenceDate={row.Date:yyyy-MM-dd}&version={row.SourceVersion}", SchemaVersion, fingerprint);
-        }).OrderBy(x => x.FundClassCnpj).ThenBy(x => x.ReferenceDate).ToArray();
+        }).OrderBy(x => x.FundClassCnpj).ThenBy(x => x.ReferenceDate).ThenBy(x => x.SourceVersion).ToArray();
     }
 
     private static List<CsvRow> ReadCsv(ZipArchive archive, string prefix)

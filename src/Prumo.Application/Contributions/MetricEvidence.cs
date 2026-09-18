@@ -21,7 +21,10 @@ public sealed record MetricEvidence(
     MetricEvidenceSourceType SourceType,
     string? SourceId,
     string? SourceReference,
-    decimal? Confidence);
+    decimal? Confidence)
+{
+    public int? SourceVersion { get; init; }
+}
 
 public sealed record MetricEvidenceResolution(
     string Metric,
@@ -103,24 +106,31 @@ public static class MetricEvidenceResolver
         foreach (var observation in asset.CvmFiiMonthlyObservations)
             AddCvmFii(evidence, observation);
 
+        var currentOfficialIds = asset.CvmFiiMonthlyObservations
+            .GroupBy(x => (Dataset: x.SourceReference.Split('#')[0], x.ReferenceDate))
+            .SelectMany(group => group.Where(x => x.SourceVersion == group.Max(y => y.SourceVersion)))
+            .Select(x => x.Id.ToString()).ToHashSet();
         return new(evidence.GroupBy(x => x.Metric, StringComparer.OrdinalIgnoreCase)
-            .Select(ResolveMetric).OrderBy(x => x.Metric, StringComparer.OrdinalIgnoreCase).ToArray());
+            .Select(group => ResolveMetric(group, currentOfficialIds)).OrderBy(x => x.Metric, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
-    private static MetricEvidenceResolution ResolveMetric(IGrouping<string, MetricEvidence> group)
+    private static MetricEvidenceResolution ResolveMetric(IGrouping<string, MetricEvidence> group, IReadOnlySet<string> currentOfficialIds)
     {
         var ordered = group.OrderByDescending(x => x.ReferencePeriod ?? x.ReferenceDate ?? DateOnly.MinValue)
             .ThenBy(x => x.PeriodType switch { FinancialPeriodType.Annual => 0, FinancialPeriodType.Ttm => 1, FinancialPeriodType.Quarterly => 2, FinancialPeriodType.PointInTime => 3, _ => 4 })
+            .ThenByDescending(x => x.SourceVersion)
             .ThenByDescending(x => x.ExtractedAt ?? x.ObservedAt ?? DateTimeOffset.MinValue)
             .ThenByDescending(x => x.Confidence ?? 0).ToArray();
         if (ordered.Length == 0) return new(group.Key, null, Array.Empty<MetricEvidence>(), MetricEvidenceResolutionStatus.Unavailable);
-        var selected = ordered[0];
+        var selected = ordered.FirstOrDefault(x => x.SourceType != MetricEvidenceSourceType.OfficialStructured
+            || currentOfficialIds.Contains(x.SourceId!));
+        if (selected is null) return new(group.Key, null, ordered, MetricEvidenceResolutionStatus.Unavailable);
         var sameObservation = ordered.Where(x => x.ReferenceDate == selected.ReferenceDate && x.ReferencePeriod == selected.ReferencePeriod && x.PeriodType == selected.PeriodType).ToArray();
         var differentValues = sameObservation.Select(x => (x.Value, x.Unit, x.Currency)).Distinct().Count() > 1;
         var sameOfficialDataset = sameObservation.All(x => x.SourceType == MetricEvidenceSourceType.OfficialStructured)
             && sameObservation.Select(x => x.SourceReference?.Split('#')[0]).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1;
         var conflict = differentValues && !sameOfficialDataset;
-        return new(group.Key, selected, ordered.Skip(1).ToArray(), conflict ? MetricEvidenceResolutionStatus.Conflict : MetricEvidenceResolutionStatus.Resolved,
+        return new(group.Key, selected, ordered.Where(x => x != selected).ToArray(), conflict ? MetricEvidenceResolutionStatus.Conflict : MetricEvidenceResolutionStatus.Resolved,
             conflict ? "Existem valores diferentes para a mesma métrica, período e tipo de período." : null);
     }
 
@@ -157,7 +167,8 @@ public static class MetricEvidenceResolver
         if (value is null) return;
         target.Add(new(metric, value.Value, unit, currency, observation.ReferenceDate, observation.ReferenceDate,
             FinancialPeriodType.PointInTime, observation.ObservedAt, observation.ObservedAt,
-            MetricEvidenceSourceType.OfficialStructured, observation.Id.ToString(), observation.SourceReference, null));
+            MetricEvidenceSourceType.OfficialStructured, observation.Id.ToString(), observation.SourceReference, null)
+            { SourceVersion = observation.SourceVersion });
     }
 
     private static void Add(List<MetricEvidence> target, string metric, decimal? value, DateOnly date, FinancialPeriodType period, DateTimeOffset observedAt, FinancialDataSource source, string? sourceReference, Guid sourceId)

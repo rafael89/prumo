@@ -284,6 +284,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
 
     private async Task<object> CompletedResponseAsync(Guid portfolioId, PersistedContributionGuidance item, CancellationToken ct)
     {
+        var executedAssetIds = await db.PortfolioTransactions.AsNoTracking()
+            .Where(x => x.ContributionGuidanceId == item.Id)
+            .SelectMany(x => x.Items).Select(x => x.AssetId).Distinct().ToListAsync(ct);
         var positions = await db.PortfolioPositions.AsNoTracking().Include(x => x.Asset)
             .Where(x => x.PortfolioId == portfolioId).ToDictionaryAsync(x => x.AssetId, ct);
         var assets = await db.Assets.AsNoTracking().ToDictionaryAsync(x => x.Id, ct);
@@ -292,6 +295,8 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
             x.AssetId,
             x.Origin,
             x.CandidateKey,
+            executed = x.AssetId.HasValue ? executedAssetIds.Contains(x.AssetId.Value)
+                : assets.Values.Any(asset => asset.Ticker == x.Ticker && executedAssetIds.Contains(asset.Id)),
             ticker = x.Ticker ?? (x.AssetId.HasValue ? assets.GetValueOrDefault(x.AssetId.Value)?.Ticker ?? positions.GetValueOrDefault(x.AssetId.Value)?.Asset?.Ticker : null) ?? string.Empty,
             assetClass = (int)(x.AssetClass ?? (x.AssetId.HasValue ? assets.GetValueOrDefault(x.AssetId.Value)?.AssetClass ?? positions.GetValueOrDefault(x.AssetId.Value)?.Asset?.AssetClass : null) ?? AssetClass.Other),
             x.Amount,
@@ -347,6 +352,7 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         return new
         {
             guidanceId = item.Id,
+            executedAssetIds,
             status = allocations.Length == 0 && classAllocations.Length == 0 ? ContributionGuidanceStatus.NoEligibleCandidates.ToString() : ContributionGuidanceStatus.Calculated.ToString(),
             contributionAmount = item.RequestedAmount,
             requestedAmount = item.RequestedAmount,

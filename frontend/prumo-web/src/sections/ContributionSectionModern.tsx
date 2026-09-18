@@ -5,8 +5,9 @@ import { faCircleCheck, faCircleInfo, faCopy, faSpinner, faTriangleExclamation, 
 import { AppDialog } from '../components/AppDialog'
 import { parseDecimalInput } from '../utils/decimalInput'
 import { apiBaseUrl } from '../api/client'
+import { contributionExecution } from '../utils/contributionExecution'
 
-type Allocation = { assetId?: string | null; origin?: string; candidateKey?: string | null; ticker: string; assetClass: number; amount: number; reason: string }
+type Allocation = { assetId?: string | null; origin?: string; candidateKey?: string | null; ticker: string; assetClass: number; amount: number; reason: string; executed?: boolean }
 type AvoidedCandidate = { assetId: string; ticker: string; assetClass: number; reason: string }
 type AnalysisTrace = { generatedAt?: string; engineVersion?: string; decisionEngineVersion?: string; baselineEngineVersion?: string; provider?: string; model?: string; policyVersion?: string; assessmentVersions?: string[]; evidenceCount?: number; candidateIntelligenceCandidateCount?: number; candidateIntelligenceEvidenceReferenceCount?: number; candidateIntelligenceAssessmentCount?: number; candidateIntelligenceDocumentEvidenceCount?: number; candidateIntelligencePayloadLimited?: boolean; candidatePayloadOriginalChars?: number; candidatePayloadProjectedChars?: number; candidatePayloadPersistedChars?: number; candidatePayloadReductionPercent?: number; storagePayloadChars?: number; proposalContextChars?: number; reviewContextChars?: number; proposalEventCount?: number; reviewEventCount?: number; storagePayloadLimited?: boolean; proposalContextLimited?: boolean; reviewContextLimited?: boolean; workerVersion?: string; workerBuild?: string; executionPath?: string; proposalPromptChars?: number; reviewPromptChars?: number; criteriaJson?: string; fallbackReason?: string | null; selectionMode?: string | null; allocationMode?: string | null; selectedScenarioKey?: string | null; primaryFactors?: string[]; confidence?: string | null; retryCount?: number }
 type ClassAllocation = { assetClass: number; amount: number; reason: string }
@@ -67,7 +68,6 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
   const [amount, setAmount] = useState('')
   const [guidance, setGuidance] = useState<Guidance | null>(null)
   const [selected, setSelected] = useState<Allocation | null>(null)
-  const [confirmedGuidanceId, setConfirmedGuidanceId] = useState<string | null>(null)
   const generate = useMutation({
     mutationFn: () => api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance`, { amount: parse(amount) }),
     onMutate: () => setGuidance(null),
@@ -84,9 +84,9 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
     enabled: Boolean(activeGuidance?.guidanceId && activeGuidance.jobStatus && !['Completed', 'Failed'].includes(activeGuidance.jobStatus)),
     refetchInterval: query => ['Completed', 'Failed'].includes(query.state.data?.jobStatus ?? '') ? false : 1500
   })
-  const current = polling.data ?? activeGuidance
+  const current = activeGuidance?.jobStatus === 'Completed' ? activeGuidance : polling.data ?? activeGuidance
   const pending = generate.isPending || Boolean(current?.jobStatus && !['Completed', 'Failed'].includes(current.jobStatus))
-  const completed = current?.jobStatus === 'Completed' && current.guidanceId !== confirmedGuidanceId ? current : null
+  const completed = current?.jobStatus === 'Completed' ? current : null
   const isFallback = completed?.intelligenceAvailability === 'InsufficientIntelligence'
   const isAiAssisted = completed?.intelligenceAvailability === 'IntelligenceAvailable' && completed.analysis?.provider !== 'deterministic' && !['scenario:no-action', 'scenario:baseline-partial'].includes(completed.analysis?.selectedScenarioKey ?? '')
   const isNoAction = Boolean(completed && completed.allocations.length === 0 && completed.classAllocations?.length === 0)
@@ -105,8 +105,17 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
   const failed = current?.jobStatus === 'Failed'
 
   const confirm = useMutation({
-    mutationFn: (value: { quantity: number; unitPrice: number }) => api(`/api/portfolios/${portfolioId}/contributions`, { guidanceId: completed?.guidanceId, items: completed?.decision?.decisionType === 'SplitContribution' ? completed.allocations.map(allocation => ({ assetId: allocation.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: allocation.candidateKey, quantity: allocation.amount / value.unitPrice, unitPrice: value.unitPrice })) : [{ assetId: selected?.assetId ?? '00000000-0000-0000-0000-000000000000', candidateKey: selected?.candidateKey, ...value }] }),
-    onSuccess: async () => { setConfirmedGuidanceId(current?.guidanceId ?? null); setSelected(null); setGuidance(null); await queryClient.invalidateQueries({ queryKey: ['history-timeline', portfolioId] }); await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); await queryClient.invalidateQueries({ queryKey: ['latest-contribution', portfolioId] }) }
+    mutationFn: (value: { quantity: number; unitPrice: number }) => {
+      if (!completed || !selected) throw new Error('Selecione o aporte realizado.')
+      return api(`/api/portfolios/${portfolioId}/contributions`, contributionExecution(completed.guidanceId, selected, value.quantity, value.unitPrice))
+    },
+    onSuccess: async () => {
+      setSelected(null)
+      if (completed) setGuidance(await api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/${completed.guidanceId}`))
+      await queryClient.invalidateQueries({ queryKey: ['history-timeline', portfolioId] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] })
+      await queryClient.invalidateQueries({ queryKey: ['latest-contribution', portfolioId] })
+    }
   })
 
   return <section className="contribution-modern mx-auto max-w-358 min-w-0 px-6 pb-24 pt-3">
@@ -141,7 +150,7 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
             <div className="flex justify-between text-sm"><strong>{item.ticker}</strong><span>{money(item.amount, false)}</span></div>
             <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(item.amount / completed.requestedAmount * 100, 100)}%` }} /></div>
             {item.reason && item.reason !== item.ticker && <p className="mt-1 text-xs text-slate-500">{item.reason}</p>}
-            <button type="button" onClick={() => setSelected(item)} className="mt-2 cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:border-amber-500">Registrar este aporte</button>
+            <button type="button" disabled={item.executed || confirm.isPending} onClick={() => setSelected(item)} className="mt-2 cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:border-amber-500 disabled:opacity-50">{item.executed ? 'Aporte registrado' : 'Registrar este aporte'}</button>
           </div>)}</div>
         </> : <div className="flex min-h-32 items-center rounded-2xl border border-dashed border-slate-200 bg-stone-50 p-5 text-sm text-slate-500">
           {pending ? 'A distribuição será exibida somente após a conclusão da análise.' : 'Informe um valor para iniciar a análise.'}

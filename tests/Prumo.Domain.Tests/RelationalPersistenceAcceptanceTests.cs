@@ -27,7 +27,8 @@ public sealed class RelationalPersistenceAcceptanceTests
             var connection = new NpgsqlConnectionStringBuilder(admin.ConnectionString) { Database = database }.ConnectionString;
             await using var db = CreateDb(connection);
             await db.Database.MigrateAsync();
-            Assert.Contains(await db.Database.GetAppliedMigrationsAsync(), x => x.EndsWith("_AddExternalContributionGuidanceSnapshot", StringComparison.Ordinal));
+            Assert.Equal(db.Database.GetMigrations(), await db.Database.GetAppliedMigrationsAsync());
+            Assert.False(db.Database.HasPendingModelChanges());
 
             var portfolio = new Portfolio("relational");
             var asset = new Asset("KNOWN3", "Known", AssetType.Stock, null);
@@ -49,7 +50,10 @@ public sealed class RelationalPersistenceAcceptanceTests
             await db.SaveChangesAsync();
             var duplicate = new PortfolioTransaction(portfolio.Id, PortfolioTransactionType.Buy, DateTimeOffset.UtcNow, guidance.Id, 100);
             db.PortfolioTransactions.Add(duplicate);
-            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+            // Partial executions may share a guidance. The confirmation endpoint
+            // serializes and rejects a repeated asset, rather than rejecting B after A.
+            await db.SaveChangesAsync();
+            Assert.Equal(2, await db.PortfolioTransactions.CountAsync());
         }
         finally
         {

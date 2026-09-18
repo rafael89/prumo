@@ -18,11 +18,13 @@ public sealed class PortfolioTransactionsController(PrumoDbContext db, ExternalA
     {
         if (request.Items is null || request.Items.Count == 0) return BadRequest("Informe ao menos um ativo comprado.");
         if (request.Items.Any(x => x.Quantity <= 0 || x.UnitPrice <= 0)) return BadRequest("Quantidade e preço devem ser positivos.");
-        await using var tx = await db.Database.BeginTransactionAsync(ct); var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (db.Database.IsRelational())
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", ct);
+        var portfolio = await db.Portfolios.Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
         var guidance = request.GuidanceId.HasValue ? await db.ContributionGuidances.Include(x => x.Allocations).SingleOrDefaultAsync(x => x.Id == request.GuidanceId && x.PortfolioId == portfolioId, ct) : null;
         if (request.GuidanceId.HasValue && guidance is null) return NotFound("GuidanceNotFound");
-        if (guidance is not null && await db.PortfolioTransactions.AnyAsync(x => x.ContributionGuidanceId == guidance.Id, ct)) return Conflict("GuidanceAlreadyConfirmed");
         var items = request.Items.ToList();
         if (guidance is not null && items.Any(x => x.AssetId == Guid.Empty && !string.IsNullOrWhiteSpace(x.CandidateKey)))
         {
@@ -31,14 +33,23 @@ public sealed class PortfolioTransactionsController(PrumoDbContext db, ExternalA
                 var allocation = guidance.Allocations.SingleOrDefault(x => x.Origin == "ExternalDiscovery" && x.CandidateKey == external.CandidateKey);
                 if (allocation is null || allocation.AssetClass is null || allocation.AssetType is null) return BadRequest("Candidato externo não pertence à guidance.");
                 var id = await (materializer ?? new ExternalAssetMaterializer(db)).MaterializeAsync(new(allocation.Provider!, allocation.Ticker!, allocation.Name!, allocation.AssetType.Value, allocation.AssetClass.Value, allocation.Exchange, allocation.Currency, allocation.Sector, allocation.SourceReference), ct);
-                items[items.IndexOf(external)] = external with { AssetId = id, Quantity = allocation.Amount / external.UnitPrice };
+                items[items.IndexOf(external)] = external with { AssetId = id };
             }
         }
         var requestedAssetIds = items.Select(x => x.AssetId).ToHashSet();
         var assets = await db.Assets.Where(x => requestedAssetIds.Contains(x.Id) && x.IsActive).ToDictionaryAsync(x => x.Id, ct);
         if (assets.Count != requestedAssetIds.Count) return BadRequest("Só é permitido registrar compras de ativos conhecidos e ativos.");
         if (items.Select(x => x.AssetId).Distinct().Count() != items.Count) return BadRequest("Não repita o mesmo ativo no registro do aporte.");
-        var total = items.Sum(x => x.Quantity * x.UnitPrice); if (guidance is not null && total > guidance.RequestedAmount) return BadRequest("O total confirmado não pode exceder o valor da guidance.");
+        var total = items.Sum(x => x.Quantity * x.UnitPrice);
+        if (guidance is not null)
+        {
+            var previous = await db.PortfolioTransactions.AsNoTracking().Include(x => x.Items)
+                .Where(x => x.ContributionGuidanceId == guidance.Id).ToListAsync(ct);
+            if (previous.SelectMany(x => x.Items).Any(x => requestedAssetIds.Contains(x.AssetId)))
+                return Conflict("GuidanceAlreadyConfirmed");
+            if (previous.Sum(x => x.TotalAmount) + total > guidance.RequestedAmount)
+                return BadRequest("O total confirmado não pode exceder o valor da guidance.");
+        }
         var source = request.GuidanceId.HasValue ? FinancialSource.ContributionGuidanceExecution : FinancialSource.Manual;
         var transaction = new PortfolioTransaction(portfolioId, PortfolioTransactionType.Buy, request.OccurredAt ?? DateTimeOffset.UtcNow, request.GuidanceId, total, source: source);
         foreach (var item in items)

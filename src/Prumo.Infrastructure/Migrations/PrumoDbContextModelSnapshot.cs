@@ -1364,7 +1364,6 @@ namespace Prumo.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ContributionGuidanceId")
-                        .IsUnique()
                         .HasFilter("\"ContributionGuidanceId\" IS NOT NULL");
 
                     b.HasIndex("PortfolioId", "ImportFingerprint")

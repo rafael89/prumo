@@ -36,6 +36,9 @@ public sealed class HistoricalPerformanceService(PrumoDbContext db, HistoricalFi
 
     private static HistoricalValuationDto BuildValuation(HistoricalPortfolioStateDto historical, IReadOnlyList<Prumo.Domain.Entities.AssetPrice> prices, DateOnly date)
     {
+        if (historical.Anchor is null)
+            return new(null, "Unavailable", historical.Warnings, [], historical.Cash?.Balance,
+                historical.Cash?.Coverage ?? "Unavailable", null, "Unavailable", historical.Cash?.Warnings ?? []);
         var assets = historical.Assets.Select(asset =>
         {
             var price = prices.Where(x => x.AssetId == asset.AssetId && x.PriceDate <= date).OrderByDescending(x => x.PriceDate).ThenByDescending(x => x.FetchedAt).FirstOrDefault();
