@@ -16,6 +16,11 @@ jobs:
   validate:
     name: Validation
     runs-on: ubuntu-latest
+    outputs:
+      test_count: ${{ steps.tests.outputs.test_count }}
+      test_duration: ${{ steps.tests.outputs.duration }}
+      build_duration: ${{ steps.build.outputs.duration }}
+      total_duration: ${{ steps.metrics.outputs.duration }}
 
     services:
       postgres:
@@ -33,11 +38,16 @@ jobs:
           --health-retries 10
 
     steps:
+      - name: Start validation timer
+        id: timer
+        shell: bash
+        run: echo "started_at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -45,15 +55,41 @@ jobs:
         run: dotnet restore Prumo.sln
 
       - name: Build backend
-        run: dotnet build Prumo.sln --no-restore
+        id: build
+        shell: bash
+        run: |
+          started_at=$(date +%s)
+          dotnet build Prumo.sln --no-restore
+          duration=$(( $(date +%s) - started_at ))
+          echo "duration=${duration}s" >> "$GITHUB_OUTPUT"
 
       - name: Test backend and relational suite
+        id: tests
+        shell: bash
         env:
           PRUMO_RUN_RELATIONAL_TESTS: '1'
-        run: dotnet test Prumo.sln --no-build
+        run: |
+          started_at=$(date +%s)
+          set +e
+          dotnet test Prumo.sln --no-build \
+            --logger "trx;LogFileName=test-results.trx" \
+            --results-directory "$RUNNER_TEMP/prumo-test-results"
+          test_exit_code=$?
+          set -e
+
+          test_count=0
+          while IFS= read -r -d '' result_file; do
+            count=$(grep -oPm1 'total="\K[0-9]+' "$result_file" || true)
+            test_count=$((test_count + ${count:-0}))
+          done < <(find "$RUNNER_TEMP/prumo-test-results" -type f -name '*.trx' -print0 2>/dev/null)
+
+          duration=$(( $(date +%s) - started_at ))
+          echo "test_count=$test_count" >> "$GITHUB_OUTPUT"
+          echo "duration=${duration}s" >> "$GITHUB_OUTPUT"
+          exit "$test_exit_code"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22.x
           cache: npm
@@ -70,6 +106,14 @@ jobs:
       - name: Build frontend
         working-directory: frontend/prumo-web
         run: npm run build
+
+      - name: Publish validation metrics
+        id: metrics
+        if: always()
+        shell: bash
+        run: |
+          duration=$(( $(date +%s) - ${{ steps.timer.outputs.started_at }} ))
+          echo "duration=${duration}s" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy
@@ -193,6 +237,11 @@ jobs:
             --arg actor "${GITHUB_ACTOR}" \
             --arg ci_status "$ci_status" \
             --arg deploy_status "$deploy_status" \
+            --arg run_number "${GITHUB_RUN_NUMBER}" \
+            --arg test_count "${{ needs.validate.outputs.test_count || 'n/d' }}" \
+            --arg test_duration "${{ needs.validate.outputs.test_duration || 'n/d' }}" \
+            --arg build_duration "${{ needs.validate.outputs.build_duration || 'n/d' }}" \
+            --arg total_duration "${{ needs.validate.outputs.total_duration || 'n/d' }}" \
             --arg run_url "$run_url" \
             --arg timestamp "$timestamp" \
             '{embeds: [
@@ -210,6 +259,10 @@ jobs:
                   fields: [
                     {name: "CI / testes", value: $ci_status, inline: true},
                     {name: "Deploy", value: $deploy_status, inline: true},
+                    {name: "Testes", value: $test_count, inline: true},
+                    {name: "Duração dos testes", value: $test_duration, inline: true},
+                    {name: "Duração do build", value: $build_duration, inline: true},
+                    {name: "Duração total", value: $total_duration, inline: true},
                     {name: "Branch", value: ("`" + $branch + "`"), inline: true},
                     {name: "Commit", value: ("`" + $short_sha + "`"), inline: true},
                     {name: "Autor", value: ("`" + $actor + "`"), inline: true},
@@ -219,7 +272,7 @@ jobs:
                   timestamp: $timestamp
                 }
               )
-            ]}')"
+            ]} | .embeds[0].title += " (run #" + $run_number + ")"')"
 
           curl --fail-with-body --silent --show-error \
             -H 'Content-Type: application/json' \
