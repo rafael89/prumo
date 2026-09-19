@@ -6,20 +6,26 @@
 
 @media (min-width: 1280px) {
   .portfolio-layout {
-    align-items: start;
-    align-content: start;
-    grid-template-rows: repeat(3, max-content);
+    display: flow-root;
   }
 
   .portfolio-positions {
+    float: left;
     height: auto;
-    align-self: start;
     min-height: 0;
+    width: calc((100% - .75rem) * 1.7 / 2.7);
+  }
+
+  .portfolio-layout .portfolio-list,
+  .portfolio-layout .target-allocation-frame,
+  .portfolio-layout .b3-import-panel {
+    margin-left: calc((100% - .75rem) * 1.7 / 2.7 + .75rem);
+    width: calc((100% - .75rem) / 2.7);
   }
 
   .portfolio-layout .target-allocation-frame,
   .portfolio-layout .b3-import-panel {
-    align-self: start;
+    margin-top: .75rem;
   }
 
   main .target-allocation-frame > section {
