@@ -81,8 +81,8 @@ public sealed class ContributionGuidanceCalculator
         var avoided = new List<AvoidedCandidate>();
         var reasons = new List<string>();
         var allocationsByAsset = new Dictionary<Guid, decimal>();
-        var classAllocations = new Dictionary<AssetClass, decimal>();
         var classAllocated = new Dictionary<AssetClass, decimal>();
+        var unavailableClasses = new HashSet<AssetClass>();
         var total = positions.Sum(x => x.CurrentValue);
         var projectedTotal = total + amount;
         var remaining = amount;
@@ -98,7 +98,7 @@ public sealed class ContributionGuidanceCalculator
                         - positions.Where(p => p.AssetClass == deviation.AssetClass).Sum(p => p.CurrentValue)
                         - classAllocated.GetValueOrDefault(deviation.AssetClass))
                 })
-                .Where(x => x.Need > 0)
+                .Where(x => x.Need > 0 && !unavailableClasses.Contains(x.AssetClass))
                 .OrderByDescending(x => x.Need)
                 .ThenBy(x => x.AssetClass.ToString(), StringComparer.Ordinal)
                 .ToList();
@@ -110,10 +110,8 @@ public sealed class ContributionGuidanceCalculator
             if (!candidatesByClass.TryGetValue(selectedNeed.AssetClass, out var candidates) || candidates.Count == 0)
             {
                 if (positions.Any(x => x.AssetClass == selectedNeed.AssetClass)) break;
-                classAllocations[selectedNeed.AssetClass] = classAllocations.GetValueOrDefault(selectedNeed.AssetClass) + allocation;
-                classAllocated[selectedNeed.AssetClass] = classAllocated.GetValueOrDefault(selectedNeed.AssetClass) + allocation;
-                remaining = Money(remaining - allocation);
-                reasons.Add($"{ContributionText.AssetClassLabel(selectedNeed.AssetClass)} recebe uma reserva de {allocation:0.00} porque ainda não há um ativo cadastrado nessa classe para indicar.");
+                unavailableClasses.Add(selectedNeed.AssetClass);
+                reasons.Add($"A classe {ContributionText.AssetClassLabel(selectedNeed.AssetClass)} está abaixo da meta, mas não possui ativo elegível cadastrado para indicação; o aporte seguirá para as próximas necessidades com candidatos.");
                 continue;
             }
 
@@ -151,7 +149,7 @@ public sealed class ContributionGuidanceCalculator
 
         var unallocated = Money(remaining);
         if (unallocated > 0) reasons.Add(string.Format("{0:0.00} permanece sem alocação porque não há candidatos elegíveis para as necessidades projetadas.", unallocated));
-        var allocationCount = allocated.Count + classAllocations.Count;
+        var allocationCount = allocated.Count;
         var style = allocationCount switch { 0 => ContributionAllocationStyle.NoAllocation, 1 => ContributionAllocationStyle.Concentrated, _ => ContributionAllocationStyle.Distributed };
         return new(
             allocationCount == 0 ? ContributionGuidanceStatus.NoEligibleCandidates : ContributionGuidanceStatus.Calculated,
@@ -160,7 +158,7 @@ public sealed class ContributionGuidanceCalculator
             input.Assessments.SelectMany(a => a.Evidence is null ? Array.Empty<string>() : new[] { a.Evidence }).Distinct().ToList(),
             input.Health.PolicyVersion, input.Assessments.Select(a => a.AssessmentVersion).Distinct().ToList(), DateTimeOffset.UtcNow)
         {
-            ClassAllocations = classAllocations.Select(x => new ContributionClassAllocation(x.Key, Money(x.Value), "Reserva de classe sem ativo cadastrado para indicação.")).ToArray()
+            ClassAllocations = Array.Empty<ContributionClassAllocation>()
         };
     }
 

@@ -7,10 +7,10 @@ namespace Prumo.Domain.Tests;
 public sealed class ContributionReserveIntegrityTests
 {
     [Theory]
-    [InlineData(200, 0, 200, 0)]
-    [InlineData(1000, 200, 600, 200)]
-    [InlineData(2000, 800, 900, 300)]
-    public void Reserves_reduce_remaining_need_and_never_repeat_an_already_funded_need(decimal amount, decimal stocks, decimal fiis, decimal international)
+    [InlineData(200, 0)]
+    [InlineData(1000, 200)]
+    [InlineData(2000, 800)]
+    public void Missing_classes_are_observations_and_do_not_become_generic_allocations(decimal amount, decimal stocks)
     {
         var health = new PortfolioHealthResult(PortfolioHealthStatus.Unbalanced,
             [new(AssetClass.BrazilianStock, 100, 60, 40, 40, AllocationDeviationDirection.Overweight),
@@ -21,13 +21,12 @@ public sealed class ContributionReserveIntegrityTests
         var calculator = new ContributionGuidanceCalculator();
         var result = calculator.Calculate(input);
         Assert.Equal(stocks, result.Allocations.Sum(x => x.Amount));
-        Assert.Equal(fiis, result.ClassAllocations.Where(x => x.AssetClass == AssetClass.Fii).Sum(x => x.Amount));
-        Assert.Equal(international, result.ClassAllocations.Where(x => x.AssetClass == AssetClass.International).Sum(x => x.Amount));
-        Assert.Equal(amount, result.AllocatedAmount); Assert.Equal(0, result.UnallocatedAmount);
-        Assert.All(result.ClassAllocations, allocation => Assert.True(allocation.Amount <= (1000 + amount) * (allocation.AssetClass == AssetClass.Fii ? .3m : .1m)));
+        Assert.Empty(result.ClassAllocations);
+        Assert.Equal(amount - result.AllocatedAmount, result.UnallocatedAmount);
+        Assert.Contains(result.Reasons, reason => reason.Contains("não possui ativo elegível cadastrado", StringComparison.OrdinalIgnoreCase));
         var repeated = calculator.Calculate(input);
         Assert.Equal(result.ClassAllocations, repeated.ClassAllocations);
         Assert.Equal(result.Allocations.Select(x => (x.AssetId, x.Amount)), repeated.Allocations.Select(x => (x.AssetId, x.Amount)));
-        Assert.Equal(result.ClassAllocations, ContributionIntelligenceApplier.ApplyFallback(result, "provider unavailable").ClassAllocations);
+        Assert.Empty(ContributionIntelligenceApplier.ApplyFallback(result, "provider unavailable").ClassAllocations);
     }
 }
