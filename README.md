@@ -1,7 +1,7 @@
 # Prumo
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![React 19.2.8](https://img.shields.io/badge/React-19.2.8-61DAFB?logo=react&logoColor=20232A)](https://react.dev/)
+[![React 19.3.0](https://img.shields.io/badge/React-19.3.0-61DAFB?logo=react&logoColor=20232A)](https://react.dev/)
 [![TypeScript 7.0.2](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite 8.2.2](https://img.shields.io/badge/Vite-8.2.2-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
 [![Tailwind CSS 4.3.3](https://img.shields.io/badge/Tailwind_CSS-4.3.3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
@@ -51,7 +51,7 @@ O Prumo combina importação de carteira da B3, descoberta e análise de documen
 
 - Docker e Docker Compose.
 - Serviços Compose: `postgres`, `api`, `worker` e `frontend`.
-- Portas publicadas apenas em `localhost` por padrão.
+- PostgreSQL e API publicados apenas em `localhost` por padrão; o frontend é publicado na porta `5273` do host.
 
 ## Organização da aplicação
 
@@ -107,7 +107,7 @@ Host:     localhost
 Port:     5432
 ```
 
-Altere esses valores com `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` quando necessário.
+Ao copiar [.env.example](.env.example), altere `POSTGRES_PASSWORD` antes de iniciar os serviços. Também é possível alterar esses valores com `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` quando necessário.
 
 ### API e worker
 
@@ -137,6 +137,8 @@ docker compose up --build
 O frontend fica disponível em `http://localhost:5273` e a API em `http://localhost:5200`.
 Ao usar o Compose completo, a API aplica automaticamente as migrations antes de ficar saudável e o Worker aguarda essa etapa.
 
+Com a API em execução, o health check está disponível em `http://localhost:5200/health` e a documentação OpenAPI/Swagger em `http://localhost:5200/swagger`.
+
 ## IA e configuração
 
 As configurações principais do worker ficam em [src/Prumo.Worker/appsettings.json](src/Prumo.Worker/appsettings.json):
@@ -148,9 +150,13 @@ As configurações principais do worker ficam em [src/Prumo.Worker/appsettings.j
 - `AI:FallbackModel`
 - `AI:TimeoutSeconds`
 - `AI:RateLimit`
+- `AI:Contribution:Model`
+- `AI:Contribution:FallbackModel`
+- `AI:Contribution:ThinkingLevel`
 - `Jobs:*`
 - `TextQuality:*`
 - `Storage:RootPath`
+- `Discord:WebhookUrl` (opcional, para notificações de logs)
 
 Providers suportados:
 
@@ -167,7 +173,7 @@ dotnet user-secrets set "AI:ApiKey" "<sua-chave>" --project src/Prumo.Worker
 dotnet user-secrets set "AI:Model" "gemini-3.5-flash-lite" --project src/Prumo.Worker
 ```
 
-Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. Nunca versione chaves de providers.
+Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. No Compose, as variáveis equivalentes são `AI_PROVIDER`, `GEMINI_API_KEY`, `AI_MODEL`, `AI_FALLBACK_MODEL`, `AI_CONTRIBUTION_MODEL`, `AI_CONTRIBUTION_FALLBACK_MODEL`, `AI_CONTRIBUTION_THINKING_LEVEL` e `DISCORD_WEBHOOK_URL`. Nunca versione chaves de providers.
 
 ## Documentos e análise
 
@@ -190,19 +196,23 @@ O endpoint `GET /api/documents/{id}/analysis` retorna a análise validada mais r
 
 ## Migrations
 
-O schema do banco fica em [src/Prumo.Infrastructure/Migrations](src/Prumo.Infrastructure/Migrations), atualmente concentrado em uma única migration `InitialCreate`. Ela é aplicada pelo Entity Framework Core.
+O schema do banco fica em [src/Prumo.Infrastructure/Migrations](src/Prumo.Infrastructure/Migrations). As migrations são aplicadas pelo Entity Framework Core.
 
 ```powershell
 dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
 ```
 
-O estado atual do modelo é representado por:
+O estado atual do modelo é representado, no momento, por:
 
 ```text
 InitialCreate
+CandidatesJsonUseText
+CvmFiiMonthlyStructuredIngestion
+PartialContributionExecutions
+DocumentIgnoredReason
 ```
 
-Como o Prumo ainda não está em produção, a baseline pode ser regenerada junto com um reset local do banco quando houver alterações estruturais. Depois do primeiro banco com dados reais, novas migrations devem ser append-only.
+As migrations novas devem ser append-only. Como o Prumo ainda não está em produção, a baseline pode ser regenerada junto com um reset local do banco quando houver alterações estruturais.
 
 ## Validação
 
@@ -229,6 +239,6 @@ O script valida a connection string, bloqueia hosts remotos, exige a confirmaç�
 
 ## Segurança e deployment
 
-O Compose atual foi desenhado para uso self-hosted em rede privada. As portas são vinculadas ao localhost e o TLS deve ser terminado por um reverse proxy externo. Autenticação multiusuário ainda não faz parte do modelo atual; não exponha a API diretamente à Internet.
+O Compose atual foi desenhado para uso self-hosted em rede privada. PostgreSQL e API ficam vinculados ao localhost; o frontend é publicado na porta `5273` do host. Em uma instalação exposta, use um reverse proxy externo para terminar o TLS. Autenticação multiusuário ainda não faz parte do modelo atual; não exponha a API diretamente à Internet.
 
 Os valores `prumo` e `dev123` são apenas defaults locais de desenvolvimento. Em ambientes reais, forneça credenciais e chaves por variáveis de ambiente ou secrets.
