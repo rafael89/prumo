@@ -7,10 +7,17 @@
 @media (min-width: 1280px) {
   .portfolio-layout {
     align-items: start;
+    align-content: start;
+    grid-template-rows: max-content max-content max-content;
   }
 
   .portfolio-positions {
     height: 100%;
+  }
+
+  .portfolio-layout .target-allocation-frame,
+  .portfolio-layout .b3-import-panel {
+    align-self: start;
   }
 
   main .target-allocation-frame > section {
