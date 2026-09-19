@@ -6,6 +6,7 @@ import { faBan, faCheck, faEye, faEyeSlash, faPen, faTrash, faPlus } from '@fort
 import { AppDialog } from '../components/AppDialog'
 import { Link } from 'react-router-dom'
 import { maskDecimalInput } from '../utils/decimalInput'
+import { B3ImportSection, TargetAllocationSection } from './FeatureSections'
 type AssetType = 0 | 1 | 2 | 3
 type PortfolioItem = { id: string; name: string; totalValue: number; positionCount: number }
 type Position = { id: string; assetId: string; assetClass: number; ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null; currentValue: number | null; portfolioWeight: number }
@@ -19,17 +20,18 @@ type PortfolioSectionProps = {
   createPortfolio: Mutation<{ name: string }>; deletePortfolio: Mutation<string>; renamePortfolio: Mutation<{ portfolioId: string; name: string }>; editingPortfolioId: string | null; setEditingPortfolioId: (id: string | null) => void; editingPortfolioName: string; setEditingPortfolioName: (value: string) => void
   setSelectedPortfolioId: (id: string | null) => void; setSelectedDocumentId: (id: string | null) => void; setPositionPage: (page: number) => void; setFeedback: (value: Feedback) => void; privacyHidden: boolean; togglePrivacy: () => void; positionForm: PositionForm; setPositionForm: Dispatch<SetStateAction<PositionForm>>; assetTypeOptions: Array<{ value: AssetType; label: string }>; handleCreatePosition: (event: FormEvent<HTMLFormElement>) => void
   createPosition: Mutation<{ ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null }>; dashboard: UseQueryResult<DashboardData, Error>; editingPositionId: string | null; startEditing: (position: Position) => void; handleUpdatePosition: (event: FormEvent<HTMLFormElement>, positionId: string) => void; editForm: EditForm; setEditForm: Dispatch<SetStateAction<EditForm>>
-  updatePosition: Mutation<{ positionId: string; request: { quantity: number; averagePrice: number; currentPrice: number | null } }>; setEditingPositionId: (id: string | null) => void; deletePosition: Mutation<string>; selectedAsset: Position | null; setSelectedAssetId: (id: string | null) => void
+  updatePosition: Mutation<{ positionId: string; request: { quantity: number; averagePrice: number; currentPrice: number | null } }>; setEditingPositionId: (id: string | null) => void; deletePosition: Mutation<string>; selectedAsset: Position | null; setSelectedAssetId: (id: string | null) => void; onImportStateChange: (processing: boolean) => void
 }
 function formatCurrency(value: number | null | undefined, hidden = false) { if (hidden) return 'R$ ••••••'; if (value == null) return 'Sem valor'; return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value) }
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
-export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, togglePrivacy, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId }: PortfolioSectionProps) {
+export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, togglePrivacy, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId, onImportStateChange }: PortfolioSectionProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [portfolioToDelete, setPortfolioToDelete] = useState<PortfolioItem | null>(null)
   const [positionToDelete, setPositionToDelete] = useState<Position | null>(null)
   return <>
       <div className="contents">
+        <div className="portfolio-side">
         <section id="carteira" className="portfolio-list order-1 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-2 xl:row-start-1">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Carteiras</h2>
@@ -55,8 +57,11 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
             {showCreateForm && <form onSubmit={(event) => { handleCreatePortfolio(event); setShowCreateForm(false) }} className="flex min-h-24 flex-col justify-center rounded-xl border border-dashed border-amber-400 bg-amber-50/40 p-3"><label htmlFor="portfolio-name" className="text-xs font-medium text-slate-700">Nome da carteira</label><input id="portfolio-name" autoFocus value={portfolioName} onChange={(event) => setPortfolioName(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500" placeholder="Minha carteira" /><div className="mt-2 flex gap-2"><button type="submit" disabled={createPortfolio.isPending} className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60">{createPortfolio.isPending ? 'Criando...' : 'Criar'}</button><button type="button" onClick={() => setShowCreateForm(false)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs">Cancelar</button></div></form>}
           </div>
         </section>
+          {activePortfolio && <div className="target-allocation-frame self-start [&>section]:px-0! [&>section]:pb-0!"><TargetAllocationSection portfolioId={activePortfolio.id} /></div>}
+          {activePortfolio && <div className="b3-import-panel self-start rounded-[1.75rem] border border-amber-200 bg-amber-50/40 [&>section]:px-0! [&>section]:pb-0!"><B3ImportSection portfolioId={activePortfolio.id} onImportStateChange={onImportStateChange} /></div>}
+        </div>
 
-        <section className="portfolio-positions order-3 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-1 xl:row-span-3">
+        <section className="portfolio-positions order-3 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-1">
           <div className="flex items-center justify-between gap-4">
             <div><h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Posi&ccedil;&otilde;es</h2></div>
             <div className="flex items-center gap-3"><span className="text-xs text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span></div>

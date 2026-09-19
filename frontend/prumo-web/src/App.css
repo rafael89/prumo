@@ -6,31 +6,32 @@
 
 @media (min-width: 1280px) {
   .portfolio-layout {
-    display: flow-root;
+    align-items: start;
+    align-content: start;
+    grid-template-rows: max-content;
   }
 
   .portfolio-positions {
     height: auto;
     min-height: 0;
-    width: calc((100% - .75rem) * 1.7 / 2.7);
+    grid-column: 1;
+    grid-row: 1;
   }
 
-  .portfolio-layout .portfolio-list,
-  .portfolio-layout .target-allocation-frame,
-  .portfolio-layout .b3-import-panel {
-    clear: right;
-    float: right;
-    margin-left: .75rem;
-    width: calc((100% - .75rem) / 2.7);
+  .portfolio-layout .portfolio-side {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: .75rem;
+    grid-column: 2;
+    grid-row: 1;
   }
 
-  .portfolio-layout .portfolio-list {
-    clear: none;
-  }
-
-  .portfolio-layout .target-allocation-frame,
-  .portfolio-layout .b3-import-panel {
-    margin-top: .75rem;
+  .portfolio-layout .portfolio-side .portfolio-list,
+  .portfolio-layout .portfolio-side .target-allocation-frame,
+  .portfolio-layout .portfolio-side .b3-import-panel {
+    width: 100%;
+    margin: 0;
   }
 
   main .target-allocation-frame > section {
@@ -73,6 +74,10 @@
 }
 
 @media (max-width: 1279px) {
+  .portfolio-layout .portfolio-side {
+    grid-column: 1 / -1;
+  }
+
   .portfolio-layout .portfolio-list,
   .portfolio-layout .portfolio-positions {
     grid-column: 1 / -1;
