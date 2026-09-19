@@ -16,7 +16,7 @@ public sealed class HttpContributionIntelligenceProvider : IContributionIntellig
     public HttpContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter)
     {
         this.http = http;
-        settings = options.Value.ForContribution();
+        settings = options.Value;
         this.limiter = limiter;
         http.Timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
     }

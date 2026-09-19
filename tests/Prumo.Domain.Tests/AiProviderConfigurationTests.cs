@@ -5,20 +5,20 @@ namespace Prumo.Domain.Tests;
 public sealed class AiProviderConfigurationTests
 {
     [Theory]
-    [InlineData("Gemini", "Gemini")]
-    [InlineData("OpenAI", "Deterministic")]
-    [InlineData("Fake", "Deterministic")]
-    [InlineData("Http", "Http")]
-    public void Automatic_contribution_provider_matches_supported_capabilities(string provider, string expected)
-        => Assert.Equal(expected, new AiProviderOptions { Provider = provider }.ContributionProvider);
-
-    [Fact]
-    public void Openai_documents_do_not_require_an_unrelated_http_endpoint()
+    [InlineData("Gemini")]
+    [InlineData("OpenAI")]
+    [InlineData("Http")]
+    public void Supported_provider_configuration_is_valid(string provider)
     {
-        var settings = new AiProviderOptions { Provider = "OpenAI", ApiKey = "test-key", Model = "document-model" };
+        var settings = new AiProviderOptions
+        {
+            Provider = provider,
+            ApiKey = provider.Equals("Http", StringComparison.OrdinalIgnoreCase) ? string.Empty : "test-key",
+            Endpoint = provider.Equals("Http", StringComparison.OrdinalIgnoreCase) ? "https://example.test/ai" : string.Empty,
+            Model = "test-model"
+        };
+
         Assert.True(new AiProviderOptionsValidator().Validate(null, settings).Succeeded);
-        settings.Contribution.Provider = "OpenAI";
-        Assert.True(new AiProviderOptionsValidator().Validate(null, settings).Failed);
     }
 
     [Fact]
@@ -34,32 +34,9 @@ public sealed class AiProviderConfigurationTests
     }
 
     [Fact]
-    public void Contribution_overrides_do_not_change_document_settings()
+    public void Openai_requires_only_the_shared_configuration()
     {
         var settings = new AiProviderOptions { Provider = "OpenAI", ApiKey = "document-key", Model = "document-model" };
-        settings.Contribution = new() { Provider = "Gemini", ApiKey = "contribution-key", Model = "contribution-model" };
         Assert.True(new AiProviderOptionsValidator().Validate(null, settings).Succeeded);
-        var contribution = settings.ForContribution();
-        Assert.Equal("contribution-key", contribution.ApiKey);
-        Assert.Equal("contribution-model", contribution.Model);
-        Assert.Equal("document-key", settings.ApiKey);
-        Assert.Equal("document-model", settings.Model);
-    }
-
-    [Fact]
-    public void Gemini_cannot_silently_reuse_another_providers_key()
-    {
-        var settings = new AiProviderOptions { Provider = "OpenAI", ApiKey = "document-key", Model = "model" };
-        settings.Contribution.Provider = "Gemini";
-        Assert.True(new AiProviderOptionsValidator().Validate(null, settings).Failed);
-    }
-
-    [Fact]
-    public void Custom_contribution_endpoint_does_not_inherit_another_providers_credentials()
-    {
-        var settings = new AiProviderOptions { Provider = "OpenAI", ApiKey = "document-key", Model = "document-model" };
-        settings.Contribution = new() { Provider = "Http", Endpoint = "https://example.test/contributions", Model = "custom-model" };
-        Assert.True(new AiProviderOptionsValidator().Validate(null, settings).Succeeded);
-        Assert.Empty(settings.ForContribution().ApiKey);
     }
 }

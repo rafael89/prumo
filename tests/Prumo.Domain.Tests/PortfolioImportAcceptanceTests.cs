@@ -48,7 +48,7 @@ public sealed class PortfolioImportAcceptanceTests
 
         var services = new ServiceCollection();
         services.AddDbContext<PrumoDbContext>(options => options.UseNpgsql(db.Database.GetConnectionString()));
-        services.AddSingleton(Options.Create(new AiProviderOptions { Provider = "Fake", Contribution = new() { Provider = "Deterministic" } }));
+        services.AddSingleton(Options.Create(new AiProviderOptions { Provider = "Fake" }));
         services.AddSingleton<WorkerMetrics>();
         await using var provider = services.BuildServiceProvider();
         using var worker = new ContributionGuidanceWorker(provider.GetRequiredService<IServiceScopeFactory>(),

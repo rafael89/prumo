@@ -48,7 +48,9 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var executionPath = "normal";
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision, workItem.Baseline, workItem.Candidates);
                     var eligibleCandidates = workItem.Candidates.Where(candidate => !candidate.HasBlock && candidate.ClassBudget > 0).ToArray();
-                    var deterministicMode = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiProviderOptions>>().Value.ContributionProvider == "Deterministic";
+                    var configuredProvider = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiProviderOptions>>().Value.Provider;
+                    var deterministicMode = !configuredProvider.Equals("Gemini", StringComparison.OrdinalIgnoreCase)
+                        && !configuredProvider.Equals("Http", StringComparison.OrdinalIgnoreCase);
                     if (deterministicMode)
                     {
                         usedFallback = true;

@@ -12,15 +12,6 @@ public sealed class AiProviderOptionsValidator : IValidateOptions<AiProviderOpti
             errors.Add("AI:Provider deve ser Fake, Gemini, OpenAI ou Http.");
         if (options.TimeoutSeconds <= 0) errors.Add("AI:TimeoutSeconds deve ser positivo.");
         if (provider is "GEMINI" or "OPENAI" or "HTTP") ValidateProvider(options, "AI", errors);
-        if (options.ContributionProvider is not ("Gemini" or "Http" or "Deterministic"))
-            errors.Add("AI:Contribution:Provider deve ser Auto, Gemini, Http ou Deterministic. OpenAI é suportado apenas para documentos.");
-        else if (options.ContributionProvider != "Deterministic")
-        {
-            if (!string.Equals(options.Provider.Trim(), options.ContributionProvider, StringComparison.OrdinalIgnoreCase)
-                && options.ContributionProvider == "Gemini" && string.IsNullOrWhiteSpace(options.Contribution.ApiKey))
-                errors.Add("AI:Contribution:ApiKey é obrigatória ao usar Gemini com outro provider de documentos.");
-            ValidateProvider(options.ForContribution(), "AI:Contribution", errors);
-        }
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
 

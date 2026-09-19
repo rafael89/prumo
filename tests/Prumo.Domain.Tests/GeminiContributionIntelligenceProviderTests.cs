@@ -68,20 +68,19 @@ public sealed class GeminiContributionIntelligenceProviderTests
         var settings = Options.Create(new AiProviderOptions
         {
             ApiKey = "test-key",
-            Model = "document-model",
-            FallbackModel = "document-fallback",
-            Contribution = new ContributionAiOptions { Model = "gemini-3.8-flash", FallbackModel = "gemini-3.5-flash-lite", ThinkingLevel = "medium" }
+            Model = "gemini-3.5-flash-lite",
+            FallbackModel = "gemini-3.1-flash-lite"
         });
         var provider = new GeminiContributionIntelligenceProvider(http, settings, new ImmediateRateLimiter());
 
         var result = await provider.ProposeAllocationAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), Array.Empty<ContributionScenarioOption>());
 
-        Assert.Equal("gemini-3.5-flash-lite", result.Metadata.Model);
-        Assert.Equal("gemini-3.8-flash", result.Metadata.ConfiguredModel);
-        Assert.Equal("gemini-3.5-flash-lite", result.Metadata.FallbackModel);
+        Assert.Equal("gemini-3.1-flash-lite", result.Metadata.Model);
+        Assert.Equal("gemini-3.5-flash-lite", result.Metadata.ConfiguredModel);
+        Assert.Equal("gemini-3.1-flash-lite", result.Metadata.FallbackModel);
         Assert.True(result.Metadata.UsedFallback);
-        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", httpHandler.Requests[0].RequestUri!.ToString());
-        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent", httpHandler.Requests[2].RequestUri!.ToString());
+        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent", httpHandler.Requests[0].RequestUri!.ToString());
+        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", httpHandler.Requests[2].RequestUri!.ToString());
         using var body = JsonDocument.Parse(httpHandler.Bodies[0]);
         Assert.Equal("medium", body.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingLevel").GetString());
     }
@@ -94,14 +93,14 @@ public sealed class GeminiContributionIntelligenceProviderTests
         var settings = Options.Create(new AiProviderOptions
         {
             ApiKey = "test-key",
-            Model = "document-model",
-            Contribution = new ContributionAiOptions { Model = "gemini-3.8-flash", FallbackModel = "gemini-3.5-flash-lite", ThinkingLevel = "medium" }
+            Model = "gemini-3.5-flash-lite",
+            FallbackModel = "gemini-3.1-flash-lite"
         });
         var provider = new GeminiContributionIntelligenceProvider(http, settings, new ImmediateRateLimiter());
 
         await provider.ReviewAllocationAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), Array.Empty<ContributionScenarioOption>(), InvestorPolicy.Current, CompositionProjectionEvaluator.Project(Array.Empty<ContributionCandidate>(), Array.Empty<CandidateAllocation>()));
 
-        Assert.Contains("gemini-3.8-flash", httpHandler.Requests[0].RequestUri!.ToString());
+        Assert.Contains("gemini-3.5-flash-lite", httpHandler.Requests[0].RequestUri!.ToString());
         using var body = JsonDocument.Parse(httpHandler.Bodies[0]);
         Assert.Equal("medium", body.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingLevel").GetString());
     }

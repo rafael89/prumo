@@ -84,12 +84,12 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));
         services.AddSingleton<IValidateOptions<AiProviderOptions>, AiProviderOptionsValidator>();
         services.AddOptions<AiProviderOptions>().Bind(context.Configuration.GetSection("AI")).ValidateOnStart();
-        if (aiSettings.ContributionProvider == "Gemini")
+        if (aiSettings.Provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
         {
             services.AddHttpClient<GeminiContributionIntelligenceProvider>();
             services.AddScoped<IContributionIntelligenceProvider>(provider => provider.GetRequiredService<GeminiContributionIntelligenceProvider>());
         }
-        else if (aiSettings.ContributionProvider == "Http")
+        else if (aiSettings.Provider.Equals("Http", StringComparison.OrdinalIgnoreCase))
         {
             services.AddHttpClient<HttpContributionIntelligenceProvider>();
             services.AddScoped<IContributionIntelligenceProvider>(provider => provider.GetRequiredService<HttpContributionIntelligenceProvider>());
@@ -124,6 +124,5 @@ IHost host = Host.CreateDefaultBuilder(args)
 
 var configuredAi = host.Services.GetRequiredService<IOptions<AiProviderOptions>>().Value;
 host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AiConfiguration").LogInformation(
-    "Providers configurados: documentos={DocumentProvider}; aportes={ContributionProvider}",
-    configuredAi.Provider, configuredAi.ContributionProvider);
+    "Provider de IA configurado: {Provider}", configuredAi.Provider);
 await host.RunAsync();

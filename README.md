@@ -153,12 +153,6 @@ As configurações principais do worker ficam em [src/Prumo.Worker/appsettings.j
 - `AI:FallbackModel`
 - `AI:TimeoutSeconds`
 - `AI:RateLimit`
-- `AI:Contribution:Provider`
-- `AI:Contribution:Endpoint`
-- `AI:Contribution:ApiKey`
-- `AI:Contribution:Model`
-- `AI:Contribution:FallbackModel`
-- `AI:Contribution:ThinkingLevel`
 - `Jobs:*`
 - `TextQuality:*`
 - `Storage:RootPath`
@@ -173,16 +167,16 @@ Providers de análise documental:
 
 O worker valida provider, modelo, credenciais exigidas, endpoint HTTP e timeout na inicialização. `Fake` é permitido apenas fora de Production. Valores desconhecidos de provider são rejeitados.
 
-Para aportes, `AI:Contribution:Provider` aceita `Auto` (padrão), `Gemini`, `Http` ou `Deterministic`:
+Para aportes, o Prumo reutiliza o provider e os modelos configurados em `AI`. Gemini e Http usam IA; Fake, OpenAI e outros providers usam o motor determinístico de aportes:
 
-| Provider de documentos | Aportes com `Auto` |
+| Provider configurado em `AI` | Aportes |
 | --- | --- |
 | Gemini | Gemini |
 | Http | Http |
 | OpenAI | Motor determinístico |
 | Fake | Motor determinístico |
 
-OpenAI está integrado à análise documental. Para aportes com IA e documentos OpenAI, configure explicitamente Gemini ou Http em `AI:Contribution`, incluindo modelo e as credenciais/endpoint correspondentes. Quando os providers são iguais, as opções de aportes herdam os valores de documentos; ao trocar de provider, as credenciais e modelos não são herdados. `Deterministic` calcula a orientação diretamente pelas regras, sem tentar chamar IA.
+OpenAI está integrado à análise documental; nesse caso, os aportes usam o motor determinístico. `AI:Model` e `AI:FallbackModel` são compartilhados pelas análises documentais e pelos aportes quando o provider configurado é Gemini ou Http.
 
 A tela de aportes distingue uso do motor de regras, troca para modelo alternativo de IA e indisponibilidade da revisão adicional. O motivo é preservado junto da orientação.
 
@@ -194,7 +188,7 @@ dotnet user-secrets set "AI:ApiKey" "<sua-chave>" --project src/Prumo.Worker
 dotnet user-secrets set "AI:Model" "gemini-3.5-flash-lite" --project src/Prumo.Worker
 ```
 
-Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. No Compose, use `AI_PROVIDER`, `AI_API_KEY` (ou o alias legado `GEMINI_API_KEY`) e `AI_MODEL`. Para aportes existem `AI_CONTRIBUTION_PROVIDER`, `AI_CONTRIBUTION_ENDPOINT`, `AI_CONTRIBUTION_API_KEY`, `AI_CONTRIBUTION_MODEL`, `AI_CONTRIBUTION_FALLBACK_MODEL` e `AI_CONTRIBUTION_THINKING_LEVEL`. `AI_FALLBACK_MODEL` controla o fallback documental e `DISCORD_WEBHOOK_URL` as notificações opcionais. Nunca versione chaves de providers.
+Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. No Compose, use `AI_PROVIDER`, `AI_API_KEY` (ou o alias legado `GEMINI_API_KEY`), `AI_MODEL` e `AI_FALLBACK_MODEL`. `DISCORD_WEBHOOK_URL` controla as notificações opcionais. Nunca versione chaves de providers.
 
 ## Documentos e análise
 

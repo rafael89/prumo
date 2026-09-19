@@ -17,19 +17,19 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
     public GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter)
     {
         this.http = http;
-        settings = options.Value.ForContribution();
+        settings = options.Value;
         this.limiter = limiter;
         http.Timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
     }
 
-    private string ContributionModel => string.IsNullOrWhiteSpace(settings.Contribution.Model) ? settings.Model : settings.Contribution.Model;
-    private string ContributionFallbackModel => string.IsNullOrWhiteSpace(settings.Contribution.FallbackModel) ? settings.FallbackModel : settings.Contribution.FallbackModel;
+    private string ContributionModel => settings.Model;
+    private string ContributionFallbackModel => settings.FallbackModel;
 
     private object CreateReasoningGenerationConfig(object schema) => new
     {
         responseMimeType = "application/json",
         responseJsonSchema = schema,
-        thinkingConfig = new { thinkingLevel = settings.Contribution.ThinkingLevel }
+        thinkingConfig = new { thinkingLevel = "medium" }
     };
 
     private ContributionIntelligenceMetadata CreateMetadata(string engineVersion, string policyVersion, string promptVersion, string model)
