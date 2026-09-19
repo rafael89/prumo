@@ -8,11 +8,13 @@
   .portfolio-layout {
     align-items: start;
     align-content: start;
-    grid-template-rows: max-content max-content max-content;
+    grid-template-rows: repeat(3, max-content);
   }
 
   .portfolio-positions {
-    height: 100%;
+    height: auto;
+    align-self: start;
+    min-height: 0;
   }
 
   .portfolio-layout .target-allocation-frame,
