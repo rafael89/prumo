@@ -11,11 +11,9 @@ namespace Prumo.Domain.Tests;
 
 public sealed class RelationalPersistenceAcceptanceTests
 {
-    [Fact]
+    [RelationalFact]
     public async Task PostgreSql_clean_migrations_and_external_snapshot_round_trip()
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("PRUMO_RUN_RELATIONAL_TESTS"), "1", StringComparison.Ordinal))
-            return;
 
         var admin = new NpgsqlConnectionStringBuilder("Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=dev123");
         var database = $"prumo_acceptance_{Guid.NewGuid():N}";
@@ -62,10 +60,9 @@ public sealed class RelationalPersistenceAcceptanceTests
         }
     }
 
-    [Fact]
+    [RelationalFact]
     public async Task PostgreSql_concurrent_external_confirmations_create_one_execution()
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("PRUMO_RUN_RELATIONAL_TESTS"), "1", StringComparison.Ordinal)) return;
         var admin = new NpgsqlConnectionStringBuilder("Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=dev123");
         var database = $"prumo_concurrency_{Guid.NewGuid():N}";
         await using var adminConnection = new NpgsqlConnection(admin.ConnectionString);
@@ -103,10 +100,9 @@ public sealed class RelationalPersistenceAcceptanceTests
         }
     }
 
-    [Fact]
+    [RelationalFact]
     public async Task PostgreSql_confirmation_rolls_back_mid_flow_and_retry_reuses_state()
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("PRUMO_RUN_RELATIONAL_TESTS"), "1", StringComparison.Ordinal)) return;
         var admin = new NpgsqlConnectionStringBuilder("Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=dev123");
         var database = $"prumo_retry_{Guid.NewGuid():N}";
         await using var adminConnection = new NpgsqlConnection(admin.ConnectionString);

@@ -11,10 +11,9 @@ namespace Prumo.Domain.Tests;
 
 public sealed class PositionConcurrencyIntegrityTests
 {
-    [Fact]
+    [RelationalFact]
     public async Task Concurrent_distinct_purchases_preserve_both_position_increments()
     {
-        if (Environment.GetEnvironmentVariable("PRUMO_RUN_RELATIONAL_TESTS") != "1") return;
         var admin = "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=dev123";
         var database = $"prumo_integrity_{Guid.NewGuid():N}";
         await using var connection = new NpgsqlConnection(admin);

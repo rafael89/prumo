@@ -40,7 +40,7 @@ O Prumo combina importação de carteira da B3, descoberta e análise de documen
 
 ### Frontend
 
-- React 19.2.8.
+- React 19.3.0.
 - TypeScript 7.0.2.
 - Vite 8.2.2.
 - Tailwind CSS 4.3.3.
@@ -72,6 +72,7 @@ O frontend é organizado por fluxos:
 /radar            Eventos que exigem atenção
 /contributions    Orientação e registro de aportes
 /documents        Documentos e análises
+/history          Histórico da carteira e dos ativos
 /about            Sobre o Prumo
 ```
 
@@ -137,7 +138,9 @@ docker compose up --build
 O frontend fica disponível em `http://localhost:5273` e a API em `http://localhost:5200`.
 Ao usar o Compose completo, a API aplica automaticamente as migrations antes de ficar saudável e o Worker aguarda essa etapa.
 
-Com a API em execução, o health check está disponível em `http://localhost:5200/health` e a documentação OpenAPI/Swagger em `http://localhost:5200/swagger`.
+Com a API em execução, `/health` e `/health/ready` verificam a conexão com PostgreSQL; `/health/live` verifica se a aplicação responde. A documentação OpenAPI/Swagger fica em `http://localhost:5200/swagger` apenas em Development.
+
+O worker não abre uma porta HTTP adicional. Seu estado operacional fica no processo e nos logs padrão do container; o Compose acompanha se o processo permanece em execução. Os contadores internos do worker existem para diagnóstico e testes, mas não iniciam exporter ou serviço de métricas. API e worker também mantêm os logs de arquivo existentes nos volumes `api-logs` e `worker-logs`, com retenção de sete dias; arquivos mais antigos são removidos na próxima gravação de cada serviço.
 
 ## IA e configuração
 
@@ -150,6 +153,9 @@ As configurações principais do worker ficam em [src/Prumo.Worker/appsettings.j
 - `AI:FallbackModel`
 - `AI:TimeoutSeconds`
 - `AI:RateLimit`
+- `AI:Contribution:Provider`
+- `AI:Contribution:Endpoint`
+- `AI:Contribution:ApiKey`
 - `AI:Contribution:Model`
 - `AI:Contribution:FallbackModel`
 - `AI:Contribution:ThinkingLevel`
@@ -158,12 +164,27 @@ As configurações principais do worker ficam em [src/Prumo.Worker/appsettings.j
 - `Storage:RootPath`
 - `Discord:WebhookUrl` (opcional, para notificações de logs)
 
-Providers suportados:
+Providers de análise documental:
 
 - `Fake`: determinístico, indicado para desenvolvimento e testes.
 - `Gemini`: Gemini Developer API via `generateContent` com Structured Output.
 - `OpenAI`: Responses API com JSON Schema estrito.
-- Qualquer outro valor: provider HTTP customizado legado.
+- `Http`: provider HTTP customizado, com endpoint e modelo configurados.
+
+O worker valida provider, modelo, credenciais exigidas, endpoint HTTP e timeout na inicialização. `Fake` é permitido apenas fora de Production. Valores desconhecidos de provider são rejeitados.
+
+Para aportes, `AI:Contribution:Provider` aceita `Auto` (padrão), `Gemini`, `Http` ou `Deterministic`:
+
+| Provider de documentos | Aportes com `Auto` |
+| --- | --- |
+| Gemini | Gemini |
+| Http | Http |
+| OpenAI | Motor determinístico |
+| Fake | Motor determinístico |
+
+OpenAI está integrado à análise documental. Para aportes com IA e documentos OpenAI, configure explicitamente Gemini ou Http em `AI:Contribution`, incluindo modelo e as credenciais/endpoint correspondentes. Quando os providers são iguais, as opções de aportes herdam os valores de documentos; ao trocar de provider, as credenciais e modelos não são herdados. `Deterministic` calcula a orientação diretamente pelas regras, sem tentar chamar IA.
+
+A tela de aportes distingue uso do motor de regras, troca para modelo alternativo de IA e indisponibilidade da revisão adicional. O motivo é preservado junto da orientação.
 
 Para usar o Gemini localmente sem versionar a chave:
 
@@ -173,7 +194,7 @@ dotnet user-secrets set "AI:ApiKey" "<sua-chave>" --project src/Prumo.Worker
 dotnet user-secrets set "AI:Model" "gemini-3.5-flash-lite" --project src/Prumo.Worker
 ```
 
-Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. No Compose, as variáveis equivalentes são `AI_PROVIDER`, `GEMINI_API_KEY`, `AI_MODEL`, `AI_FALLBACK_MODEL`, `AI_CONTRIBUTION_MODEL`, `AI_CONTRIBUTION_FALLBACK_MODEL`, `AI_CONTRIBUTION_THINKING_LEVEL` e `DISCORD_WEBHOOK_URL`. Nunca versione chaves de providers.
+Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. No Compose, use `AI_PROVIDER`, `AI_API_KEY` (ou o alias legado `GEMINI_API_KEY`) e `AI_MODEL`. Para aportes existem `AI_CONTRIBUTION_PROVIDER`, `AI_CONTRIBUTION_ENDPOINT`, `AI_CONTRIBUTION_API_KEY`, `AI_CONTRIBUTION_MODEL`, `AI_CONTRIBUTION_FALLBACK_MODEL` e `AI_CONTRIBUTION_THINKING_LEVEL`. `AI_FALLBACK_MODEL` controla o fallback documental e `DISCORD_WEBHOOK_URL` as notificações opcionais. Nunca versione chaves de providers.
 
 ## Documentos e análise
 
@@ -190,7 +211,7 @@ DocumentDiscoveryWorker
   -> validação e persistência de DocumentAnalysis
 ```
 
-O contexto enviado para análise pode incluir a carteira relacionada ao ativo, patrimônio total, quantidade de posições, posição afetada, maiores posições por peso e indicadores de concentração.
+O contexto da análise documental é global e contém dados do ativo e do documento. O impacto específico sobre cada carteira é calculado separadamente em `PortfolioAssessment`, considerando posições, metas e políticas versionadas.
 
 O endpoint `GET /api/documents/{id}/analysis` retorna a análise validada mais recente; `RawResponse` não é exposto por padrão.
 
@@ -223,9 +244,20 @@ dotnet test Prumo.sln
 Set-Location frontend/prumo-web
 npm run build
 npm run lint
+npm test
 ```
 
-O E2E com serviços externos, como CVM/FNet e providers de IA, depende da configuração correspondente no ambiente.
+Sem `PRUMO_RUN_RELATIONAL_TESTS=1`, os testes PostgreSQL aparecem como ignorados, com o motivo explícito. Para executá-los localmente, com PostgreSQL disponível na configuração de desenvolvimento esperada pelos testes:
+
+```powershell
+$env:PRUMO_RUN_RELATIONAL_TESTS = '1'
+dotnet test Prumo.sln
+Remove-Item Env:PRUMO_RUN_RELATIONAL_TESTS
+```
+
+Esses testes usam bancos temporários próprios e cobrem migrations, concorrência, importação, publicação de orientação pelo worker e confirmações parciais. O CI os ativa com PostgreSQL 16 e executa também os testes frontend com Node 24, alinhado ao Dockerfile. No Windows, se a política do PowerShell bloquear `npm.ps1`, use `npm.cmd`.
+
+O E2E com serviços externos, como CVM/FNet e providers de IA, depende da configuração correspondente no ambiente. Os testes frontend atuais validam contratos HTTP e regras de apresentação; não substituem testes de navegador.
 
 ## Reset local do banco
 

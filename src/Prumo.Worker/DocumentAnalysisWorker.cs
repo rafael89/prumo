@@ -52,6 +52,7 @@ public sealed class DocumentAnalysisWorker : BackgroundService
         var job = await queue.ReserveNextAsync(DateTimeOffset.UtcNow, options.Lease, options.MaxAttempts, ProcessingJobType.AnalyzeDocument, cancellationToken);
         if (job is null)
         {
+            metrics.SetBacklog(ProcessingJobType.AnalyzeDocument, 0);
             await Task.Delay(options.PollInterval, cancellationToken);
             return;
         }

@@ -5,6 +5,7 @@ namespace Prumo.Api;
 
 public sealed class ApiFileLoggerProvider(string directory, LogLevel minimumLevel = LogLevel.Warning) : ILoggerProvider
 {
+    private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
     private readonly object sync = new();
     private readonly string directory = Path.GetFullPath(directory);
 
@@ -16,35 +17,40 @@ public sealed class ApiFileLoggerProvider(string directory, LogLevel minimumLeve
     {
         if (level < minimumLevel) return;
         var timestamp = DateTimeOffset.Now;
-        var text = new StringBuilder()
-            .Append(timestamp.ToString("O"))
-            .Append(" [").Append(level).Append("] ")
-            .Append(category);
+        var text = new StringBuilder().Append(timestamp.ToString("O")).Append(" [").Append(level).Append("] ").Append(category);
         if (eventId.Id != 0) text.Append(" [").Append(eventId.Id).Append(']');
         text.AppendLine().AppendLine(message);
         if (exception is not null) text.AppendLine(exception.ToString());
         text.AppendLine();
-
         try
         {
             lock (sync)
             {
                 Directory.CreateDirectory(directory);
-                var path = Path.Combine(directory, $"api-{timestamp:yyyy-MM-dd}.txt");
-                File.AppendAllText(path, text.ToString(), new UTF8Encoding(false));
+                RemoveExpiredFiles(timestamp.UtcDateTime);
+                File.AppendAllText(Path.Combine(directory, $"api-{timestamp:yyyy-MM-dd}.txt"), text.ToString(), new UTF8Encoding(false));
             }
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
 
+    private void RemoveExpiredFiles(DateTime nowUtc)
+    {
+        var cutoff = nowUtc - Retention;
+        foreach (var path in Directory.EnumerateFiles(directory, "api-*.txt"))
+        {
+            try { if (File.GetLastWriteTimeUtc(path) < cutoff) File.Delete(path); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
     public static string ResolveDirectory(string storageRoot, string? configuredPath = null)
     {
         if (!string.IsNullOrWhiteSpace(configuredPath)) return Path.GetFullPath(configuredPath);
         var root = new DirectoryInfo(Path.GetFullPath(storageRoot));
-        var storageDirectory = string.Equals(root.Name, "documents", StringComparison.OrdinalIgnoreCase)
-            ? root.Parent ?? root
-            : root;
+        var storageDirectory = string.Equals(root.Name, "documents", StringComparison.OrdinalIgnoreCase) ? root.Parent ?? root : root;
         return Path.Combine(storageDirectory.FullName, "logs", "api");
     }
 
@@ -52,11 +58,7 @@ public sealed class ApiFileLoggerProvider(string directory, LogLevel minimumLeve
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(LogLevel logLevel) => provider.IsEnabled(logLevel);
-
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-        {
-            if (!IsEnabled(logLevel)) return;
-            provider.Write(logLevel, category, eventId, formatter(state, exception), exception);
-        }
+        { if (IsEnabled(logLevel)) provider.Write(logLevel, category, eventId, formatter(state, exception), exception); }
     }
 }

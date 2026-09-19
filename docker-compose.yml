@@ -55,12 +55,15 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
       Storage__RootPath: /storage/documents
       AI__Provider: ${AI_PROVIDER:-Gemini}
-      AI__ApiKey: ${GEMINI_API_KEY:-}
+      AI__ApiKey: ${AI_API_KEY:-${GEMINI_API_KEY:-}}
       AI__Model: ${AI_MODEL:-gemini-3.5-flash-lite}
       AI__FallbackModel: ${AI_FALLBACK_MODEL:-gemini-3.1-flash-lite}
       AI__Contribution__Model: ${AI_CONTRIBUTION_MODEL:-gemini-3.8-flash}
       AI__Contribution__FallbackModel: ${AI_CONTRIBUTION_FALLBACK_MODEL:-gemini-3.5-flash-lite}
       AI__Contribution__ThinkingLevel: ${AI_CONTRIBUTION_THINKING_LEVEL:-medium}
+      AI__Contribution__Provider: ${AI_CONTRIBUTION_PROVIDER:-Auto}
+      AI__Contribution__Endpoint: ${AI_CONTRIBUTION_ENDPOINT:-}
+      AI__Contribution__ApiKey: ${AI_CONTRIBUTION_API_KEY:-}
       Discord__WebhookUrl: ${DISCORD_WEBHOOK_URL:-}
     volumes:
       - document-storage:/storage/documents

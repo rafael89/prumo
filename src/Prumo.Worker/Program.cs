@@ -19,11 +19,14 @@ using Prumo.Infrastructure.MarketData;
 IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureLogging((context, logging) =>
     {
+        logging.AddProvider(new WorkerFileLoggerProvider(WorkerFileLoggerProvider.ResolveDirectory(
+            context.Configuration["Storage:RootPath"] ?? "/storage", context.Configuration["Logging:File:Path"])));
         logging.Services.AddSingleton<ILoggerProvider>(sp => new DiscordLogLoggerProvider(sp.GetRequiredService<IDiscordLogNotifier>(), sp.GetRequiredService<IOptions<DiscordOptions>>(), "Worker"));
     })
     .ConfigureServices((context, services) =>
     {
-        var aiProvider = context.Configuration["AI:Provider"]?.Trim();
+        var aiSettings = context.Configuration.GetSection("AI").Get<AiProviderOptions>() ?? new();
+        var aiProvider = aiSettings.Provider.Trim();
         if (string.Equals(aiProvider, "Fake", StringComparison.OrdinalIgnoreCase))
         {
             if (context.HostingEnvironment.IsProduction())
@@ -79,16 +82,21 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.Configure<CvmFiiIngestionOptions>(context.Configuration.GetSection("CvmFiiIngestion"));
         services.AddHttpClient("documents");
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));
-        services.Configure<AiProviderOptions>(context.Configuration.GetSection("AI"));
-        if (string.Equals(aiProvider, "Gemini", StringComparison.OrdinalIgnoreCase))
+        services.AddSingleton<IValidateOptions<AiProviderOptions>, AiProviderOptionsValidator>();
+        services.AddOptions<AiProviderOptions>().Bind(context.Configuration.GetSection("AI")).ValidateOnStart();
+        if (aiSettings.ContributionProvider == "Gemini")
         {
             services.AddHttpClient<GeminiContributionIntelligenceProvider>();
             services.AddScoped<IContributionIntelligenceProvider>(provider => provider.GetRequiredService<GeminiContributionIntelligenceProvider>());
         }
-        else
+        else if (aiSettings.ContributionProvider == "Http")
         {
             services.AddHttpClient<HttpContributionIntelligenceProvider>();
             services.AddScoped<IContributionIntelligenceProvider>(provider => provider.GetRequiredService<HttpContributionIntelligenceProvider>());
+        }
+        else
+        {
+            services.AddScoped<IContributionIntelligenceProvider, DeterministicContributionIntelligenceProvider>();
         }
         services.AddSingleton<IAiRequestRateLimiter, AiRequestRateLimiter>();
         services.Configure<TextQualityOptions>(context.Configuration.GetSection("TextQuality"));
@@ -114,4 +122,8 @@ IHost host = Host.CreateDefaultBuilder(args)
     })
     .Build();
 
+var configuredAi = host.Services.GetRequiredService<IOptions<AiProviderOptions>>().Value;
+host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AiConfiguration").LogInformation(
+    "Providers configurados: documentos={DocumentProvider}; aportes={ContributionProvider}",
+    configuredAi.Provider, configuredAi.ContributionProvider);
 await host.RunAsync();

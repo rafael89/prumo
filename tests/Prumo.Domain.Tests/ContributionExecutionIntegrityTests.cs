@@ -15,6 +15,30 @@ namespace Prumo.Domain.Tests;
 
 public sealed class ContributionExecutionIntegrityTests
 {
+    [Fact]
+    public async Task Unexpected_persistence_failure_is_not_reported_as_duplicate_execution()
+    {
+        var interceptor = new FailingSaveInterceptor();
+        await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).AddInterceptors(interceptor)
+            .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
+        var portfolio = new Portfolio("persistence failure");
+        var asset = new Asset("AAAA3", "A", AssetType.Stock, null);
+        db.AddRange(portfolio, asset);
+        await db.SaveChangesAsync();
+        interceptor.Fail = true;
+        await Assert.ThrowsAsync<DbUpdateException>(() => new PortfolioTransactionsController(db)
+            .Confirm(portfolio.Id, new(null, [new(asset.Id, 1, 10)]), default));
+    }
+
+    private sealed class FailingSaveInterceptor : SaveChangesInterceptor
+    {
+        public bool Fail { get; set; }
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+            => Fail ? throw new DbUpdateException("Simulated storage failure") : ValueTask.FromResult(result);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

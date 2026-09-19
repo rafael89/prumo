@@ -4,12 +4,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircleCheck, faCircleInfo, faCopy, faSpinner, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
 import { parseDecimalInput } from '../utils/decimalInput'
-import { apiBaseUrl } from '../api/client'
+import { getJson, getOptionalJson, sendJson } from '../api/client'
 import { contributionExecution } from '../utils/contributionExecution'
+import { describeContributionAnalysis } from '../utils/contributionAnalysis'
 
 type Allocation = { assetId?: string | null; origin?: string; candidateKey?: string | null; ticker: string; assetClass: number; amount: number; reason: string; executed?: boolean }
 type AvoidedCandidate = { assetId: string; ticker: string; assetClass: number; reason: string }
-type AnalysisTrace = { generatedAt?: string; engineVersion?: string; decisionEngineVersion?: string; baselineEngineVersion?: string; provider?: string; model?: string; policyVersion?: string; assessmentVersions?: string[]; evidenceCount?: number; candidateIntelligenceCandidateCount?: number; candidateIntelligenceEvidenceReferenceCount?: number; candidateIntelligenceAssessmentCount?: number; candidateIntelligenceDocumentEvidenceCount?: number; candidateIntelligencePayloadLimited?: boolean; candidatePayloadOriginalChars?: number; candidatePayloadProjectedChars?: number; candidatePayloadPersistedChars?: number; candidatePayloadReductionPercent?: number; storagePayloadChars?: number; proposalContextChars?: number; reviewContextChars?: number; proposalEventCount?: number; reviewEventCount?: number; storagePayloadLimited?: boolean; proposalContextLimited?: boolean; reviewContextLimited?: boolean; workerVersion?: string; workerBuild?: string; executionPath?: string; proposalPromptChars?: number; reviewPromptChars?: number; criteriaJson?: string; fallbackReason?: string | null; selectionMode?: string | null; allocationMode?: string | null; selectedScenarioKey?: string | null; primaryFactors?: string[]; confidence?: string | null; retryCount?: number }
+type AnalysisTrace = { usedFallback?: boolean; generatedAt?: string; engineVersion?: string; decisionEngineVersion?: string; baselineEngineVersion?: string; provider?: string; model?: string; policyVersion?: string; assessmentVersions?: string[]; evidenceCount?: number; candidateIntelligenceCandidateCount?: number; candidateIntelligenceEvidenceReferenceCount?: number; candidateIntelligenceAssessmentCount?: number; candidateIntelligenceDocumentEvidenceCount?: number; candidateIntelligencePayloadLimited?: boolean; candidatePayloadOriginalChars?: number; candidatePayloadProjectedChars?: number; candidatePayloadPersistedChars?: number; candidatePayloadReductionPercent?: number; storagePayloadChars?: number; proposalContextChars?: number; reviewContextChars?: number; proposalEventCount?: number; reviewEventCount?: number; storagePayloadLimited?: boolean; proposalContextLimited?: boolean; reviewContextLimited?: boolean; workerVersion?: string; workerBuild?: string; executionPath?: string; proposalPromptChars?: number; reviewPromptChars?: number; criteriaJson?: string; fallbackReason?: string | null; selectionMode?: string | null; allocationMode?: string | null; selectedScenarioKey?: string | null; primaryFactors?: string[]; confidence?: string | null; retryCount?: number }
 type ClassAllocation = { assetClass: number; amount: number; reason: string }
 type DecisionNeed = { type: string; dimension: string; key?: string | null; severity: number; confidence: string; coverage: string; reasons: string[] }
 type FinancialEvaluation = { assetId: string; quality: { category: string; freshness: string; signals: string[]; concerns: string[] }; valuation: { assessment: string; metrics: { metric: string; value: number }[] } }
@@ -50,68 +51,41 @@ function translatedCriteriaJson(value: string) {
   }
 }
 
-async function api<T>(path: string, body?: unknown) {
-  const response = await fetch(apiBaseUrl + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined)
-  if (!response.ok) { const message = await response.text(); if (message.includes('GuidanceAlreadyConfirmed')) throw new Error('Este aporte já foi confirmado. Consulte o histórico.'); throw new Error(message || 'Não foi possível concluir a operação.') }
-  return response.json() as Promise<T>
-}
-
-async function apiOptional<T>(path: string) {
-  const response = await fetch(apiBaseUrl + path)
-  if (response.status === 404) return null
-  if (!response.ok) throw new Error(await response.text() || 'Não foi possível carregar o cenário persistido.')
-  return response.json() as Promise<T>
-}
-
 export function ContributionSectionModern({ portfolioId, positions }: { portfolioId: string; positions: Position[] }) {
   const queryClient = useQueryClient()
   const [amount, setAmount] = useState('')
   const [guidance, setGuidance] = useState<Guidance | null>(null)
   const [selected, setSelected] = useState<Allocation | null>(null)
   const generate = useMutation({
-    mutationFn: () => api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance`, { amount: parse(amount) }),
+    mutationFn: () => sendJson<Guidance, { amount: number }>(`/api/portfolios/${portfolioId}/contribution-guidance`, 'POST', { amount: parse(amount) }),
     onMutate: () => setGuidance(null),
     onSuccess: setGuidance
   })
   const latest = useQuery({
     queryKey: ['latest-contribution', portfolioId],
-    queryFn: () => apiOptional<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/latest`),
+    queryFn: () => getOptionalJson<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/latest`),
   })
   const activeGuidance = guidance ?? latest.data
   const polling = useQuery({
     queryKey: ['standalone-contribution', portfolioId, activeGuidance?.guidanceId],
-    queryFn: () => api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/${activeGuidance?.guidanceId}`),
+    queryFn: () => getJson<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/${activeGuidance?.guidanceId}`),
     enabled: Boolean(activeGuidance?.guidanceId && activeGuidance.jobStatus && !['Completed', 'Failed'].includes(activeGuidance.jobStatus)),
     refetchInterval: query => ['Completed', 'Failed'].includes(query.state.data?.jobStatus ?? '') ? false : 1500
   })
   const current = activeGuidance?.jobStatus === 'Completed' ? activeGuidance : polling.data ?? activeGuidance
   const pending = generate.isPending || Boolean(current?.jobStatus && !['Completed', 'Failed'].includes(current.jobStatus))
   const completed = current?.jobStatus === 'Completed' ? current : null
-  const isFallback = completed?.intelligenceAvailability === 'InsufficientIntelligence'
-  const isAiAssisted = completed?.intelligenceAvailability === 'IntelligenceAvailable' && completed.analysis?.provider !== 'deterministic' && !['scenario:no-action', 'scenario:baseline-partial'].includes(completed.analysis?.selectedScenarioKey ?? '')
-  const isNoAction = Boolean(completed && completed.allocations.length === 0 && completed.classAllocations?.length === 0)
-  const isPartial = Boolean(completed && completed.allocatedAmount > 0 && completed.allocatedAmount < completed.requestedAmount)
-  const contextMessage = isFallback
-    ? completed?.analysis?.fallbackReason ?? 'A análise por IA não foi concluída; o motor determinístico preservou a distribuição segura.'
-    : isNoAction
-      ? 'A IA analisou os candidatos e concluiu que nenhum aporte em ativo atende aos limites atuais com segurança.'
-      : isPartial
-        ? 'A IA analisou a distribuição parcial segura; o valor restante permaneceu sem alocação porque não havia outra alternativa elegível.'
-        : completed?.analysis?.selectionMode === 'single-safe-scenario'
-          ? 'Havia apenas um cenário seguro pré-validado; ele foi aplicado diretamente pelo motor de regras.'
-          : isAiAssisted
-            ? 'A IA construiu esta distribuição dentro do universo elegível e dos limites validados pelo Prumo.'
-            : 'A recomendação foi calculada pelo motor determinístico do Prumo.'
+  const { isFallback, isAiAssisted, contextMessage } = describeContributionAnalysis(completed)
   const failed = current?.jobStatus === 'Failed'
 
   const confirm = useMutation({
     mutationFn: (value: { quantity: number; unitPrice: number }) => {
       if (!completed || !selected) throw new Error('Selecione o aporte realizado.')
-      return api(`/api/portfolios/${portfolioId}/contributions`, contributionExecution(completed.guidanceId, selected, value.quantity, value.unitPrice))
+      return sendJson(`/api/portfolios/${portfolioId}/contributions`, 'POST', contributionExecution(completed.guidanceId, selected, value.quantity, value.unitPrice))
     },
     onSuccess: async () => {
       setSelected(null)
-      if (completed) setGuidance(await api<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/${completed.guidanceId}`))
+      if (completed) setGuidance(await getJson<Guidance>(`/api/portfolios/${portfolioId}/contribution-guidance/${completed.guidanceId}`))
       await queryClient.invalidateQueries({ queryKey: ['history-timeline', portfolioId] })
       await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] })
       await queryClient.invalidateQueries({ queryKey: ['latest-contribution', portfolioId] })

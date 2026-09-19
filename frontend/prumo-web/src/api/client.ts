@@ -1,4 +1,4 @@
-export const apiBaseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? ''
+export const apiBaseUrl = import.meta.env?.VITE_API_URL?.replace(/\/$/, '') ?? ''
 
 export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`)
@@ -33,6 +33,8 @@ export async function sendForm<TResponse>(path: string, form: FormData): Promise
 export async function readError(response: Response, fallback: string): Promise<string> {
   const text = await response.text()
   if (!text || response.status >= 500) return fallback
+  if (text.includes('GuidanceAlreadyConfirmed')) return 'Este aporte já foi confirmado. Consulte o histórico.'
+  if (/exception|stack trace| at |npgsql|microsoft\.|system\.|relation ".*" does not exist|select .* from/i.test(text)) return fallback
   try {
     const problem = JSON.parse(text) as { detail?: unknown; title?: unknown }
     if (typeof problem.detail === 'string' && problem.detail.length < 300) return problem.detail

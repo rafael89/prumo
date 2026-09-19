@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Diagnostics;
+using Prumo.Infrastructure.Ai;
 using Microsoft.EntityFrameworkCore;
 using Prumo.Application.Contributions;
 using Prumo.Domain.Entities;
@@ -25,7 +26,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             try
             {
                 using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PrumoDbContext>(); var job = await ClaimNextAsync(db, stoppingToken);
-                if (job is null) { await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); continue; }
+                if (job is null) { metrics.SetBacklog("ContributionGuidance", 0); await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); continue; }
                 claimedJobId = job.Id;
                 var stopwatch = Stopwatch.StartNew();
                 var backlog = await db.ContributionGuidanceJobs.CountAsync(x => x.Status == ContributionGuidanceJobStatus.Queued, stoppingToken);
@@ -47,7 +48,16 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     var executionPath = "normal";
                     var deterministicOptions = BuildScenarioOptions(deterministicDecision, workItem.Baseline, workItem.Candidates);
                     var eligibleCandidates = workItem.Candidates.Where(candidate => !candidate.HasBlock && candidate.ClassBudget > 0).ToArray();
-                    if (eligibleCandidates.Length == 0)
+                    var deterministicMode = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiProviderOptions>>().Value.ContributionProvider == "Deterministic";
+                    if (deterministicMode)
+                    {
+                        usedFallback = true;
+                        executionPath = "deterministic-configured";
+                        ApplyFallback(guidance, workItem.Baseline,
+                            "A orientação foi calculada pelo motor de regras; a análise de aportes por IA está desativada na configuração.",
+                            "deterministic-configured", workItem, executionPath);
+                    }
+                    else if (eligibleCandidates.Length == 0)
                     {
                         usedFallback = true;
                         executionPath = "deterministic-fallback";

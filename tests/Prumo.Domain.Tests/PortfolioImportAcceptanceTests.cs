@@ -13,15 +13,81 @@ using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.PortfolioImports;
 using Prumo.Infrastructure.Reconciliation;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Prumo.Api.Services;
+using Prumo.Application.Intelligence;
+using Prumo.Application.Portfolio;
+using Prumo.Infrastructure.Ai;
+using Prumo.Worker;
+using System.Text.Json;
 
 namespace Prumo.Domain.Tests;
 
 public sealed class PortfolioImportAcceptanceTests
 {
-    [Fact]
+    [RelationalFact]
+    public async Task Imported_portfolio_generates_published_guidance_and_preserves_partial_executions()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        Assert.Equal("Completed", (await fixture.ImportAsync()).Status);
+        var db = fixture.Db;
+        var portfolioId = fixture.PortfolioId;
+        var stock = await db.Assets.SingleAsync();
+        var fund = new Asset("TEST11", "Test fund", AssetType.Fii, "Logística", AssetClass.Fii);
+        db.AddRange(fund, new PortfolioPosition(portfolioId, fund.Id, 5, 30, 32),
+            new TargetAllocation(portfolioId, AssetClass.BrazilianStock, 50), new TargetAllocation(portfolioId, AssetClass.Fii, 50));
+        await db.SaveChangesAsync();
+        // Start a fresh request identity map after the import/position updates.
+        db.ChangeTracker.Clear();
+        var current = new PortfolioAssessmentCurrentService(db, new PortfolioImpactAssessmentService(),
+            new PortfolioAssessmentFreshnessEvaluator(), NullLogger<PortfolioAssessmentCurrentService>.Instance);
+        var controller = new ContributionGuidanceController(db, current);
+        Assert.IsType<AcceptedResult>((await controller.Generate(portfolioId, new(1000), default)).Result);
+        var guidanceId = await db.ContributionGuidances.Select(x => x.Id).SingleAsync();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<PrumoDbContext>(options => options.UseNpgsql(db.Database.GetConnectionString()));
+        services.AddSingleton(Options.Create(new AiProviderOptions { Provider = "Fake", Contribution = new() { Provider = "Deterministic" } }));
+        services.AddSingleton<WorkerMetrics>();
+        await using var provider = services.BuildServiceProvider();
+        using var worker = new ContributionGuidanceWorker(provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ContributionGuidanceWorker>.Instance, provider.GetRequiredService<WorkerMetrics>());
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await worker.StartAsync(timeout.Token);
+        try
+        {
+            while (true)
+            {
+                var job = await db.ContributionGuidanceJobs.AsNoTracking().SingleAsync(timeout.Token);
+                Assert.NotEqual(ContributionGuidanceJobStatus.Failed, job.Status);
+                if (job.Status == ContributionGuidanceJobStatus.Completed) break;
+                await Task.Delay(100, timeout.Token);
+            }
+        }
+        finally { await worker.StopAsync(CancellationToken.None); }
+
+        db.ChangeTracker.Clear();
+        var response = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(
+            (await controller.Get(portfolioId, guidanceId, default)).Result).Value);
+        Assert.Equal(2, response.GetProperty("allocations").GetArrayLength());
+        Assert.True(response.GetProperty("analysis").GetProperty("usedFallback").GetBoolean());
+        Assert.Equal("deterministic-configured", response.GetProperty("analysis").GetProperty("executionPath").GetString());
+
+        var executions = new PortfolioTransactionsController(db);
+        Assert.IsType<OkObjectResult>((await executions.Confirm(portfolioId, new(guidanceId, [new(stock.Id, 1, 32)]), default)).Result);
+        Assert.IsType<ConflictObjectResult>((await executions.Confirm(portfolioId, new(guidanceId, [new(stock.Id, 1, 32)]), default)).Result);
+        Assert.IsType<OkObjectResult>((await executions.Confirm(portfolioId, new(guidanceId, [new(fund.Id, 2, 31)]), default)).Result);
+        db.ChangeTracker.Clear();
+        Assert.Equal(11, (await db.PortfolioPositions.SingleAsync(x => x.AssetId == stock.Id)).Quantity);
+        Assert.Equal(7, (await db.PortfolioPositions.SingleAsync(x => x.AssetId == fund.Id)).Quantity);
+        Assert.Equal(94, await db.PortfolioTransactions.Where(x => x.ContributionGuidanceId == guidanceId).SumAsync(x => x.TotalAmount));
+        Assert.Equal(2, await db.PortfolioTransactions.CountAsync(x => x.ContributionGuidanceId == guidanceId));
+    }
+
+    [RelationalFact]
     public async Task Repeated_b3_import_is_idempotent_and_creates_no_duplicate_state()
     {
-        if (!RelationalEnabled()) return;
         await using var fixture = await Fixture.CreateAsync();
         var first = await fixture.ImportAsync();
         var second = await fixture.ImportAsync();
@@ -34,10 +100,9 @@ public sealed class PortfolioImportAcceptanceTests
         Assert.Empty(await fixture.Db.TransactionReconciliations.ToListAsync());
     }
 
-    [Fact]
+    [RelationalFact]
     public async Task Provider_failure_after_import_does_not_rollback_canonical_portfolio_state()
     {
-        if (!RelationalEnabled()) return;
         await using var fixture = await Fixture.CreateAsync(new ThrowingDocumentSource());
         var result = await fixture.ImportAsync();
         Assert.Equal("Completed", result.Status);
@@ -49,7 +114,6 @@ public sealed class PortfolioImportAcceptanceTests
         Assert.Equal(1, await fixture.Db.PortfolioTransactions.CountAsync());
     }
 
-    private static bool RelationalEnabled() => Environment.GetEnvironmentVariable("PRUMO_RUN_RELATIONAL_TESTS") == "1";
 
     private sealed class Fixture : IAsyncDisposable
     {
@@ -57,6 +121,7 @@ public sealed class PortfolioImportAcceptanceTests
         private readonly string database;
         private readonly IFormFile file;
         public PrumoDbContext Db { get; }
+        public Guid PortfolioId => portfolio.Id;
         private readonly Portfolio portfolio;
         private readonly IDocumentSource source;
 

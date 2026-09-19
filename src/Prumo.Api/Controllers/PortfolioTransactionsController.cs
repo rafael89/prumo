@@ -65,14 +65,10 @@ public sealed class PortfolioTransactionsController(PrumoDbContext db, ExternalA
             else position.ApplyBuy(item.Quantity, item.UnitPrice);
         }
         PortfolioCalculator.RecalculateWeights(portfolio.Positions); db.PortfolioTransactions.Add(transaction);
-        try
-        {
-            await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
-        }
-        catch (DbUpdateException)
-        {
-            return Conflict("GuidanceAlreadyConfirmed");
-        }
+        // Duplicate execution is checked under the portfolio lock above.
+        // Unexpected persistence failures must reach the global handler and logs.
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return Ok(new { transactionId = transaction.Id, totalAmount = transaction.TotalAmount, portfolioSnapshotChanged = true });
     }
 }

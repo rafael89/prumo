@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
-import { B3ImportSection, RadarSection, TargetAllocationSection } from './sections/FeatureSections'
-import { ContributionSectionModern as ContributionSection } from './sections/ContributionSectionModern'
-import { PortfolioSection } from './sections/PortfolioSection'
-import { DocumentsSection } from './sections/DocumentsSection'
-import { AboutSection } from './sections/AboutSection'
-import { HistorySection } from './sections/HistorySection'
-import { DashboardOverview, RecentAnalysisModal, type Dashboard, type DashboardAssessment } from './sections/DashboardOverview'
+import type { Dashboard, DashboardAssessment } from './sections/DashboardOverview'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowUp, faBell, faCheckDouble, faMoon, faSun } from '@fortawesome/free-solid-svg-icons'
-import { apiBaseUrl } from './api/client'
+import { getJson, sendJson, sendVoid } from './api/client'
 import { Pagination } from './components/Pagination'
 import { AppDialog } from './components/AppDialog'
 
-const apiUrl = apiBaseUrl
+const B3ImportSection = lazy(() => import('./sections/FeatureSections').then(module => ({ default: module.B3ImportSection })))
+const RadarSection = lazy(() => import('./sections/FeatureSections').then(module => ({ default: module.RadarSection })))
+const TargetAllocationSection = lazy(() => import('./sections/FeatureSections').then(module => ({ default: module.TargetAllocationSection })))
+const ContributionSection = lazy(() => import('./sections/ContributionSectionModern').then(module => ({ default: module.ContributionSectionModern })))
+const PortfolioSection = lazy(() => import('./sections/PortfolioSection').then(module => ({ default: module.PortfolioSection })))
+const DocumentsSection = lazy(() => import('./sections/DocumentsSection').then(module => ({ default: module.DocumentsSection })))
+const AboutSection = lazy(() => import('./sections/AboutSection').then(module => ({ default: module.AboutSection })))
+const HistorySection = lazy(() => import('./sections/HistorySection').then(module => ({ default: module.HistorySection })))
+const DashboardOverview = lazy(() => import('./sections/DashboardOverview').then(module => ({ default: module.DashboardOverview })))
+const RecentAnalysisModal = lazy(() => import('./sections/DashboardOverview').then(module => ({ default: module.RecentAnalysisModal })))
 
 type AssetType = 0 | 1 | 2 | 3
 type Feedback = { tone: 'success' | 'error'; message: string } | null
@@ -84,47 +87,6 @@ const assetTypeOptions: Array<{ value: AssetType; label: string }> = [
   { value: 2, label: 'ETF' },
   { value: 3, label: 'Outro' },
 ]
-
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiUrl}${path}`)
-  if (!response.ok) throw new Error('Não foi possível carregar os dados.')
-  return response.json()
-}
-
-async function sendJson<TResponse, TRequest>(path: string, method: 'POST' | 'PUT' | 'PATCH', body: TRequest): Promise<TResponse> {
-  const response = await fetch(`${apiUrl}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-
-  if (!response.ok) {
-    throw new Error(await readError(response, path.includes('contribution-guidance') ? 'Não foi possível simular o aporte. Tente novamente.' : 'Não foi possível concluir a operação'))
-  }
-
-  return response.json()
-}
-
-async function sendVoid(path: string, method: 'DELETE'): Promise<void> {
-  const response = await fetch(`${apiUrl}${path}`, { method })
-  if (!response.ok) {
-    throw new Error(await readError(response, 'Não foi possível concluir a operação'))
-  }
-}
-
-async function readError(response: Response, fallback: string) {
-  const text = await response.text()
-  if (!text || response.status >= 500) return fallback
-  try {
-    const problem = JSON.parse(text) as { detail?: unknown; title?: unknown }
-    if (typeof problem.detail === 'string' && problem.detail.length < 300) return problem.detail
-    if (typeof problem.title === 'string' && problem.title.length < 120) return problem.title
-  } catch {
-    // Domain validation errors may still be returned as plain text.
-  }
-  if (/exception|stack trace| at |npgsql|microsoft\.|system\.|relation ".*" does not exist|select .* from/i.test(text) || text.length > 500) return fallback
-  return text
-}
 
 function parseOptionalNumber(value: string) {
   const normalized = value.trim().replace(',', '.')
@@ -371,7 +333,7 @@ function App() {
   })
 
   const deletePortfolio = useMutation({
-    mutationFn: (portfolioId: string) => sendVoid(`/api/portfolios/${portfolioId}`, 'DELETE'),
+    mutationFn: (portfolioId: string) => sendVoid(`/api/portfolios/${portfolioId}`),
     onSuccess: async (_result, portfolioId) => {
       if (activePortfolio?.id === portfolioId) setSelectedPortfolioId(null)
       setFeedback({ tone: 'success', message: 'Carteira excluída com sucesso.' })
@@ -419,7 +381,7 @@ function App() {
   })
 
   const deletePosition = useMutation({
-    mutationFn: (positionId: string) => sendVoid(`/api/portfolios/${activePortfolio!.id}/positions/${positionId}`, 'DELETE'),
+    mutationFn: (positionId: string) => sendVoid(`/api/portfolios/${activePortfolio!.id}/positions/${positionId}`),
     onSuccess: async () => {
       setEditingPositionId(null)
       setFeedback({ tone: 'success', message: 'Posição removida com sucesso.' })
@@ -538,12 +500,13 @@ function App() {
           </div>
         </nav>
         {notificationToast && <div role="status" className="fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6"><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={() => setNotificationToast(null)} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={() => setNotificationToast(null)} className="text-lg leading-none text-amber-800">×</button></div></div>}
+        <Suspense fallback={<p role="status" className="mx-auto max-w-6xl p-6 text-slate-500">Carregando tela…</p>}>
         {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} portfoliosError={portfolios.isError} retryPortfolios={() => void portfolios.refetch()} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} />}
         {route === '/about' && <AboutSection />}
         {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={handleHistoryPageInfo} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
-        {route === '/contributions' && activePortfolio && <ContributionSection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
+        {route === '/contributions' && activePortfolio && <ContributionSection key={activePortfolio.id} portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !portfolios.isError && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') || route === '/radar' ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>
           {feedback && (
@@ -580,6 +543,7 @@ function App() {
           </div>
         </footer>
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-16 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 sm:bottom-5"><FontAwesomeIcon icon={faArrowUp} /></button>}
+        </Suspense>
       </main>
   )
 }

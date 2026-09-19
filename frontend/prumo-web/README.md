@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# Prumo Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+SPA React/TypeScript com Vite, Tailwind, React Query e React Router. Consulte o [README principal](../../README.md) para backend, banco e configuração.
 
-Currently, two official plugins are available:
+## Executar e validar
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Use Node 24, versão utilizada no CI e na imagem Docker.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm ci
+npm run dev
+npm run build
+npm run lint
+npm test
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+No PowerShell, `npm.cmd` funciona quando a política local bloqueia `npm.ps1`.
+
+O Vite serve a aplicação na porta 5273 e encaminha `/api` para `localhost:5200`. `VITE_API_URL` altera a base da API no build; sem ela, as chamadas usam a mesma origem. Em Docker, o Nginx encaminha `/api/` para o serviço `api`.
+
+## Organização
+
+- `App.tsx`: shell, seleção de carteira, navegação e operações de carteira.
+- `sections/`: telas carregadas sob demanda com `React.lazy` e `Suspense`.
+- `api/client.ts`: helpers HTTP compartilhados, incluindo erros, respostas vazias e upload.
+- `utils/contributionAnalysis.ts`: mensagens sobre origem e limitações da orientação.
+- `utils/contributionExecution.ts`: contrato da confirmação de quantidade/preço realizados.
+
+Rotas: `/`, `/portfolio`, `/radar`, `/contributions`, `/documents`, `/documents/:id`, `/history` e `/about`. `/dashboard` redireciona para `/`.
+
+## Testes
+
+`npm test` usa o runner nativo do Node, sem dependência de navegador. Exercita contratos de importação e aporte, execuções parciais, tratamento de erros e distinção entre fallback determinístico, modelo alternativo e revisão indisponível. O CI executa testes, lint e build.

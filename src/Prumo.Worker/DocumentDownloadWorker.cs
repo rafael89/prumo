@@ -58,6 +58,7 @@ public sealed class DocumentDownloadWorker : BackgroundService
         var job = await queue.ReserveNextAsync(DateTimeOffset.UtcNow, options.Lease, options.MaxAttempts, ProcessingJobType.DownloadDocument, cancellationToken);
         if (job is null)
         {
+            metrics.SetBacklog(ProcessingJobType.DownloadDocument, 0);
             await Task.Delay(options.PollInterval, cancellationToken);
             return;
         }

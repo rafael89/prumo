@@ -91,7 +91,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 22.x
+          node-version: 24.x
           cache: npm
           cache-dependency-path: frontend/prumo-web/package-lock.json
 
@@ -102,6 +102,10 @@ jobs:
       - name: Lint frontend
         working-directory: frontend/prumo-web
         run: npm run lint
+
+      - name: Test frontend
+        working-directory: frontend/prumo-web
+        run: npm test
 
       - name: Build frontend
         working-directory: frontend/prumo-web
@@ -265,8 +269,7 @@ jobs:
                     {name: "Duração total", value: $total_duration, inline: true},
                     {name: "Branch", value: ("`" + $branch + "`"), inline: true},
                     {name: "Commit", value: ("`" + $short_sha + "`"), inline: true},
-                    {name: "Autor", value: ("`" + $actor + "`"), inline: true},
-                    {name: "Repositório", value: $repository, inline: true}
+                    {name: "Autor", value: ("`" + $actor + "`"), inline: true}
                   ],
                   footer: {text: "Prumo • GitHub Actions"},
                   timestamp: $timestamp

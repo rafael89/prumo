@@ -17,7 +17,7 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
     public GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter)
     {
         this.http = http;
-        settings = options.Value;
+        settings = options.Value.ForContribution();
         this.limiter = limiter;
         http.Timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
     }
