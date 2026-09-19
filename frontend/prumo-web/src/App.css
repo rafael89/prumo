@@ -15,6 +15,8 @@
 
 .notification-panel-enter { animation: notification-panel-enter 160ms ease-out both; }
 .notification-panel-exit { animation: notification-panel-exit 160ms ease-in both; }
+.notification-toast-enter { animation: notification-toast-enter 160ms ease-out both; }
+.notification-toast-exit { animation: notification-toast-exit 160ms ease-in both; }
 @keyframes notification-panel-enter {
   from { opacity: 0; transform: translateY(-.35rem) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -22,6 +24,14 @@
 @keyframes notification-panel-exit {
   from { opacity: 1; transform: translateY(0) scale(1); }
   to { opacity: 0; transform: translateY(-.25rem) scale(.98); }
+}
+@keyframes notification-toast-enter {
+  from { opacity: 0; transform: translateY(-.35rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes notification-toast-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-.25rem); }
 }
 .nav-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .nav-scroll::-webkit-scrollbar { display: none; }

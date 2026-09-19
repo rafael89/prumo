@@ -202,9 +202,11 @@ function App() {
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
   const [notificationPanelMounted, setNotificationPanelMounted] = useState(false)
   const [notificationToast, setNotificationToast] = useState<RadarNotificationItem | null>(null)
+  const [notificationToastVisible, setNotificationToastVisible] = useState(false)
   const [selectedNotification, setSelectedNotification] = useState<RadarNotificationItem | null>(null)
   const notificationPanelRef = useRef<HTMLDivElement>(null)
   const notificationCloseTimerRef = useRef<number | null>(null)
+  const notificationToastCloseTimerRef = useRef<number | null>(null)
   const closeNotificationPanel = () => {
     setNotificationPanelOpen(false)
     if (notificationCloseTimerRef.current !== null) window.clearTimeout(notificationCloseTimerRef.current)
@@ -266,6 +268,14 @@ function App() {
     setSelectedNotification({ ...item, documentId: item.documentId ?? item.evidence?.[0]?.documentId ?? null, userState: 1 })
     if (item.userState === 0) markNotificationSeen.mutate(item.assessmentId)
   }
+  const dismissNotificationToast = () => {
+    setNotificationToastVisible(false)
+    if (notificationToastCloseTimerRef.current !== null) window.clearTimeout(notificationToastCloseTimerRef.current)
+    notificationToastCloseTimerRef.current = window.setTimeout(() => {
+      setNotificationToast(null)
+      notificationToastCloseTimerRef.current = null
+    }, 160)
+  }
   useEffect(() => {
     const items = radarNotifications.data?.attentionNow ?? []
     if (!activePortfolio || !radarNotifications.data) return
@@ -288,8 +298,12 @@ function App() {
     } catch {
       // The persistent Radar state remains authoritative when storage is unavailable.
     }
-    const showTimeout = window.setTimeout(() => setNotificationToast(next), 0)
-    const hideTimeout = window.setTimeout(() => setNotificationToast(null), 6000)
+    const showTimeout = window.setTimeout(() => {
+      if (notificationToastCloseTimerRef.current !== null) window.clearTimeout(notificationToastCloseTimerRef.current)
+      setNotificationToast(next)
+      setNotificationToastVisible(true)
+    }, 0)
+    const hideTimeout = window.setTimeout(dismissNotificationToast, 6000)
     return () => {
       window.clearTimeout(showTimeout)
       window.clearTimeout(hideTimeout)
@@ -499,7 +513,7 @@ function App() {
             <button type="button" aria-label={themePreference === 'system' ? 'Personalizar tema' : 'Seguir tema do sistema'} title={themePreference === 'system' ? `Tema do sistema: ${darkMode ? 'dark' : 'claro'}` : 'Seguir tema do sistema'} onClick={() => setThemePreference(current => current === 'system' ? (darkMode ? 'light' : 'dark') : 'system')} className="theme-toggle order-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 md:order-3"><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /></button>
           </div>
         </nav>
-        {notificationToast && <div role="status" className="fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6"><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={() => setNotificationToast(null)} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={() => setNotificationToast(null)} className="text-lg leading-none text-amber-800">×</button></div></div>}
+        {notificationToast && <div role="status" className={`fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6 ${notificationToastVisible ? 'notification-toast-enter' : 'notification-toast-exit'}`}><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={dismissNotificationToast} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={dismissNotificationToast} className="text-lg leading-none text-amber-800">×</button></div></div>}
         <Suspense fallback={<p role="status" className="mx-auto max-w-6xl p-6 text-slate-500">Carregando tela…</p>}>
         {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
         {route === '/dashboard' && <Navigate to="/" replace />}

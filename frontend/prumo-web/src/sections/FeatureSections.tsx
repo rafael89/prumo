@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -54,6 +54,24 @@ export function RadarSection({ portfolioId }: { portfolioId: string | null }) {
   const [assetFilter, setAssetFilter] = useState('')
   const [radarPage, setRadarPage] = useState(1)
   const [showRadarInfo, setShowRadarInfo] = useState(false)
+  const radarInfoTimerRef = useRef<number | null>(null)
+  const showRadarInfoAfterDelay = () => {
+    if (radarInfoTimerRef.current !== null) window.clearTimeout(radarInfoTimerRef.current)
+    radarInfoTimerRef.current = window.setTimeout(() => {
+      setShowRadarInfo(true)
+      radarInfoTimerRef.current = null
+    }, 600)
+  }
+  const hideRadarInfo = () => {
+    if (radarInfoTimerRef.current !== null) {
+      window.clearTimeout(radarInfoTimerRef.current)
+      radarInfoTimerRef.current = null
+    }
+    setShowRadarInfo(false)
+  }
+  useEffect(() => () => {
+    if (radarInfoTimerRef.current !== null) window.clearTimeout(radarInfoTimerRef.current)
+  }, [])
   const radar = useQuery({ queryKey: ['radar', portfolioId, priorityFilter, assetFilter, radarPage, filter], queryFn: () => getJson<RadarResponse>(`/api/radar?portfolioId=${portfolioId}&page=${radarPage}&pageSize=10&priority=${priorityFilter === 'all' ? '' : priorityFilter}&requiresAttention=${filter === 'attention' ? 'true' : ''}&status=${filter === 'resolved' ? 'Closed' : ''}&userState=${filter === 'unread' ? 'Unread' : filter === 'read' ? 'Seen' : ''}&asset=${encodeURIComponent(assetFilter)}`), enabled: Boolean(portfolioId) })
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => sendJson<RadarItem, { status: string }>(status === 'Resolved' || status === 'Reopened' ? `/api/radar/${id}/status?portfolioId=${portfolioId}` : `/api/radar/${id}/seen?portfolioId=${portfolioId}`, 'PATCH', status === 'Resolved' ? { status: 'Closed' } : status === 'Reopened' ? { status: 'Active' } : { status: 'Seen' }),
@@ -78,9 +96,9 @@ export function RadarSection({ portfolioId }: { portfolioId: string | null }) {
   const selectedModalItem: DashboardAssessment | null = selectedItem && selectedItem.evidence[0]?.documentId ? { assessmentId: selectedItem.assessmentId, documentId: selectedItem.evidence[0].documentId, asset: selectedItem.affectedAssets[0] ?? 'Carteira', eventSummary: selectedItem.eventSummary, whyItMatters: selectedItem.whyItMatters, suggestedBehavior: selectedItem.suggestedBehavior, occurredAt: selectedItem.occurredAt, attentionPriority: typeof selectedItem.attentionPriority === 'number' ? selectedItem.attentionPriority : radarPriorityValues.indexOf(selectedItem.attentionPriority), actionRequirement: selectedItem.actionRequirement, capitalDecisionImpact: selectedItem.capitalDecisionImpact, status: selectedItem.status === 'Resolved' ? 'Closed' : 'Active', userState: selectedItem.userState === 0 ? 'Unread' : 'Seen', documentImportance: selectedItem.documentImportance } : null
   const selectedItemId = selectedItem?.assessmentId
   return <section id="radar" className="relative w-full max-w-none px-0 pb-0 pt-0">
-    <div className="absolute right-0 top-0 z-10">
-      <button type="button" aria-label="Como funciona o Radar" aria-expanded={showRadarInfo} title="Como funciona o Radar" onClick={() => setShowRadarInfo(current => !current)} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition hover:border-amber-500 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400"><FontAwesomeIcon icon={faCircleInfo} /></button>
-      {showRadarInfo && <div role="tooltip" className="absolute right-0 top-10 w-[min(23rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 text-left text-xs leading-5 text-slate-600 shadow-xl">
+    <div className="absolute right-0 top-0 z-10" onMouseEnter={showRadarInfoAfterDelay} onMouseLeave={hideRadarInfo}>
+      <button type="button" aria-label="Como funciona o Radar" aria-expanded={showRadarInfo} aria-describedby={showRadarInfo ? 'radar-info-tooltip' : undefined} onFocus={showRadarInfoAfterDelay} onBlur={hideRadarInfo} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition hover:border-amber-500 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400"><FontAwesomeIcon icon={faCircleInfo} /></button>
+      {showRadarInfo && <div id="radar-info-tooltip" role="tooltip" className="absolute right-0 top-10 w-[min(23rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 text-left text-xs leading-5 text-slate-600 shadow-xl">
         <p className="font-semibold text-slate-900">Como o Radar funciona</p>
         <p className="mt-2">O Radar considera apenas documentos classificados como <strong>Relevante</strong> ou <strong>Crítico</strong> e que tenham contexto suficiente para a carteira.</p>
         <p className="mt-2">A prioridade usa a maior exposição da carteira aos ativos afetados: até 3% é baixa, acima de 3% é média, a partir de 5% é alta e a partir de 10% é crítica.</p>
