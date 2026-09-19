@@ -5,6 +5,14 @@
 }
 
 @media (min-width: 1280px) {
+  .portfolio-layout {
+    align-items: start;
+  }
+
+  .portfolio-positions {
+    height: 100%;
+  }
+
   main .target-allocation-frame > section {
     max-width: 72rem;
     padding-top: 0;
@@ -24,6 +32,31 @@
 @keyframes notification-panel-exit {
   from { opacity: 1; transform: translateY(0) scale(1); }
   to { opacity: 0; transform: translateY(-.25rem) scale(.98); }
+}
+
+.portfolio-layout .portfolio-positions > div:first-child,
+.portfolio-layout .portfolio-list > div:first-child {
+  min-height: 1.75rem;
+}
+
+.portfolio-layout .portfolio-positions input,
+.portfolio-layout .portfolio-positions select {
+  min-height: 3.125rem;
+}
+
+.portfolio-layout .portfolio-positions > form {
+  gap: .75rem;
+}
+
+.portfolio-layout .portfolio-positions [class*="divide-y"] > div {
+  min-height: 4.75rem;
+}
+
+@media (max-width: 1279px) {
+  .portfolio-layout .portfolio-list,
+  .portfolio-layout .portfolio-positions {
+    grid-column: 1 / -1;
+  }
 }
 @keyframes notification-toast-enter {
   from { opacity: 0; transform: translateY(-.35rem); }

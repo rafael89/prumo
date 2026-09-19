@@ -30,7 +30,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
   const [positionToDelete, setPositionToDelete] = useState<Position | null>(null)
   return <>
       <div className="contents">
-        <section id="carteira" className="order-1 self-stretch rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-1">
+        <section id="carteira" className="portfolio-list order-1 self-stretch rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-2 xl:row-start-1">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Carteiras</h2>
             <div className="flex items-center gap-3"><Link to="/history" className="text-xs font-semibold text-sky-700 transition hover:text-sky-900">Ver histórico</Link><button type="button" aria-label={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} title={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} onClick={togglePrivacy} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-sm text-slate-700 transition hover:border-amber-400 hover:text-amber-700">{privacyHidden ? <FontAwesomeIcon icon={faEyeSlash} /> : <FontAwesomeIcon icon={faEye} />}</button></div>
@@ -56,7 +56,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
           </div>
         </section>
 
-        <section className="order-3 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-2">
+        <section className="portfolio-positions order-3 self-start rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm xl:col-start-1 xl:row-start-1 xl:row-span-3">
           <div className="flex items-center justify-between gap-4">
             <div><h2 className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Posi&ccedil;&otilde;es</h2></div>
             <div className="flex items-center gap-3"><span className="text-xs text-slate-500">{activePortfolio?.name ?? 'Nenhuma carteira selecionada'}</span></div>
