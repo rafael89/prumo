@@ -10,7 +10,6 @@
   }
 
   .portfolio-positions {
-    float: left;
     height: auto;
     min-height: 0;
     width: calc((100% - .75rem) * 1.7 / 2.7);
@@ -19,8 +18,14 @@
   .portfolio-layout .portfolio-list,
   .portfolio-layout .target-allocation-frame,
   .portfolio-layout .b3-import-panel {
-    margin-left: calc((100% - .75rem) * 1.7 / 2.7 + .75rem);
+    clear: right;
+    float: right;
+    margin-left: .75rem;
     width: calc((100% - .75rem) / 2.7);
+  }
+
+  .portfolio-layout .portfolio-list {
+    clear: none;
   }
 
   .portfolio-layout .target-allocation-frame,
