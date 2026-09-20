@@ -75,6 +75,10 @@
 
 @media (max-width: 1279px) {
   .portfolio-layout .portfolio-side {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: .75rem;
     grid-column: 1 / -1;
   }
 
