@@ -6,6 +6,24 @@ namespace Prumo.Domain.Tests;
 public sealed class ProcessingJobTests
 {
     [Fact]
+    public void Espera_por_conteudo_em_processamento_nao_consume_tentativa()
+    {
+        var job = CreateJob();
+        var now = DateTimeOffset.UtcNow;
+        job.Start(now);
+        job.Fail(now, "timeout anterior", 3, TimeSpan.Zero);
+        job.Start(now);
+        job.Defer(now.AddMinutes(1));
+
+        Assert.Equal(ProcessingJobStatus.Queued, job.Status);
+        Assert.Equal(1, job.Attempts);
+        Assert.Null(job.StartedAt);
+        Assert.Equal(now.AddMinutes(1), job.AvailableAt);
+        job.Start(now.AddMinutes(1));
+        Assert.Equal(2, job.Attempts);
+    }
+
+    [Fact]
     public void Job_inicia_enfileirado_com_zero_tentativas()
     {
         var job = CreateJob();

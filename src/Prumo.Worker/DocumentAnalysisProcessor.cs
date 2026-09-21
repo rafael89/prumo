@@ -61,6 +61,60 @@ public sealed class DocumentAnalysisProcessor
             .SingleOrDefaultAsync(item => item.Id == job.DocumentId, cancellationToken)
             ?? throw new InvalidOperationException("Documento do job nao encontrado.");
 
+        // Serialize identical content across worker instances without holding a database
+        // transaction open during the AI request. Disposing this dedicated, unpooled
+        // connection releases the session lock even on cancellation or failure.
+        NpgsqlConnection? contentLock = null;
+        try
+        {
+            if (dbContext.Database.IsNpgsql() && !string.IsNullOrWhiteSpace(document.FileHash))
+            {
+                var settings = new NpgsqlConnectionStringBuilder(dbContext.Database.GetConnectionString()) { Pooling = false };
+                contentLock = new NpgsqlConnection(settings.ConnectionString);
+                await contentLock.OpenAsync(cancellationToken);
+                await using var command = contentLock.CreateCommand();
+                command.CommandText = "SELECT pg_try_advisory_lock(hashtextextended(@identity, 0))";
+                command.Parameters.AddWithValue("identity", $"document-content:{document.AssetId}:{document.FileHash}");
+                if (await command.ExecuteScalarAsync(cancellationToken) is not true)
+                {
+                    job.Defer(DateTimeOffset.UtcNow.AddMinutes(1));
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    return;
+                }
+            }
+
+            await ProcessContentAsync(job, document, cancellationToken);
+        }
+        finally
+        {
+            if (contentLock is not null) await contentLock.DisposeAsync();
+        }
+    }
+
+    private async Task ProcessContentAsync(ProcessingJob job, Document document, CancellationToken cancellationToken)
+    {
+        // Only a persisted analysis makes another document a safe canonical copy.
+        // Failed or merely downloaded copies must not suppress a valid analysis.
+        if (!string.IsNullOrWhiteSpace(document.FileHash)
+            && !await dbContext.DocumentAnalyses.AnyAsync(item => item.DocumentId == document.Id, cancellationToken))
+        {
+            var canonical = await dbContext.Documents
+                .Where(item => item.Id != document.Id && item.AssetId == document.AssetId
+                    && item.FileHash == document.FileHash
+                    && dbContext.DocumentAnalyses.Any(analysis => analysis.DocumentId == item.Id))
+                .OrderBy(item => item.DiscoveredAt).ThenBy(item => item.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (canonical is not null)
+            {
+                document.MarkIgnored($"Conteúdo idêntico ao documento {canonical.Id}; análise já realizada para este ativo.");
+                job.Complete(DateTimeOffset.UtcNow);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await ReleasePdfAfterAnalysisAsync(document, cancellationToken);
+                logger.LogInformation("Documento {DocumentId} ignorado por conteúdo idêntico a {CanonicalDocumentId}.", document.Id, canonical.Id);
+                return;
+            }
+        }
+
         var existingAnalysis = await dbContext.DocumentAnalyses
             .Include(item => item.Document)
             .ThenInclude(item => item!.Asset)

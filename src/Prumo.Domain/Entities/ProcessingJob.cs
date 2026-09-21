@@ -83,6 +83,17 @@ public sealed class ProcessingJob
         return true;
     }
 
+    public void Defer(DateTimeOffset availableAt)
+    {
+        if (Status != ProcessingJobStatus.Processing)
+            throw new InvalidOperationException("Somente jobs em processamento podem ser adiados.");
+
+        Status = ProcessingJobStatus.Queued;
+        AvailableAt = availableAt.ToUniversalTime();
+        StartedAt = null;
+        Attempts = Math.Max(0, Attempts - 1);
+    }
+
     public void Requeue(DateTimeOffset availableAt)
     {
         if (Status != ProcessingJobStatus.Failed)

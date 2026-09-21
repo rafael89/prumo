@@ -16,6 +16,85 @@ namespace Prumo.Domain.Tests;
 public sealed class DocumentAnalysisProcessorTests
 {
     [Fact]
+    public async Task Mesmo_conteudo_com_quatro_ids_gera_uma_analise_mesmo_apos_remover_pdf()
+    {
+        await using var db = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(db);
+        await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+            new FakePdfTextExtractor(), new FakeAiAnalysisService(), deletePdfAfterAnalysis: true)
+            .ProcessAsync(seeded.Job, CancellationToken.None);
+        Assert.Null(seeded.Document.FilePath);
+        Assert.Equal("abc123", seeded.Document.FileHash);
+        var eventCount = await db.InvestmentEvents.CountAsync();
+
+        for (var i = 2; i <= 4; i++)
+        {
+            var duplicate = new Document(seeded.Document.AssetId, DocumentType.Other,
+                DateTimeOffset.UtcNow.AddDays(i), "CVM", $"doc-{i}", $"https://example.test/{i}", $"fingerprint-{i}");
+            duplicate.MarkDownloaded($"copy-{i}.pdf", "abc123");
+            var job = new ProcessingJob(duplicate.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow);
+            job.Start(DateTimeOffset.UtcNow);
+            db.AddRange(duplicate, job);
+            await db.SaveChangesAsync();
+            await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+                new FakePdfTextExtractor(), new ThrowingAiAnalysisService(new Exception("Não deve chamar IA")),
+                deletePdfAfterAnalysis: true).ProcessAsync(job, CancellationToken.None);
+
+            Assert.Equal(DocumentProcessingStatus.Ignored, duplicate.ProcessingStatus);
+            Assert.Contains(seeded.Document.Id.ToString(), duplicate.IgnoredReason);
+            Assert.Equal(ProcessingJobStatus.Completed, job.Status);
+            Assert.Null(duplicate.FilePath);
+            Assert.Equal("abc123", duplicate.FileHash);
+        }
+
+        Assert.Single(db.DocumentAnalyses);
+        Assert.Equal(eventCount, await db.InvestmentEvents.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(true, "abc123")]
+    [InlineData(false, "different-content")]
+    public async Task Outro_ativo_ou_conteudo_diferente_tem_analise_propria(bool otherAsset, string hash)
+    {
+        await using var db = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(db);
+        await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+            new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(seeded.Job, CancellationToken.None);
+        var asset = otherAsset ? new Asset("TEST11", "Outro ativo", AssetType.Fii, "Real Estate") : await db.Assets.SingleAsync();
+        if (otherAsset) db.Assets.Add(asset);
+        var document = new Document(asset.Id, DocumentType.RelevantFact, DateTimeOffset.UtcNow,
+            "CVM", "another", "https://example.test/another", "another");
+        document.MarkDownloaded("another.pdf", hash);
+        var job = new ProcessingJob(document.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow);
+        job.Start(DateTimeOffset.UtcNow);
+        db.AddRange(document, job);
+        await db.SaveChangesAsync();
+        await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+            new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(job, CancellationToken.None);
+        Assert.Equal(2, await db.DocumentAnalyses.CountAsync());
+        Assert.Equal(DocumentProcessingStatus.Processed, document.ProcessingStatus);
+    }
+
+    [Fact]
+    public async Task Copia_em_erro_sem_analise_nao_impede_processamento()
+    {
+        await using var db = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(db);
+        var failed = new Document(seeded.Document.AssetId, DocumentType.Other, DateTimeOffset.UtcNow,
+            "CVM", "failed", "https://example.test/failed", "failed");
+        failed.MarkDownloaded("failed.pdf", "abc123");
+        failed.MarkError();
+        db.Documents.Add(failed);
+        await db.SaveChangesAsync();
+
+        await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+            new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(seeded.Job, CancellationToken.None);
+
+        Assert.Equal(seeded.Document.Id, (await db.DocumentAnalyses.SingleAsync()).DocumentId);
+        Assert.Equal(DocumentProcessingStatus.Processed, seeded.Document.ProcessingStatus);
+    }
+
+    [Fact]
     public async Task Documento_valido_gera_analise_persistida()
     {
         await using var dbContext = CreateDbContext();

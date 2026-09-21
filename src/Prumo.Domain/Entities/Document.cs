@@ -94,8 +94,8 @@ public sealed class Document
     public void ReleaseStoredFile()
     {
         FilePath = null;
-        FileHash = null;
-        if (ProcessingStatus != DocumentProcessingStatus.Error)
+        // The content identity outlives the temporary file.
+        if (ProcessingStatus is not DocumentProcessingStatus.Error and not DocumentProcessingStatus.Ignored)
         {
             ProcessingStatus = DocumentProcessingStatus.Processed;
         }
