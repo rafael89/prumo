@@ -32,6 +32,15 @@ public sealed class PortfolioImpactAssessmentServiceTests
     }
 
     [Fact]
+    public void Relevant_event_requiring_action_is_reviewed_when_portfolio_has_exposure()
+    {
+        var result = Assess(InvestmentEventType.Other, 4.1m, AnalysisImportance.Relevant, requiresAction: true, action: SuggestedAction.Monitor);
+
+        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+        Assert.Equal(AttentionPriority.Medium, result.AttentionPriority);
+    }
+
+    [Fact]
     public void Corporate_action_below_exposure_threshold_is_low()
     {
         var result = Assess(InvestmentEventType.CorporateAction, 0.01m);

@@ -7,6 +7,7 @@ using Prumo.Application.Portfolio;
 using Prumo.Domain.Rules;
 using Prumo.Application.Intelligence;
 using Prumo.Application.PortfolioImports;
+using Prumo.Application.Documents;
 using Prumo.Infrastructure.Persistence;
 using Npgsql;
 
@@ -286,7 +287,13 @@ public sealed class DocumentAnalysisProcessor
         var existingEvents = await dbContext.InvestmentEvents.Include(item => item.AffectedAssets).Where(item => item.DocumentAnalysisId == analysis.Id).ToListAsync(cancellationToken);
         if (existingEvents.Count > 0)
         {
-            foreach (var investmentEvent in existingEvents) await EnsureAssessmentsForEventAsync(analysis, investmentEvent, cancellationToken);
+            var replay = existingEvents.Select(item => new AiInvestmentEventResult(
+                item.EventType,
+                item.OccurredAt,
+                item.Summary,
+                item.Facts,
+                item.AffectedAssets.Select(asset => asset.Ticker).ToArray())).ToArray();
+            await PersistEventsAndAssessmentsAsync(analysis, replay, cancellationToken);
             return;
         }
         var document = analysis.Document;
@@ -332,17 +339,26 @@ public sealed class DocumentAnalysisProcessor
                 logger.LogInformation("Nenhum evento estruturado foi retornado; criado evento documental para {DocumentId}.", analysis.DocumentId);
             }
         }
+        // Keep the tracked instances so the many-to-many event relation does not
+        // attach a second Asset object with the same key.
+        var knownAssets = await dbContext.Assets.ToListAsync(cancellationToken);
         foreach (var result in results)
         {
+            var eventTickers = DocumentEventAssetResolver.MergeExplicitTickers(result.AffectedAssets, result.Summary, result.Facts, knownAssets);
             var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{result.EventType}|{result.OccurredAt:O}|{result.Summary.Trim()}|{string.Join("|", result.Facts)}"))).ToLowerInvariant();
             var investmentEvent = await dbContext.InvestmentEvents.Include(x => x.AffectedAssets).SingleOrDefaultAsync(x => x.DocumentAnalysisId == analysis.Id && x.Fingerprint == fingerprint, cancellationToken);
             if (investmentEvent is null)
             {
                 investmentEvent = new InvestmentEvent(analysis.Id, result.EventType, result.OccurredAt, result.Summary, result.Facts);
-                var assets = await dbContext.Assets.Where(x => result.AffectedAssets.Contains(x.Ticker)).ToListAsync(cancellationToken);
+                var assets = knownAssets.Where(x => eventTickers.Contains(x.Ticker, StringComparer.OrdinalIgnoreCase));
                 investmentEvent.AffectedAssets.AddRange(assets);
                 investmentEvent.Evidence.Add(new InvestmentEventEvidence(investmentEvent.Id, analysis.Id, analysis.DocumentId, "Análise estruturada do documento"));
                 dbContext.InvestmentEvents.Add(investmentEvent);
+            }
+            else
+            {
+                var existingAssetIds = investmentEvent.AffectedAssets.Select(x => x.Id).ToHashSet();
+                investmentEvent.AffectedAssets.AddRange(knownAssets.Where(x => eventTickers.Contains(x.Ticker, StringComparer.OrdinalIgnoreCase) && !existingAssetIds.Contains(x.Id)));
             }
 
             var assetIds = investmentEvent.AffectedAssets.Select(x => x.Id).ToArray();

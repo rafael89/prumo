@@ -7,7 +7,7 @@ namespace Prumo.Application.Documents;
 public static class DocumentAnalysisPrompt
 {
     public const string Version = "document-analysis-v2";
-    public const string GlobalVersion = "document-analysis-global-v5";
+    public const string GlobalVersion = "document-analysis-global-v6";
 
     private const string GlobalInstructions = """
         Você é o componente de análise documental do Prumo. Analise exclusivamente o conteúdo fornecido e identifique seu significado para o ativo indicado.
@@ -20,7 +20,7 @@ public static class DocumentAnalysisPrompt
         5. Diferencie fatos explícitos de inferências. Em events.facts inclua apenas fatos atômicos sustentados pelo texto, preferencialmente parafraseados e sem citações longas.
         6. Se uma informação não estiver explícita ou estiver ambígua, não a complete. Use occurredAt=null quando não houver data inequívoca.
         7. document.publishedAt é a data conhecida de publicação fornecida pelo Prumo. Não confunda essa data com occurredAt, que representa quando o evento econômico ocorreu. Não assuma que publishedAt == occurredAt; se o texto não informar a data do acontecimento, use occurredAt=null. A metadata do documento é contexto confiável fornecido pelo Prumo, mas o texto extraído continua sendo a fonte para afirmações sobre fatos financeiros, eventos e declarações.
-        8. affectedAssets deve conter somente tickers ou identificadores explicitamente afetados. Inclua o ticker do contexto apenas quando o documento claramente se aplicar a ele.
+        8. affectedAssets deve conter somente tickers ou identificadores explicitamente afetados. Inclua o ticker do contexto apenas quando o documento claramente se aplicar a ele. Em incorporações, fusões, aquisições, cisões ou mudanças de administrador, liste todos os fundos explicitamente envolvidos, tanto o fundo do documento quanto o fundo incorporador ou contraparte. Se o texto trouxer uma raiz inequívoca como HGLG para HGLG11, use o ticker canônico completo quando ele estiver explícito no documento.
         9. Crie um item em events para cada evento distinto e material. Não duplique o mesmo evento com redações diferentes. Use uma lista vazia quando nenhum evento confiável puder ser extraído.
         10. Escreva summary, impact e os resumos dos eventos em português claro, objetivo e sem especulação.
 

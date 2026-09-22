@@ -28,6 +28,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
             && context.SuggestedAction == SuggestedAction.NoAction;
 
         var action = isInformational ? ActionRequirement.None
+            : context.RequiresAction == true && hasExposure ? ActionRequirement.Review
             : context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
             ? hasExposure && largestExposure >= HighExposureThreshold ? ActionRequirement.Review : ActionRequirement.Monitor
             : largestExposure >= HighExposureThreshold ? ActionRequirement.Review
