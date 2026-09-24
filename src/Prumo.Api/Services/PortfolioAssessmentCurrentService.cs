@@ -4,7 +4,6 @@ using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 
 namespace Prumo.Api.Services;
 
@@ -149,17 +148,36 @@ public sealed class PortfolioAssessmentCurrentService
 
         if (pending.Count == 0) return current;
 
-        try
+        if (db.Database.IsNpgsql())
         {
-            await PostgresTransientFailure.SaveChangesWithDeadlockRetryAsync(db, ct);
-        }
-        catch (DbUpdateException exception) when (IsUniqueConstraintViolation(exception))
-        {
-            // Another request may have created the same current assessment between
-            // our freshness read and this insert. The unique index is the authority;
-            // discard our transient entities and read the winner back.
+            // The read above can race with another API request or the worker.
+            // Resolve the conflict in PostgreSQL without logging a failed command.
             foreach (var replacement in pending) db.Entry(replacement).State = EntityState.Detached;
             current.RemoveAll(pending.Contains);
+
+            foreach (var replacement in pending)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO "PortfolioAssessments"
+                        ("Id", "PortfolioId", "InvestmentEventId", "AttentionPriority", "ActionRequirement",
+                         "CapitalDecisionImpact", "Status", "UserState", "Summary", "WhyItMatters",
+                         "SuggestedBehavior", "Confidence", "TargetAllocationKey", "AssessmentVersion",
+                         "PortfolioSnapshotKey", "InvestmentEventVersion", "GeneratedAt")
+                    VALUES
+                        ({replacement.Id}, {replacement.PortfolioId}, {replacement.InvestmentEventId},
+                         {(int)replacement.AttentionPriority}, {(int)replacement.ActionRequirement},
+                         {(int)replacement.CapitalDecisionImpact}, {(int)replacement.Status},
+                         {(int)replacement.UserState}, {replacement.Summary}, {replacement.WhyItMatters},
+                         {replacement.SuggestedBehavior}, {(int)replacement.Confidence},
+                         {replacement.TargetAllocationKey}, {replacement.AssessmentVersion},
+                         {replacement.PortfolioSnapshotKey}, {replacement.InvestmentEventVersion},
+                         {replacement.GeneratedAt})
+                    ON CONFLICT ("PortfolioId", "InvestmentEventId", "PortfolioSnapshotKey",
+                                 "TargetAllocationKey", "AssessmentVersion")
+                        WHERE "PortfolioSnapshotKey" IS NOT NULL AND "TargetAllocationKey" IS NOT NULL
+                    DO NOTHING
+                    """, ct);
+            }
 
             var recovered = await db.PortfolioAssessments
                 .AsNoTracking()
@@ -174,7 +192,11 @@ public sealed class PortfolioAssessmentCurrentService
                     && x.AssessmentVersion == impactService.Version)
                 .ToListAsync(ct);
             current.AddRange(recovered.Where(item => current.All(existing => existing.Id != item.Id)));
-            logger.LogInformation("PortfolioAssessment reavaliação concorrente resolvida PortfolioId={PortfolioId} RecoveredCount={RecoveredCount}", portfolio.Id, recovered.Count);
+            logger.LogInformation("PortfolioAssessment reavaliação persistida PortfolioId={PortfolioId} AssessmentCount={AssessmentCount}", portfolio.Id, recovered.Count);
+        }
+        else
+        {
+            await PostgresTransientFailure.SaveChangesWithDeadlockRetryAsync(db, ct);
         }
 
         return current;
@@ -182,6 +204,4 @@ public sealed class PortfolioAssessmentCurrentService
 
     private sealed record DocumentRadarState(bool IsClosed, bool WasSeen);
 
-    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
-        => exception.GetBaseException() is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }
