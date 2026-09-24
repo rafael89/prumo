@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 
 type Position = { id: string; assetId: string; assetClass: number; ticker: string; portfolioWeight: number; currentValue: number | null }
 type Dashboard = { totalValue: number; positionCount: number; positions: Position[] }

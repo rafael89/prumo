@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using Prumo.Application.Abstractions;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace Prumo.Infrastructure.Documents;
 
@@ -76,14 +77,14 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     {
         using var stream = new MemoryStream(bytes, writable: false);
         using var document = PdfDocument.Open(stream, options);
-        return string.Join(Environment.NewLine, document.GetPages().Select(page => page.Text));
+        return string.Join(Environment.NewLine, document.GetPages().Select(page => ContentOrderTextExtractor.GetText(page)));
     }
 
     private static string ExtractText(byte[] bytes)
     {
         using var stream = new MemoryStream(bytes, writable: false);
         using var document = PdfDocument.Open(stream);
-        return string.Join(Environment.NewLine, document.GetPages().Select(page => page.Text));
+        return string.Join(Environment.NewLine, document.GetPages().Select(page => ContentOrderTextExtractor.GetText(page)));
     }
 
     private static string ExtractXmlText(XDocument document) =>

@@ -3,7 +3,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![React 19.3.0](https://img.shields.io/badge/React-19.3.0-61DAFB?logo=react&logoColor=20232A)](https://react.dev/)
 [![TypeScript 7.0.2](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite 8.2.2](https://img.shields.io/badge/Vite-8.2.2-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![Vite 8.3.0](https://img.shields.io/badge/Vite-8.3.0-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
 [![Tailwind CSS 4.3.3](https://img.shields.io/badge/Tailwind_CSS-4.3.3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker Compose](https://img.shields.io/badge/Docker_Compose-ready-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
@@ -34,7 +34,7 @@ O Prumo combina importação de carteira da B3, descoberta e análise de documen
 
 - .NET 10.0 com ASP.NET Core Web API.
 - Worker Service .NET 10.0 para descoberta, processamento e análise assíncrona.
-- Entity Framework Core 10.0.11.
+- Entity Framework Core 10.0.12.
 - PostgreSQL 16 com Npgsql Entity Framework Core 10.0.3.
 - Swagger/OpenAPI com Swashbuckle 10.2.3.
 
@@ -42,10 +42,10 @@ O Prumo combina importação de carteira da B3, descoberta e análise de documen
 
 - React 19.3.0.
 - TypeScript 7.0.2.
-- Vite 8.2.2.
+- Vite 8.3.0.
 - Tailwind CSS 4.3.3.
-- TanStack React Query 5.102.8.
-- React Router 7.18.2.
+- TanStack React Query 5.103.2.
+- React Router 8.4.0.
 
 ### Operação
 
@@ -240,6 +240,8 @@ npm run build
 npm run lint
 npm test
 ```
+
+Os testes .NET usam xUnit v3 com Microsoft Testing Platform, selecionado em [global.json](global.json). Para gerar cobertura Cobertura, execute `dotnet test Prumo.sln -- --coverlet --coverlet-output-format cobertura`.
 
 Sem `PRUMO_RUN_RELATIONAL_TESTS=1`, os testes PostgreSQL aparecem como ignorados, com o motivo explícito. Para executá-los localmente, com PostgreSQL disponível na configuração de desenvolvimento esperada pelos testes:
 

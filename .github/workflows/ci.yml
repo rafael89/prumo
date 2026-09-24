@@ -72,8 +72,8 @@ jobs:
           started_at=$(date +%s)
           set +e
           dotnet test Prumo.sln --no-build \
-            --logger "trx;LogFileName=test-results.trx" \
-            --results-directory "$RUNNER_TEMP/prumo-test-results"
+            --results-directory "$RUNNER_TEMP/prumo-test-results" \
+            -- --report-trx --report-trx-filename test-results.trx
           test_exit_code=$?
           set -e
 

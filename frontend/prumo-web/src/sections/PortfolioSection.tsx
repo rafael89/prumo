@@ -4,7 +4,7 @@ import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faBan, faCheck, faEye, faEyeSlash, faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { maskDecimalInput } from '../utils/decimalInput'
 import { B3ImportSection, TargetAllocationSection } from './FeatureSections'
 type AssetType = 0 | 1 | 2 | 3

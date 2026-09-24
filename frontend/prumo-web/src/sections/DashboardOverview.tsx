@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleInfo, faEye, faEyeSlash, faRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
 

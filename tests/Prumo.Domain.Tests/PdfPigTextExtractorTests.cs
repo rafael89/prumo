@@ -1,4 +1,8 @@
 using Prumo.Infrastructure.Documents;
+using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.Fonts.Standard14Fonts;
+using UglyToad.PdfPig.Writer;
 
 namespace Prumo.Domain.Tests;
 
@@ -38,6 +42,22 @@ public sealed class PdfPigTextExtractorTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(string.Empty, result.Text.Trim());
+    }
+
+    [Fact]
+    public async Task Preserva_espaco_entre_palavras_desenhadas_separadamente()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var page = builder.AddPage(PageSize.A4);
+        page.AddText("Relatorio", 12, new PdfPoint(25, 700), font);
+        page.AddText("Gerencial", 12, new PdfPoint(115, 700), font);
+        await using var stream = new MemoryStream(builder.Build());
+
+        var result = await extractor.ExtractAsync(stream);
+
+        Assert.True(result.Succeeded);
+        Assert.Matches(@"Relatorio\s+Gerencial", result.Text);
     }
 
     [Fact]

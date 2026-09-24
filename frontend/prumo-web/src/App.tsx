@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
 import type { Dashboard, DashboardAssessment } from './sections/DashboardOverview'

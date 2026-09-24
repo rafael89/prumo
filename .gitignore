@@ -4,6 +4,7 @@
 .tmp-build/
 *.user
 *.suo
+.npm-cache/
 
 # Frontend
 frontend/prumo-web/node_modules/
