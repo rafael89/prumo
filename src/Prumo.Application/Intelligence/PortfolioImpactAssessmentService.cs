@@ -7,7 +7,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
 {
     // v5 reaplica a regra percentual com os limites balanceados de 3%, 5% e 10%.
     // v4 usou a regra de existência de posição e não deve ser reutilizada.
-    public const string CurrentVersion = "portfolio-impact-v6";
+    public const string CurrentVersion = "portfolio-impact-v7";
     private const decimal MediumExposureThreshold = 3m;
     private const decimal HighExposureThreshold = 5m;
     private const decimal CriticalExposureThreshold = 10m;
@@ -26,14 +26,8 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         var isInformational = context.AnalysisImportance == AnalysisImportance.Informative
             && context.RequiresAction == false
             && context.SuggestedAction == SuggestedAction.NoAction;
-
-        var action = isInformational ? ActionRequirement.None
-            : context.RequiresAction == true && hasExposure ? ActionRequirement.Review
-            : context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
-            ? hasExposure && largestExposure >= HighExposureThreshold ? ActionRequirement.Review : ActionRequirement.Monitor
-            : largestExposure >= HighExposureThreshold ? ActionRequirement.Review
-            : hasExposure && largestExposure > MediumExposureThreshold ? ActionRequirement.Monitor
-            : ActionRequirement.None;
+        var explicitlyNoAction = context.RequiresAction == false
+            && context.SuggestedAction is SuggestedAction.Maintain or SuggestedAction.NoAction;
 
         var capitalImpact = isInformational ? CapitalDecisionImpact.None : context.InvestmentEvent.EventType switch
         {
@@ -42,6 +36,17 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
             InvestmentEventType.CapitalRaise when hasExposure && largestExposure >= HighExposureThreshold => CapitalDecisionImpact.Caution,
             _ => CapitalDecisionImpact.None
         };
+
+        // A portfolio-specific caution or block needs review even when the
+        // document's general suggestion is to maintain the position.
+        var action = capitalImpact is CapitalDecisionImpact.Caution or CapitalDecisionImpact.Block ? ActionRequirement.Review
+            : isInformational || explicitlyNoAction ? ActionRequirement.None
+            : context.RequiresAction == true && hasExposure ? ActionRequirement.Review
+            : context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
+            ? hasExposure && largestExposure >= HighExposureThreshold ? ActionRequirement.Review : ActionRequirement.Monitor
+            : largestExposure >= HighExposureThreshold ? ActionRequirement.Review
+            : hasExposure && largestExposure > MediumExposureThreshold ? ActionRequirement.Monitor
+            : ActionRequirement.None;
 
         var attentionExposureThreshold = usesMaterialEventThreshold ? HighExposureThreshold : MediumExposureThreshold;
         var attention = isInformational ? AttentionPriority.Low
@@ -56,7 +61,9 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         var exposureText = hasExposure
             ? $"Exposição aos ativos afetados: {totalExposure:0.##}%. Impacto potencial perceptível."
             : "Não foi identificada posição atual nos ativos afetados.";
-        var behavior = action == ActionRequirement.Review
+        var behavior = capitalImpact == CapitalDecisionImpact.Block
+            ? "Evitar aumentar exposição e revisar o evento antes de alterar posições."
+            : action == ActionRequirement.Review
             ? "Revisar o evento no contexto da carteira antes de alterar posições."
             : action == ActionRequirement.Monitor
                 ? "Acompanhar os próximos comunicados sem presumir uma alteração automática."

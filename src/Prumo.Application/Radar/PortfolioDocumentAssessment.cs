@@ -22,4 +22,6 @@ public sealed class PortfolioDocumentAssessmentService
 
 public sealed record PortfolioDocumentAssessment(Guid PortfolioId, Guid AssetId, Guid DocumentAnalysisId,
     decimal? CurrentValue, decimal CurrentWeight, bool RequiresAttention, string PortfolioImpactText,
-    RadarPriority Priority, IReadOnlyList<RadarReason> Reasons, RadarItemStatus RadarStatus);
+    RadarPriority Priority, IReadOnlyList<RadarReason> Reasons, RadarItemStatus RadarStatus,
+    ActionRequirement ActionRequirement = ActionRequirement.None,
+    CapitalDecisionImpact CapitalDecisionImpact = CapitalDecisionImpact.None);

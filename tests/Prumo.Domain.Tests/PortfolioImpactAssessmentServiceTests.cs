@@ -1,6 +1,7 @@
 using Prumo.Application.Abstractions;
 using Prumo.Application.Intelligence;
 using Prumo.Application.Portfolio;
+using Prumo.Application.Radar;
 using Prumo.Api.Services;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
@@ -56,6 +57,27 @@ public sealed class PortfolioImpactAssessmentServiceTests
 
         Assert.Equal(AttentionPriority.High, result.AttentionPriority);
         Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+    }
+
+    [Theory]
+    [InlineData(SuggestedAction.Maintain)]
+    [InlineData(SuggestedAction.NoAction)]
+    public void Explicit_no_action_does_not_become_review_due_to_exposure(SuggestedAction suggestedAction)
+    {
+        var result = Assess(InvestmentEventType.AssetTransaction, 5.06m, AnalysisImportance.Relevant, requiresAction: false, action: suggestedAction);
+
+        Assert.Equal(AttentionPriority.High, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.None, result.ActionRequirement);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
+    }
+
+    [Fact]
+    public void Explicit_monitoring_still_requires_attention_at_five_percent()
+    {
+        var result = Assess(InvestmentEventType.AssetTransaction, 5.06m, AnalysisImportance.Relevant, requiresAction: true, action: SuggestedAction.Monitor);
+
+        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+        Assert.Equal(AttentionPriority.High, result.AttentionPriority);
     }
 
     [Fact]
@@ -114,6 +136,21 @@ public sealed class PortfolioImpactAssessmentServiceTests
 
         Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
         Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
+        Assert.False(RadarAttentionNowPolicy.RequiresAttention(AssessmentStatus.Detected, result.AttentionPriority, result.ActionRequirement, result.CapitalDecisionImpact));
+    }
+
+    [Theory]
+    [InlineData(InvestmentEventType.CorporateAction, CapitalDecisionImpact.Caution)]
+    [InlineData(InvestmentEventType.CapitalRaise, CapitalDecisionImpact.Caution)]
+    [InlineData(InvestmentEventType.Liquidation, CapitalDecisionImpact.Block)]
+    public void Portfolio_risk_requires_review_despite_general_maintain_recommendation(InvestmentEventType eventType, CapitalDecisionImpact expectedImpact)
+    {
+        var result = Assess(eventType, 5.06m, AnalysisImportance.Relevant, requiresAction: false, action: SuggestedAction.Maintain);
+
+        Assert.Equal(expectedImpact, result.CapitalDecisionImpact);
+        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
+        Assert.True(RadarAttentionNowPolicy.RequiresAttention(AssessmentStatus.Detected, result.AttentionPriority, result.ActionRequirement, result.CapitalDecisionImpact));
+        Assert.DoesNotContain("Nenhuma ação", result.SuggestedBehavior);
     }
 
     [Fact]
@@ -158,7 +195,7 @@ public sealed class PortfolioImpactAssessmentServiceTests
         var current = await service.EnsureFreshAsync(portfolio, Array.Empty<TargetAllocation>(), new[] { first, second }, CancellationToken.None);
 
         Assert.Single(current);
-        Assert.Equal("portfolio-impact-v6", current[0].AssessmentVersion);
+        Assert.Equal(PortfolioImpactAssessmentService.CurrentVersion, current[0].AssessmentVersion);
         Assert.Equal(1, await db.PortfolioAssessments.CountAsync());
     }
 

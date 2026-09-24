@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Prumo.Application.Intelligence;
 using Prumo.Application.Performance;
+using Prumo.Application.Radar;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.Performance;
@@ -61,7 +62,7 @@ public sealed class PortfolioIntelligenceService(PrumoDbContext db, PortfolioPer
             var evidence = new List<IntelligenceEvidence> { new("PortfolioAssessment", assessment.Id.ToString(), assessment.Summary), new("InvestmentEvent", eventItem.Id.ToString(), eventItem.Summary) };
             if (eventItem.Evidence.FirstOrDefault() is { } source) evidence.Add(new("Document", source.DocumentId.ToString(), source.Reference));
             var priority = assessment.AttentionPriority switch { AttentionPriority.Critical => 100, AttentionPriority.High => 90, AttentionPriority.Medium => 60, _ => 30 };
-            if (assessment.AttentionPriority >= AttentionPriority.High || assessment.ActionRequirement is ActionRequirement.Review or ActionRequirement.Act)
+            if (RadarAttentionNowPolicy.RequiresAttention(assessment))
                 signals.Add(new($"radar:{assessment.Id}", IntelligenceSignalType.HighAttentionRadar, priority, "Atenção no Radar", assessment.Summary, asset?.Id, asset?.Ticker, IntelligenceSignalQuality.Safe, evidence));
             if (eventItem.OccurredAt >= DateTimeOffset.UtcNow.AddDays(-90))
                 signals.Add(new($"event:{eventItem.Id}", IntelligenceSignalType.RecentRelevantEvent, Math.Max(40, priority - 10), "Evento recente relevante", eventItem.Summary, asset?.Id, asset?.Ticker, IntelligenceSignalQuality.Safe, evidence));

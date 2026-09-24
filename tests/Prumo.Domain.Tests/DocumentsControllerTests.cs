@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Prumo.Api.Controllers;
+using Prumo.Application.Portfolio;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
+using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
 
 namespace Prumo.Domain.Tests;
@@ -35,6 +37,40 @@ public sealed class DocumentsControllerTests
         Assert.Equal("gemini-3.5-flash-lite", response.Model);
         Assert.Equal(latestAnalysis.Id, response.Id);
         Assert.Equal(2, await dbContext.DocumentAnalyses.CountAsync(analysis => analysis.DocumentId == document.Id));
+    }
+
+    [Fact]
+    public async Task Document_detail_refreshes_stale_portfolio_attention()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrumoDbContext(options);
+        var asset = new Asset("TRXF11", "TRX", AssetType.Fii, "Logística");
+        var portfolio = new Portfolio("Carteira");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1m, 100m, 100m));
+        PortfolioCalculator.RecalculateWeights(portfolio.Positions);
+        var document = new Document(asset.Id, DocumentType.RelevantFact, DateTimeOffset.UtcNow,
+            "CVM", "doc-2", "https://example.test/doc-2", "fingerprint-2");
+        var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1",
+            AnalysisImportance.Relevant, AnalysisClassification.AssetTransaction, false, SuggestedAction.Maintain,
+            "Aquisição", "Impacto", "Impacto", [asset.Ticker], 1m, "{}");
+        var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.AssetTransaction,
+            document.PublishedAt, "Aquisição", []);
+        investmentEvent.AffectedAssets.Add(asset);
+        var stale = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, AttentionPriority.Critical,
+            ActionRequirement.Review, CapitalDecisionImpact.None, AssessmentStatus.Detected,
+            AssessmentUserState.Unread, "Resumo", "Motivo", "Revisar", IntelligenceConfidence.High,
+            null, "portfolio-impact-v6", "snapshot-antigo", investmentEvent.Version);
+        db.AddRange(asset, portfolio, document, analysis, investmentEvent, stale);
+        await db.SaveChangesAsync();
+
+        var result = await new DocumentsController(db).GetLatestAnalysis(document.Id, portfolio.Id, CancellationToken.None);
+
+        var response = Assert.IsType<DocumentAnalysisResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.NotNull(response.PortfolioAssessment);
+        Assert.False(response.PortfolioAssessment.RequiresAttention);
+        Assert.Equal("None", response.PortfolioAssessment.ActionRequirement);
     }
 
     private static DocumentAnalysis CreateAnalysis(Guid documentId, string model) => new(

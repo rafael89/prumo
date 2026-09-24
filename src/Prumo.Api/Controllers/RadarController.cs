@@ -43,7 +43,7 @@ public sealed class RadarController : ControllerBase
             // contain several extracted events, but it must not create several
             // cards for the same asset/document.
             .GroupBy(x => x.InvestmentEvent!.DocumentAnalysisId)
-            .Select(group => new RadarGroup(SelectRepresentative(group), BuildEvents(group)))
+            .Select(group => new RadarGroup(RadarAssessmentSelector.SelectRepresentative(group), BuildEvents(group)))
             .Where(x => !priority.HasValue || x.AttentionPriority == priority.Value)
             .Where(x => !status.HasValue || x.Status == status.Value)
             .Where(x => !userState.HasValue || x.UserState == userState.Value)
@@ -130,26 +130,17 @@ public sealed class RadarController : ControllerBase
         var assessments = await db.PortfolioAssessments
             .Where(x => x.PortfolioId == portfolioId
                 && x.Status != AssessmentStatus.Closed
-                && x.CapitalDecisionImpact != CapitalDecisionImpact.None)
+                && (x.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical
+                    || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant))
             .ToListAsync(ct);
         foreach (var assessment in assessments) assessment.SetStatus(AssessmentStatus.Closed);
         await db.SaveChangesAsync(ct);
         return Ok(new RadarBulkUpdateResponse(assessments.Count));
     }
 
-    private static PortfolioAssessment SelectRepresentative(IEnumerable<PortfolioAssessment> assessments)
-        => assessments
-            .OrderByDescending(x => x.Status != AssessmentStatus.Closed)
-            .ThenByDescending(x => x.UserState == AssessmentUserState.Unread)
-            .ThenByDescending(x => x.AttentionPriority)
-            .ThenByDescending(x => x.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
-            .ThenByDescending(x => x.GeneratedAt)
-            .ThenByDescending(x => x.Id)
-            .First();
-
     private static IReadOnlyList<RadarEventDto> BuildEvents(IEnumerable<PortfolioAssessment> assessments)
     {
-        var representative = SelectRepresentative(assessments);
+        var representative = RadarAssessmentSelector.SelectRepresentative(assessments);
         var events = assessments
             .Where(x => x.InvestmentEvent is not null)
             .Select(x => x.InvestmentEvent!)

@@ -4,8 +4,11 @@ using Prumo.Domain.Enums;
 using Prumo.Domain.Entities;
 using Prumo.Application.Radar;
 using Prumo.Application.Documents;
+using Prumo.Application.Intelligence;
+using Prumo.Application.Portfolio;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Api.Models;
+using Prumo.Api.Services;
 
 namespace Prumo.Api.Controllers;
 
@@ -14,10 +17,14 @@ namespace Prumo.Api.Controllers;
 public sealed class DocumentsController : ControllerBase
 {
     private readonly PrumoDbContext dbContext;
+    private readonly PortfolioAssessmentCurrentService currentAssessmentService;
 
-    public DocumentsController(PrumoDbContext dbContext)
+    public DocumentsController(PrumoDbContext dbContext, PortfolioAssessmentCurrentService? currentAssessmentService = null)
     {
         this.dbContext = dbContext;
+        this.currentAssessmentService = currentAssessmentService ?? new PortfolioAssessmentCurrentService(
+            dbContext, new PortfolioImpactAssessmentService(), new PortfolioAssessmentFreshnessEvaluator(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PortfolioAssessmentCurrentService>.Instance);
     }
 
     [HttpGet("portfolios/{portfolioId:guid}/documents")]
@@ -211,13 +218,24 @@ public sealed class DocumentsController : ControllerBase
         var position = await dbContext.PortfolioPositions.Include(p => p.Asset)
             .SingleOrDefaultAsync(p => p.PortfolioId == portfolioId && p.AssetId == analysis.Document!.AssetId && p.Quantity > 0, cancellationToken);
         if (position is null) return null;
-        var persisted = await dbContext.PortfolioAssessments.AsNoTracking()
+        var portfolio = await dbContext.Portfolios.AsNoTracking()
+            .Include(item => item.Positions).ThenInclude(item => item.Asset)
+            .SingleOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
+        if (portfolio is null) return null;
+        var targets = await dbContext.TargetAllocations.AsNoTracking()
+            .Where(item => item.PortfolioId == portfolioId)
+            .ToListAsync(cancellationToken);
+        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery()
             .Include(item => item.InvestmentEvent!).ThenInclude(item => item.AffectedAssets)
+            .Include(item => item.InvestmentEvent!).ThenInclude(item => item.Evidence)
+            .Include(item => item.InvestmentEvent!).ThenInclude(item => item.DocumentAnalysis)
             .Where(item => item.PortfolioId == portfolioId && item.InvestmentEvent!.DocumentAnalysisId == analysis.Id)
-            .OrderByDescending(item => item.GeneratedAt)
-            .ThenByDescending(item => item.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (persisted is null) return null;
+            .ToListAsync(cancellationToken);
+        if (loadedAssessments.Count == 0) return null;
+        var current = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, cancellationToken);
+        var assessments = current.Concat(loadedAssessments.Where(item => item.Status == AssessmentStatus.Closed)).ToList();
+        if (assessments.Count == 0) return null;
+        var persisted = RadarAssessmentSelector.SelectRepresentative(assessments);
 
         var radarStatus = persisted.Status == AssessmentStatus.Closed
             ? RadarItemStatus.Resolved
@@ -232,7 +250,9 @@ public sealed class DocumentsController : ControllerBase
             persisted.WhyItMatters,
             (RadarPriority)persisted.AttentionPriority,
             Array.Empty<RadarReason>(),
-            radarStatus);
+            radarStatus,
+            persisted.ActionRequirement,
+            persisted.CapitalDecisionImpact);
     }
 
     private static DocumentResponse CreateResponse(Domain.Entities.Document document)
@@ -296,7 +316,7 @@ public sealed class DocumentsController : ControllerBase
             analysis.Confidence,
             analysis.CreatedAt,
             analysis.Document!.PublishedAt,
-            assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.RadarStatus.ToString()));
+            assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.RadarStatus.ToString(), assessment.ActionRequirement.ToString(), assessment.CapitalDecisionImpact.ToString()));
     }
 }
 
@@ -345,4 +365,4 @@ public sealed record DocumentAnalysisResponse(
     DateTimeOffset PublishedAt,
     PortfolioAssessmentResponse? PortfolioAssessment = null);
 
-public sealed record PortfolioAssessmentResponse(Guid PortfolioId, Guid AssetId, decimal? CurrentValue, decimal CurrentWeight, string Priority, bool RequiresAttention, IReadOnlyList<string> Reasons, string PortfolioImpactText, string RadarStatus);
+public sealed record PortfolioAssessmentResponse(Guid PortfolioId, Guid AssetId, decimal? CurrentValue, decimal CurrentWeight, string Priority, bool RequiresAttention, IReadOnlyList<string> Reasons, string PortfolioImpactText, string RadarStatus, string ActionRequirement = "None", string CapitalDecisionImpact = "None");

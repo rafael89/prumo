@@ -148,7 +148,7 @@ public sealed class PortfoliosController : ControllerBase
             // Keep the dashboard aligned with the Radar: one card per analyzed
             // document, even when the document contains multiple extracted events.
             .GroupBy(a => a.InvestmentEvent!.DocumentAnalysisId)
-            .Select(SelectDashboardRepresentative)
+            .Select(RadarAssessmentSelector.SelectRepresentative)
             .ToList();
         // The card displays the document publication date, so order the Radar
         // by that same date. Priority is only a tie-breaker; otherwise an older
@@ -211,19 +211,9 @@ public sealed class PortfoliosController : ControllerBase
         return portfolioHealthCalculator.Calculate(portfolio, targets);
     }
 
-    private static PortfolioAssessment SelectDashboardRepresentative(IEnumerable<PortfolioAssessment> assessments)
-        => assessments
-            .OrderByDescending(a => a.Status != AssessmentStatus.Closed)
-            .ThenByDescending(a => a.UserState == AssessmentUserState.Unread)
-            .ThenByDescending(a => a.AttentionPriority)
-            .ThenByDescending(a => a.AssessmentVersion == PortfolioImpactAssessmentService.CurrentVersion)
-            .ThenByDescending(a => a.GeneratedAt)
-            .ThenByDescending(a => a.Id)
-            .First();
-
     private static IReadOnlyList<RadarEventDto> BuildDashboardEvents(IEnumerable<PortfolioAssessment> assessments)
     {
-        var representative = SelectDashboardRepresentative(assessments);
+        var representative = RadarAssessmentSelector.SelectRepresentative(assessments);
         return assessments
             .Where(a => a.InvestmentEvent is not null)
             .Select(a => a.InvestmentEvent!)
