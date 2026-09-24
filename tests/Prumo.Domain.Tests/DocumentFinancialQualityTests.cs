@@ -74,6 +74,44 @@ public sealed class DocumentFinancialQualityTests
         Assert.Null(result.RejectionReason);
     }
 
+    [Theory]
+    [InlineData("currency_billion", "10000000")]
+    [InlineData("currency_billion", "-10000000")]
+    [InlineData("currency_billion", "79228162514264337593543950335")]
+    [InlineData("currency", "10000000000000000")]
+    public void Monetary_fact_outside_database_range_is_rejected(string unit, string value)
+    {
+        var result = DocumentFinancialFactNormalizer.NormalizeWithReason(new("Revenue", decimal.Parse(value), "2026-08-31", "Quarterly", "BRL", unit, "receita", .9m));
+
+        Assert.Equal("ValueOutOfRange", result.RejectionReason);
+        Assert.Null(result.Fact);
+    }
+
+    [Fact]
+    public void Monetary_fact_uses_database_rounding_at_range_boundary()
+    {
+        var accepted = DocumentFinancialFactNormalizer.NormalizeWithReason(new("Revenue", 9_999_999_999_999_999.999999991m, "2026-08-31", "Quarterly", "BRL", "currency", "receita", .9m));
+        var rejected = DocumentFinancialFactNormalizer.NormalizeWithReason(new("Revenue", 9_999_999_999_999_999.999999995m, "2026-08-31", "Quarterly", "BRL", "currency", "receita", .9m));
+
+        Assert.True(accepted.IsAccepted);
+        Assert.Equal("ValueOutOfRange", rejected.RejectionReason);
+    }
+
+    [Fact]
+    public void Out_of_range_fact_does_not_discard_valid_fact_from_same_analysis()
+    {
+        var analysis = new AiAnalysisValidator().Validate(new AiAnalysisPayload(
+            "Informative", "FinancialResult", false, "NoAction", "resumo", "impacto", null, ["AAA3"], .9m, [],
+            [
+                new("Revenue", 10_000_000m, "2026-08-31", "Quarterly", "BRL", "currency_billion", "receita incorreta", .9m),
+                new("TotalDebt", 7_600_000_000m, "2026-08-31", "Quarterly", "BRL", "currency", "dívida", .9m)
+            ]), "{}");
+
+        Assert.Single(analysis.FinancialFacts!);
+        Assert.Equal(7_600_000_000m, analysis.FinancialFacts![0].Value);
+        Assert.Equal("ValueOutOfRange", Assert.Single(analysis.RejectedFinancialFacts!).Reason);
+    }
+
     [Fact]
     public void Rejected_fact_does_not_discard_valid_facts_from_same_payload()
     {

@@ -40,7 +40,7 @@ public sealed class DocumentStorageRepairWorker : BackgroundService
         }
     }
 
-    private async Task RepairAsync(CancellationToken cancellationToken)
+    internal async Task RepairAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PrumoDbContext>();
@@ -60,18 +60,6 @@ public sealed class DocumentStorageRepairWorker : BackgroundService
 
             if (await storage.ExistsAsync(document.FilePath!, cancellationToken))
             {
-                if (document.ProcessingStatus != DocumentProcessingStatus.Error) continue;
-
-                var failedAnalysis = await db.ProcessingJobs.FirstOrDefaultAsync(job =>
-                    job.DocumentId == document.Id
-                    && job.JobType == ProcessingJobType.AnalyzeDocument
-                    && job.Status == ProcessingJobStatus.Failed, cancellationToken);
-                if (failedAnalysis is null) continue;
-
-                failedAnalysis.Requeue(DateTimeOffset.UtcNow);
-                document.MarkWaitingProcessing();
-                repaired++;
-                logger.LogWarning("Documento {DocumentId} possui arquivo, mas estava em erro; job de análise {JobId} reaberto.", document.Id, failedAnalysis.Id);
                 continue;
             }
 
