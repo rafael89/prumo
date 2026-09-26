@@ -19,6 +19,7 @@ services:
 
   api:
     restart: unless-stopped
+    image: ${PRUMO_API_IMAGE:-prumo-api:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -46,6 +47,7 @@ services:
 
   worker:
     restart: unless-stopped
+    image: ${PRUMO_WORKER_IMAGE:-prumo-worker:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -68,6 +70,7 @@ services:
 
   frontend:
     restart: unless-stopped
+    image: ${PRUMO_FRONTEND_IMAGE:-prumo-frontend:local}
     build:
       context: ./frontend/prumo-web
       dockerfile: Dockerfile

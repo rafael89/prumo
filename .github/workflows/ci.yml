@@ -119,22 +119,126 @@ jobs:
           duration=$(( $(date +%s) - ${{ steps.timer.outputs.started_at }} ))
           echo "duration=${duration}s" >> "$GITHUB_OUTPUT"
 
+  images:
+    name: Build and test images
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api_image: ${{ steps.publish.outputs.api_image }}
+      worker_image: ${{ steps.publish.outputs.worker_image }}
+      frontend_image: ${{ steps.publish.outputs.frontend_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build application images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          source_label="org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY"
+          docker build --target api --label "$source_label" -t prumo-api:ci .
+          docker build --target worker --label "$source_label" -t prumo-worker:ci .
+          docker build --label "$source_label" -t prumo-frontend:ci ./frontend/prumo-web
+
+      - name: Smoke test application containers
+        shell: bash
+        env:
+          PRUMO_API_IMAGE: prumo-api:ci
+          PRUMO_WORKER_IMAGE: prumo-worker:ci
+          PRUMO_FRONTEND_IMAGE: prumo-frontend:ci
+          AI_API_KEY: ci-smoke-test
+        run: |
+          set -Eeuo pipefail
+          docker compose up -d --no-build
+
+          for attempt in {1..60}; do
+            api_id="$(docker compose ps -q api)"
+            worker_id="$(docker compose ps -q worker)"
+            frontend_id="$(docker compose ps -q frontend)"
+            if [[ -n "$api_id" && -n "$worker_id" && -n "$frontend_id" ]] \
+              && [[ "$(docker inspect -f '{{.State.Health.Status}}' "$api_id")" == healthy ]] \
+              && [[ "$(docker inspect -f '{{.State.Status}}' "$worker_id")" == running ]] \
+              && [[ "$(docker inspect -f '{{.State.Status}}' "$frontend_id")" == running ]] \
+              && curl --fail --silent http://127.0.0.1:5273/ >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          docker compose ps --all
+          docker compose logs --tail=100
+          exit 1
+
+      - name: Stop smoke test containers
+        if: always()
+        shell: bash
+        env:
+          PRUMO_API_IMAGE: prumo-api:ci
+          PRUMO_WORKER_IMAGE: prumo-worker:ci
+          PRUMO_FRONTEND_IMAGE: prumo-frontend:ci
+        run: docker compose down --volumes --remove-orphans
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish tested images
+        id: publish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for service in api worker frontend; do
+            tag="$repository-$service:$GITHUB_SHA"
+            docker tag "prumo-$service:ci" "$tag"
+            docker push "$tag"
+            image="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tag" | grep -m1 -F "$repository-$service@sha256:')"
+            if [[ -z "$image" ]]; then
+              echo "Could not resolve pushed image digest for $service"
+              exit 1
+            fi
+            echo "${service}_image=$image" >> "$GITHUB_OUTPUT"
+          done
+
   deploy:
     name: Deploy
-    needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.validate.result == 'success'
+    needs: images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.images.result == 'success'
+    permissions:
+      packages: read
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
     runs-on:
       - self-hosted
       - linux
       - prumo-deploy
     concurrency:
       group: prumo-production-deploy
-      cancel-in-progress: true
+      cancel-in-progress: false
     env:
       PRUMO_DEPLOY_PATH: ${{ vars.PRUMO_DEPLOY_PATH }}
+      PRUMO_API_IMAGE: ${{ needs.images.outputs.api_image }}
+      PRUMO_WORKER_IMAGE: ${{ needs.images.outputs.worker_image }}
+      PRUMO_FRONTEND_IMAGE: ${{ needs.images.outputs.frontend_image }}
 
     steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy approved commit with Docker Compose
+        id: deploy
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -153,6 +257,11 @@ jobs:
           cd "$PRUMO_DEPLOY_PATH"
           git fetch --prune origin main
 
+          if [[ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]]; then
+            echo "A newer commit is on main; skipping this deployment."
+            exit 0
+          fi
+
           if ! git cat-file -e "${GITHUB_SHA}^{commit}"; then
             echo "Approved commit was not fetched: $GITHUB_SHA"
             exit 1
@@ -164,7 +273,8 @@ jobs:
           echo "Checked out SHA: $checked_out_sha"
           [[ "$checked_out_sha" == "$GITHUB_SHA" ]]
 
-          docker compose up -d --build
+          docker compose pull api worker frontend
+          docker compose up -d --no-build
 
           services=(postgres api worker frontend)
           for attempt in {1..60}; do
@@ -200,8 +310,10 @@ jobs:
           done
 
           docker compose ps --all
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
 
       - name: Cleanup old Docker artifacts
+        if: steps.deploy.outputs.deployed == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -212,6 +324,7 @@ jobs:
     name: Notify Discord
     needs:
       - validate
+      - images
       - deploy
     if: always()
     runs-on: ubuntu-latest
@@ -227,7 +340,9 @@ jobs:
           set -Eeuo pipefail
 
           ci_status="${{ needs.validate.result }}"
+          image_status="${{ needs.images.result }}"
           deploy_status="${{ needs.deploy.result }}"
+          deployed="${{ needs.deploy.outputs.deployed }}"
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           short_sha="${GITHUB_SHA:0:7}"
           timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -240,7 +355,9 @@ jobs:
             --arg short_sha "$short_sha" \
             --arg actor "${GITHUB_ACTOR}" \
             --arg ci_status "$ci_status" \
+            --arg image_status "$image_status" \
             --arg deploy_status "$deploy_status" \
+            --arg deployed "$deployed" \
             --arg run_number "${GITHUB_RUN_NUMBER}" \
             --arg test_count "${{ needs.validate.outputs.test_count || 'n/d' }}" \
             --arg test_duration "${{ needs.validate.outputs.test_duration || 'n/d' }}" \
@@ -250,10 +367,14 @@ jobs:
             --arg timestamp "$timestamp" \
             '{embeds: [
               (
-                if $ci_status == "success" and $deploy_status == "success" then
+                if $ci_status == "success" and $image_status == "success" and $deploy_status == "success" and $deployed == "true" then
                   {title: "✅ Prumo — deploy concluído", color: 3066993}
-                elif $ci_status != "success" then
+                elif $ci_status != "success" or $image_status == "failure" then
                   {title: "❌ Prumo — CI falhou", color: 15158332}
+                elif $deploy_status == "failure" then
+                  {title: "❌ Prumo — deploy falhou", color: 15158332}
+                elif $event == "pull_request" and $image_status == "success" then
+                  {title: "✅ Prumo — validação concluída", color: 3066993}
                 else
                   {title: "⚠️ Prumo — deploy não executado", color: 16776960}
                 end
@@ -262,6 +383,7 @@ jobs:
                   description: "Execução automática do GitHub Actions",
                   fields: [
                     {name: "CI / testes", value: $ci_status, inline: true},
+                    {name: "Imagens", value: $image_status, inline: true},
                     {name: "Deploy", value: $deploy_status, inline: true},
                     {name: "Testes", value: $test_count, inline: true},
                     {name: "Duração dos testes", value: $test_duration, inline: true},
