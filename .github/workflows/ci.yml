@@ -200,7 +200,7 @@ jobs:
             tag="$repository-$service:$GITHUB_SHA"
             docker tag "prumo-$service:ci" "$tag"
             docker push "$tag"
-            image="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tag" | grep -m1 -F "$repository-$service@sha256:')"
+            image="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$tag" | grep -m1 -F "$repository-$service@sha256:")"
             if [[ -z "$image" ]]; then
               echo "Could not resolve pushed image digest for $service"
               exit 1
