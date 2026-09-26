@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Domain.Rules;
-using Prumo.Application.Abstractions;
 using Prumo.Infrastructure.MarketData;
 using Prumo.Infrastructure.Persistence;
 

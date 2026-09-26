@@ -23,22 +23,22 @@ public sealed class CvmFiiIntegrationTests
         var portfolio = new Portfolio("Integration");
         var asset = new Asset("FIIA11", "FII Industrial do Brasil", AssetType.Fii, "Industrial Real Estate");
         db.AddRange(portfolio, asset, new PortfolioPosition(portfolio.Id, asset.Id, 1m, 100m, 100m));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var options = Options.Create(new CvmFnetOptions { CadastroFiiUrl = "https://cvm.test/cadastro.zip", InformeMensalFiiUrlTemplate = "https://cvm.test/mensal-{0}.zip" });
         using var client = new HttpClient(new CvmHandler(CreateRegistryZip(), CreateMonthlyZip()));
         var enrichment = new CvmFiiCnpjEnrichmentService(db, client, options, NullLogger<CvmFiiCnpjEnrichmentService>.Instance);
-        var enriched = await enrichment.EnrichAsync();
+        var enriched = await enrichment.EnrichAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, enriched.EnrichedAssets);
         Assert.Equal("14217108000145", asset.Cnpj);
 
         var source = new CvmFiiMonthlyStructuredSource(client, options);
         var ingestion = new CvmFiiMonthlyIngestionService(db, source, NullLogger<CvmFiiMonthlyIngestionService>.Instance);
-        var ingested = await ingestion.IngestAsync();
+        var ingested = await ingestion.IngestAsync(TestContext.Current.CancellationToken);
         Assert.Equal(1, ingested.ObservationsInserted);
 
-        await db.Entry(asset).Collection(x => x.CvmFiiMonthlyObservations).LoadAsync();
+        await db.Entry(asset).Collection(x => x.CvmFiiMonthlyObservations).LoadAsync(TestContext.Current.CancellationToken);
         var candidate = new ContributionCandidate(CandidateIdentity.Known(asset.Id), asset.Ticker, AssetClass.Fii, 100m, 100m, 100m, 100m, 100m, false, [], AssetType.Fii, asset.Sector, 0, 0, null, 0, true, 0, 0, 0, 0, null, ExposureCoverage.Unavailable, [], ExposureCoverage.Unavailable, [], "BR", "BRL", null)
         { FundType = FundType.Brick };
         var intelligence = CandidateIntelligenceBuilder.Build(candidate, asset, [], []);

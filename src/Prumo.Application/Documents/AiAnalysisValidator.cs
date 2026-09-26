@@ -59,17 +59,4 @@ public sealed class AiAnalysisValidator
         ? throw new InvalidOperationException("Resposta original ausente.")
         : rawResponse.Length <= 100_000 ? rawResponse : rawResponse[..100_000];
 
-    private static bool IsRoutineDistribution(string summary, string impact, IReadOnlyList<AiInvestmentEventResult> events)
-    {
-        var text = string.Join(' ', new[] { summary, impact }
-            .Concat(events.SelectMany(item => new[] { item.Summary }.Concat(item.Facts))))
-            .ToLowerInvariant();
-        var exceptionalSignals = new[]
-        {
-            "suspens", "redução", "reducao", "atras", "inadimpl", "corte", "extraordin",
-            "mudança de política", "mudanca de politica", "prazo", "decisão", "decisao",
-            "alteração relevante", "alteracao relevante", "não pagamento", "nao pagamento"
-        };
-        return !exceptionalSignals.Any(text.Contains);
-    }
 }

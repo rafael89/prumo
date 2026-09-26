@@ -10,7 +10,6 @@ using Prumo.Application.Intelligence;
 using Prumo.Api.Services;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.PortfolioImports;
-using Microsoft.Extensions.Logging;
 
 namespace Prumo.Api.Controllers;
 

@@ -15,7 +15,7 @@ public sealed class PdfPigTextExtractorTests
     {
         await using var stream = PdfTestData.CreatePdfStream("Documento de teste com conteudo valido para extracao.");
 
-        var result = await extractor.ExtractAsync(stream);
+        var result = await extractor.ExtractAsync(stream, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Contains("Documento de teste", result.Text);
@@ -27,7 +27,7 @@ public sealed class PdfPigTextExtractorTests
     {
         await using var stream = PdfTestData.CreateInvalidPdfStream();
 
-        var result = await extractor.ExtractAsync(stream);
+        var result = await extractor.ExtractAsync(stream, TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
@@ -38,7 +38,7 @@ public sealed class PdfPigTextExtractorTests
     {
         await using var stream = PdfTestData.CreatePdfStream(string.Empty);
 
-        var result = await extractor.ExtractAsync(stream);
+        var result = await extractor.ExtractAsync(stream, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Equal(string.Empty, result.Text.Trim());
@@ -54,7 +54,7 @@ public sealed class PdfPigTextExtractorTests
         page.AddText("Gerencial", 12, new PdfPoint(115, 700), font);
         await using var stream = new MemoryStream(builder.Build());
 
-        var result = await extractor.ExtractAsync(stream);
+        var result = await extractor.ExtractAsync(stream, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Matches(@"Relatorio\s+Gerencial", result.Text);
@@ -65,7 +65,7 @@ public sealed class PdfPigTextExtractorTests
     {
         await using var stream = new MemoryStream("<?xml version=\"1.0\"?><DadosEconomicoFinanceiros><NomeFundo>VGIP11</NomeFundo><Valor>123,45</Valor></DadosEconomicoFinanceiros>"u8.ToArray());
 
-        var result = await extractor.ExtractAsync(stream);
+        var result = await extractor.ExtractAsync(stream, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Contains("NomeFundo: VGIP11", result.Text);
@@ -77,7 +77,7 @@ public sealed class PdfPigTextExtractorTests
     {
         await using var stream = new MemoryStream("<html><body>erro</body></html>"u8.ToArray());
 
-        var result = await extractor.ExtractAsync(stream);
+        var result = await extractor.ExtractAsync(stream, TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
     }

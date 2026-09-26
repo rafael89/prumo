@@ -13,59 +13,59 @@ public sealed class TransactionReconciliationTests
     {
         await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null); db.AddRange(portfolio, asset);
         var manual = AddTransaction(db, portfolio, asset, FinancialSource.Manual, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero));
-        var b3 = AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync();
+        var b3 = AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var service = new TransactionReconciliationService(db);
-        Assert.Single(await service.Candidates(portfolio.Id, default));
-        await service.Resolve(portfolio.Id, new([manual.Id, b3.Id], TransactionReconciliationStatus.ConfirmedSameEconomicTransaction), default);
-        var canonical = await service.Canonical(portfolio.Id, default);
-        Assert.Single(canonical); Assert.Equal(2, canonical[0].SourceRecordIds.Count); Assert.Equal(2, await db.PortfolioTransactions.CountAsync());
+        Assert.Single(await service.Candidates(portfolio.Id, TestContext.Current.CancellationToken));
+        await service.Resolve(portfolio.Id, new([manual.Id, b3.Id], TransactionReconciliationStatus.ConfirmedSameEconomicTransaction), TestContext.Current.CancellationToken);
+        var canonical = await service.Canonical(portfolio.Id, TestContext.Current.CancellationToken);
+        Assert.Single(canonical); Assert.Equal(2, canonical[0].SourceRecordIds.Count); Assert.Equal(2, await db.PortfolioTransactions.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task Candidate_does_not_change_count_and_same_source_is_ignored()
     {
         await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("VALE3", "Vale", AssetType.Stock, null); db.AddRange(portfolio, asset);
-        AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow); await db.SaveChangesAsync();
-        var service = new TransactionReconciliationService(db); Assert.Empty(await service.Candidates(portfolio.Id, default)); Assert.Equal(2, (await service.Canonical(portfolio.Id, default)).Count);
+        AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var service = new TransactionReconciliationService(db); Assert.Empty(await service.Candidates(portfolio.Id, TestContext.Current.CancellationToken)); Assert.Equal(2, (await service.Canonical(portfolio.Id, TestContext.Current.CancellationToken)).Count);
     }
 
     [Fact]
     public async Task Buy_and_sell_are_never_candidates()
     {
         await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("ITSA4", "Itaú", AssetType.Stock, null); db.AddRange(portfolio, asset);
-        AddTransaction(db, portfolio, asset, FinancialSource.Manual, DateTimeOffset.UtcNow, PortfolioTransactionType.Buy); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow, PortfolioTransactionType.Sell); await db.SaveChangesAsync();
-        Assert.Empty(await new TransactionReconciliationService(db).Candidates(portfolio.Id, default));
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, DateTimeOffset.UtcNow, PortfolioTransactionType.Buy); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, DateTimeOffset.UtcNow, PortfolioTransactionType.Sell); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(await new TransactionReconciliationService(db).Candidates(portfolio.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task Approximate_date_can_match_without_replacing_exact_date()
     {
         await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("HGLG11", "HGLG", AssetType.Fii, null); db.AddRange(portfolio, asset);
-        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new(2026, 8, 14, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), datePrecision: FinancialDatePrecision.PeriodStart); await db.SaveChangesAsync();
-        var candidate = Assert.Single(await new TransactionReconciliationService(db).Candidates(portfolio.Id, default)); Assert.Equal("Possible", candidate.MatchStrength);
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new(2026, 8, 14, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), datePrecision: FinancialDatePrecision.PeriodStart); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var candidate = Assert.Single(await new TransactionReconciliationService(db).Candidates(portfolio.Id, TestContext.Current.CancellationToken)); Assert.Equal("Possible", candidate.MatchStrength);
     }
 
     [Fact]
     public async Task Auto_reconciliation_resolves_only_an_exact_one_to_one_match()
     {
         await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null); db.AddRange(portfolio, asset);
-        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync();
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var service = new TransactionReconciliationService(db);
-        Assert.Equal(1, await service.AutoResolveDeterministic(portfolio.Id, default));
-        Assert.Empty(await service.Candidates(portfolio.Id, default));
-        Assert.Single(await service.Canonical(portfolio.Id, default));
-        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, default));
+        Assert.Equal(1, await service.AutoResolveDeterministic(portfolio.Id, TestContext.Current.CancellationToken));
+        Assert.Empty(await service.Candidates(portfolio.Id, TestContext.Current.CancellationToken));
+        Assert.Single(await service.Canonical(portfolio.Id, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task Ambiguous_reconciliation_remains_an_actionable_candidate()
     {
         await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null); db.AddRange(portfolio, asset);
-        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync();
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); AddTransaction(db, portfolio, asset, FinancialSource.B3Import, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero)); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var service = new TransactionReconciliationService(db);
-        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, default));
-        Assert.Equal(2, (await service.Candidates(portfolio.Id, default)).Count);
-        Assert.Equal(3, (await service.Canonical(portfolio.Id, default)).Count);
+        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, TestContext.Current.CancellationToken));
+        Assert.Equal(2, (await service.Candidates(portfolio.Id, TestContext.Current.CancellationToken)).Count);
+        Assert.Equal(3, (await service.Canonical(portfolio.Id, TestContext.Current.CancellationToken)).Count);
     }
 
     private static PortfolioTransaction AddTransaction(PrumoDbContext db, Portfolio portfolio, Asset asset, FinancialSource source, DateTimeOffset date, PortfolioTransactionType type = PortfolioTransactionType.Buy, FinancialDatePrecision datePrecision = FinancialDatePrecision.Exact)

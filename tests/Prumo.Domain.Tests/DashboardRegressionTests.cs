@@ -21,9 +21,9 @@ public sealed class DashboardRegressionTests
         var portfolio = new Portfolio("Carteira sem documento");
         var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento legado", Array.Empty<string>());
         db.AddRange(portfolio, investmentEvent, CreateAssessment(portfolio.Id, investmentEvent, "portfolio-impact-v1"));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var result = await new Prumo.Api.Controllers.PortfoliosController(db).GetDashboard(portfolio.Id);
+        var result = await new Prumo.Api.Controllers.PortfoliosController(db).GetDashboard(portfolio.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         var response = Assert.IsType<OkObjectResult>(result.Result);
         Assert.IsType<DashboardResponse>(response.Value);
@@ -42,13 +42,13 @@ public sealed class DashboardRegressionTests
         var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow, "Notícia repetida", Array.Empty<string>());
         investmentEvent.AffectedAssets.Add(asset);
         db.AddRange(portfolio, asset, investmentEvent);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         db.AddRange(
             CreateAssessment(portfolio.Id, investmentEvent, "portfolio-impact-v1"),
             CreateAssessment(portfolio.Id, investmentEvent, "portfolio-impact-v1"));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var loaded = await db.PortfolioAssessments.AsNoTracking().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).ToListAsync();
+        var loaded = await db.PortfolioAssessments.AsNoTracking().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
         var current = await new Prumo.Api.Services.PortfolioAssessmentCurrentService(db, new PortfolioImpactAssessmentService(), new PortfolioAssessmentFreshnessEvaluator(), Microsoft.Extensions.Logging.Abstractions.NullLogger<Prumo.Api.Services.PortfolioAssessmentCurrentService>.Instance)
             .EnsureFreshAsync(portfolio, Array.Empty<TargetAllocation>(), loaded, CancellationToken.None);
 

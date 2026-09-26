@@ -54,7 +54,7 @@ public sealed class GeminiContributionIntelligenceProviderTests
         var provider = new GeminiContributionIntelligenceProvider(http, settings, new BlockingRateLimiter());
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            provider.EvaluateAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>()));
+            provider.EvaluateAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class GeminiContributionIntelligenceProviderTests
         });
         var provider = new GeminiContributionIntelligenceProvider(http, settings, new ImmediateRateLimiter());
 
-        var result = await provider.ProposeAllocationAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), Array.Empty<ContributionScenarioOption>());
+        var result = await provider.ProposeAllocationAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), Array.Empty<ContributionScenarioOption>(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("gemini-3.1-flash-lite", result.Metadata.Model);
         Assert.Equal("gemini-3.5-flash-lite", result.Metadata.ConfiguredModel);
@@ -98,7 +98,7 @@ public sealed class GeminiContributionIntelligenceProviderTests
         });
         var provider = new GeminiContributionIntelligenceProvider(http, settings, new ImmediateRateLimiter());
 
-        await provider.ReviewAllocationAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), Array.Empty<ContributionScenarioOption>(), InvestorPolicy.Current, CompositionProjectionEvaluator.Project(Array.Empty<ContributionCandidate>(), Array.Empty<CandidateAllocation>()));
+        await provider.ReviewAllocationAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), Array.Empty<ContributionScenarioOption>(), InvestorPolicy.Current, CompositionProjectionEvaluator.Project(Array.Empty<ContributionCandidate>(), Array.Empty<CandidateAllocation>()), TestContext.Current.CancellationToken);
 
         Assert.Contains("gemini-3.5-flash-lite", httpHandler.Requests[0].RequestUri!.ToString());
         using var body = JsonDocument.Parse(httpHandler.Bodies[0]);

@@ -243,7 +243,7 @@ npm test
 
 Os testes .NET usam xUnit v3 com Microsoft Testing Platform, selecionado em [global.json](global.json). Para gerar cobertura Cobertura, execute `dotnet test Prumo.sln -- --coverlet --coverlet-output-format cobertura`.
 
-Sem `PRUMO_RUN_RELATIONAL_TESTS=1`, os testes PostgreSQL aparecem como ignorados, com o motivo explícito. Para executá-los localmente, com PostgreSQL disponível na configuração de desenvolvimento esperada pelos testes:
+Sem `PRUMO_RUN_RELATIONAL_TESTS=1`, os testes PostgreSQL aparecem como ignorados, com o motivo explícito. Para executá-los localmente, com PostgreSQL disponível na configuração de desenvolvimento esperada pelos testes, defina `PRUMO_RUN_RELATIONAL_TESTS=1` no `.env` da raiz ou na variável de ambiente do processo. A variável de ambiente tem precedência sobre o `.env`:
 
 ```powershell
 $env:PRUMO_RUN_RELATIONAL_TESTS = '1'

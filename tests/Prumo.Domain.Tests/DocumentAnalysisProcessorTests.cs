@@ -1,10 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prumo.Application.Abstractions;
 using Prumo.Application.Documents;
 using Prumo.Application.Intelligence;
-using Prumo.Application.Portfolio;
 using Prumo.Application.PortfolioImports;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
@@ -25,7 +23,7 @@ public sealed class DocumentAnalysisProcessorTests
             .ProcessAsync(seeded.Job, CancellationToken.None);
         Assert.Null(seeded.Document.FilePath);
         Assert.Equal("abc123", seeded.Document.FileHash);
-        var eventCount = await db.InvestmentEvents.CountAsync();
+        var eventCount = await db.InvestmentEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         for (var i = 2; i <= 4; i++)
         {
@@ -35,7 +33,7 @@ public sealed class DocumentAnalysisProcessorTests
             var job = new ProcessingJob(duplicate.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow);
             job.Start(DateTimeOffset.UtcNow);
             db.AddRange(duplicate, job);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
             await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
                 new FakePdfTextExtractor(), new ThrowingAiAnalysisService(new Exception("Não deve chamar IA")),
                 deletePdfAfterAnalysis: true).ProcessAsync(job, CancellationToken.None);
@@ -48,7 +46,7 @@ public sealed class DocumentAnalysisProcessorTests
         }
 
         Assert.Single(db.DocumentAnalyses);
-        Assert.Equal(eventCount, await db.InvestmentEvents.CountAsync());
+        Assert.Equal(eventCount, await db.InvestmentEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -60,7 +58,7 @@ public sealed class DocumentAnalysisProcessorTests
         var seeded = await SeedDocumentScenarioAsync(db);
         await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
             new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(seeded.Job, CancellationToken.None);
-        var asset = otherAsset ? new Asset("TEST11", "Outro ativo", AssetType.Fii, "Real Estate") : await db.Assets.SingleAsync();
+        var asset = otherAsset ? new Asset("TEST11", "Outro ativo", AssetType.Fii, "Real Estate") : await db.Assets.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         if (otherAsset) db.Assets.Add(asset);
         var document = new Document(asset.Id, DocumentType.RelevantFact, DateTimeOffset.UtcNow,
             "CVM", "another", "https://example.test/another", "another");
@@ -68,10 +66,10 @@ public sealed class DocumentAnalysisProcessorTests
         var job = new ProcessingJob(document.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow);
         job.Start(DateTimeOffset.UtcNow);
         db.AddRange(document, job);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
             new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(job, CancellationToken.None);
-        Assert.Equal(2, await db.DocumentAnalyses.CountAsync());
+        Assert.Equal(2, await db.DocumentAnalyses.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(DocumentProcessingStatus.Processed, document.ProcessingStatus);
     }
 
@@ -85,12 +83,12 @@ public sealed class DocumentAnalysisProcessorTests
         failed.MarkDownloaded("failed.pdf", "abc123");
         failed.MarkError();
         db.Documents.Add(failed);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
             new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(seeded.Job, CancellationToken.None);
 
-        Assert.Equal(seeded.Document.Id, (await db.DocumentAnalyses.SingleAsync()).DocumentId);
+        Assert.Equal(seeded.Document.Id, (await db.DocumentAnalyses.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).DocumentId);
         Assert.Equal(DocumentProcessingStatus.Processed, seeded.Document.ProcessingStatus);
     }
 
@@ -103,9 +101,9 @@ public sealed class DocumentAnalysisProcessorTests
 
         await processor.ProcessAsync(seeded.Job, CancellationToken.None);
 
-        var analysis = await dbContext.DocumentAnalyses.SingleAsync();
-        var document = await dbContext.Documents.SingleAsync(item => item.Id == seeded.Document.Id);
-        var position = await dbContext.PortfolioPositions.SingleAsync(item => item.Id == seeded.Position.Id);
+        var analysis = await dbContext.DocumentAnalyses.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
+        var document = await dbContext.Documents.SingleAsync(item => item.Id == seeded.Document.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var position = await dbContext.PortfolioPositions.SingleAsync(item => item.Id == seeded.Position.Id, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(DocumentProcessingStatus.Processed, document.ProcessingStatus);
         Assert.Equal(ProcessingJobStatus.Completed, seeded.Job.Status);
@@ -198,13 +196,13 @@ public sealed class DocumentAnalysisProcessorTests
             new[] { "XPIN11" },
             0.7m,
             "{}"));
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var processor = CreateProcessor(dbContext, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())), new FakePdfTextExtractor(), new FakeAiAnalysisService());
 
         await processor.ProcessAsync(seeded.Job, CancellationToken.None);
 
-        Assert.Equal(1, await dbContext.DocumentAnalyses.CountAsync());
+        Assert.Equal(1, await dbContext.DocumentAnalyses.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(ProcessingJobStatus.Completed, seeded.Job.Status);
     }
 
@@ -213,7 +211,7 @@ public sealed class DocumentAnalysisProcessorTests
     {
         await using var dbContext = CreateDbContext();
         var seeded = await SeedDocumentScenarioAsync(dbContext);
-        var portfolio = await dbContext.Portfolios.SingleAsync();
+        var portfolio = await dbContext.Portfolios.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         for (var index = 1; index <= 5; index++)
         {
             var asset = new Asset($"TEST{index}11", $"Teste {index}", AssetType.Fii, "Diversos");
@@ -223,7 +221,7 @@ public sealed class DocumentAnalysisProcessorTests
         var secondPortfolio = new Portfolio("Outra carteira");
         dbContext.Portfolios.Add(secondPortfolio);
         dbContext.PortfolioPositions.Add(new PortfolioPosition(secondPortfolio.Id, seeded.Position.AssetId, 10m, 30.17m, 30.17m));
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var ai = new CapturingAiAnalysisService();
         var processor = CreateProcessor(dbContext, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())), new FakePdfTextExtractor(), ai);
@@ -238,8 +236,8 @@ public sealed class DocumentAnalysisProcessorTests
         Assert.Empty(ai.Context.TopPositions);
         Assert.Equal(0, ai.Context.LargestPositionWeight);
         Assert.Equal(0, ai.Context.TopThreePositionWeight);
-        Assert.Equal(1, await dbContext.DocumentAnalyses.CountAsync());
-        Assert.Equal(2, await dbContext.PortfolioAssessments.CountAsync());
+        Assert.Equal(1, await dbContext.DocumentAnalyses.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(2, await dbContext.PortfolioAssessments.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -257,9 +255,9 @@ public sealed class DocumentAnalysisProcessorTests
             CreateAssessment(portfolioId, eventId, snapshotKey, targetKey, version));
 
         DocumentAnalysisProcessor.RemoveDuplicatePendingAssessments(dbContext);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, await dbContext.PortfolioAssessments.CountAsync());
+        Assert.Equal(1, await dbContext.PortfolioAssessments.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     private static PortfolioAssessment CreateAssessment(Guid portfolioId, Guid eventId, string snapshotKey, string targetKey, string version)

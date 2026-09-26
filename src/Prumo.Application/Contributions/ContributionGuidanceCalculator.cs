@@ -1,6 +1,5 @@
 using Prumo.Application.Portfolio;
 using Prumo.Application.Abstractions;
-using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 
 namespace Prumo.Application.Contributions;

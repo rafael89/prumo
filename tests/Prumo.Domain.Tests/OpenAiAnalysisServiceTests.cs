@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Prumo.Application.Abstractions;
 using Prumo.Application.Documents;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Ai;
@@ -20,7 +19,7 @@ public sealed class OpenAiAnalysisServiceTests
         var handler = new StubHandler(_ => JsonResponse(ValidEnvelope()));
         var service = CreateService(handler);
 
-        var result = await service.AnalyzeAsync("texto do documento", Context);
+        var result = await service.AnalyzeAsync("texto do documento", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal(AnalysisImportance.Informative, result.Importance);
         Assert.Equal(AnalysisClassification.Distribution, result.Classification);
@@ -36,7 +35,7 @@ public sealed class OpenAiAnalysisServiceTests
     {
         var service = CreateService(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized)));
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Contains("401", exception.Message);
     }
@@ -46,7 +45,7 @@ public sealed class OpenAiAnalysisServiceTests
     {
         var service = CreateService(new StubHandler(_ => new HttpResponseMessage((HttpStatusCode)429)));
 
-        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => service.AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Equal(HttpStatusCode.TooManyRequests, exception.StatusCode);
     }
@@ -56,7 +55,7 @@ public sealed class OpenAiAnalysisServiceTests
     {
         var service = CreateService(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)));
 
-        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => service.AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Equal(HttpStatusCode.InternalServerError, exception.StatusCode);
     }
@@ -83,7 +82,7 @@ public sealed class OpenAiAnalysisServiceTests
             return JsonResponse(ValidEnvelope());
         }), timeoutSeconds: 1);
 
-        await Assert.ThrowsAnyAsync<TaskCanceledException>(() => service.AnalyzeAsync("texto", Context));
+        await Assert.ThrowsAnyAsync<TaskCanceledException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -91,7 +90,7 @@ public sealed class OpenAiAnalysisServiceTests
     {
         var service = CreateService(new StubHandler(_ => JsonResponse("{\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"},\"output\":[]}")));
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Contains("incompleta", exception.Message);
     }
@@ -101,7 +100,7 @@ public sealed class OpenAiAnalysisServiceTests
     {
         var service = CreateService(new StubHandler(_ => JsonResponse("{\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"refusal\",\"refusal\":\"conteúdo não permitido\"}]}]}")));
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Contains("recusou", exception.Message);
     }
@@ -111,7 +110,7 @@ public sealed class OpenAiAnalysisServiceTests
     {
         var service = CreateService(new StubHandler(_ => JsonResponse("{\"status\":\"completed\",\"output\":[]}")));
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Contains("output_text", exception.Message);
     }
@@ -121,7 +120,7 @@ public sealed class OpenAiAnalysisServiceTests
     {
         var service = CreateService(new StubHandler(_ => JsonResponse("{\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"not-json\"}]}]}")));
 
-        await Assert.ThrowsAsync<JsonException>(() => service.AnalyzeAsync("texto", Context));
+        await Assert.ThrowsAsync<JsonException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -130,7 +129,7 @@ public sealed class OpenAiAnalysisServiceTests
         var invalidPayload = "{\"importance\":\"RELEVANT\",\"classification\":\"OTHER\",\"requiresAction\":false,\"suggestedAction\":\"NO_ACTION\",\"summary\":\"\",\"impact\":\"impacto\",\"portfolioImpact\":\"impacto\",\"affectedAssets\":[],\"confidence\":1}";
         var service = CreateService(new StubHandler(_ => JsonResponse($"{{\"status\":\"completed\",\"output\":[{{\"type\":\"message\",\"content\":[{{\"type\":\"output_text\",\"text\":{JsonSerializer.Serialize(invalidPayload)}}}]}}]}}")));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
     }
 
     private static OpenAiAnalysisService CreateService(HttpMessageHandler handler, int timeoutSeconds = 5) => new(

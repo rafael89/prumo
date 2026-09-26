@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Prumo.Application.Abstractions;
 using Prumo.Application.Documents;
-using Prumo.Application.Intelligence;
 using Prumo.Application.Portfolio;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;

@@ -3,10 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
-using Prumo.Infrastructure.DocumentSources;
 using Prumo.Infrastructure.MarketData;
 using Prumo.Infrastructure.Persistence;
-using Prumo.Infrastructure.PortfolioImports;
 using Prumo.Application.Documents;
 
 namespace Prumo.Worker;

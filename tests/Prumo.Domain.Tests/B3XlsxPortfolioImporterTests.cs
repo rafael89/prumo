@@ -11,7 +11,7 @@ public sealed class B3XlsxPortfolioImporterTests
     public async Task Parses_sanitized_real_layout_for_stocks_and_fiis()
     {
         await using var stream = Fixture();
-        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream);
+        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream, TestContext.Current.CancellationToken);
         Assert.Empty(result.Errors);
         Assert.Equal(2, result.Items.Count);
         Assert.Equal(("ABCD3", AssetType.Stock), (result.Items[0].Ticker, result.Items[0].AssetType));
@@ -28,7 +28,7 @@ public sealed class B3XlsxPortfolioImporterTests
     public async Task Parses_negotiations_as_imported_buy_references()
     {
         await using var stream = Fixture();
-        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream);
+        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream, TestContext.Current.CancellationToken);
         var transaction = Assert.Single(result.Transactions);
         Assert.Equal("XPML11", transaction.Ticker);
         Assert.Equal(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero), transaction.OccurredAt);
@@ -41,7 +41,7 @@ public sealed class B3XlsxPortfolioImporterTests
     public async Task Ignores_rights_and_warns_about_tesouro()
     {
         await using var stream = Fixture(includeRight: true);
-        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream);
+        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream, TestContext.Current.CancellationToken);
         Assert.DoesNotContain(result.Items, item => item.Ticker == "ABCD12");
         Assert.Contains(result.Warnings, warning => warning.Contains("Direito", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(result.Warnings, warning => warning.Contains("Tesouro", StringComparison.OrdinalIgnoreCase));
@@ -51,7 +51,7 @@ public sealed class B3XlsxPortfolioImporterTests
     public async Task Rejects_formula_cells_without_executing_them()
     {
         await using var stream = Fixture(includeFormula: true);
-        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream);
+        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream, TestContext.Current.CancellationToken);
         Assert.Contains(result.Errors, error => error.Contains("fórmulas", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -59,7 +59,7 @@ public sealed class B3XlsxPortfolioImporterTests
     public async Task Rejects_missing_expected_header()
     {
         await using var stream = Fixture(invalidHeader: true);
-        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream);
+        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream, TestContext.Current.CancellationToken);
         Assert.Contains(result.Errors, error => error.Contains("cabeçalho", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -72,7 +72,7 @@ public sealed class B3XlsxPortfolioImporterTests
     public async Task Purchases_and_sales_are_parsed_independently(string buyQuantity, string buyPrice, string sellQuantity, string sellPrice, int buys, int sells)
     {
         await using var stream = Fixture(buyQuantity: buyQuantity, buyPrice: buyPrice, sellQuantity: sellQuantity, sellPrice: sellPrice);
-        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream);
+        var result = await new B3XlsxPortfolioImporter().ParseAsync(stream, TestContext.Current.CancellationToken);
         Assert.Empty(result.Errors);
         Assert.Equal(buys, result.Transactions.Count(x => x.Type == PortfolioTransactionType.Buy));
         Assert.Equal(sells, result.Transactions.Count(x => x.Type == PortfolioTransactionType.Sell));

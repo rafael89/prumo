@@ -6,7 +6,6 @@ using Prumo.Application.Contributions;
 using Prumo.Domain.Entities;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Application.Abstractions;
-using Prumo.Infrastructure.MarketData;
 using Prumo.Domain.Enums;
 using System.Reflection;
 
@@ -434,70 +433,6 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
 
         return JsonSerializer.Deserialize<ContributionGuidanceWorkItem>(json)
             ?? throw new InvalidOperationException("Contexto da orientação de aporte inválido.");
-    }
-
-    private async Task<(ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount)> SelectValidatedScenarioAsync(
-        IContributionIntelligenceProvider provider,
-        Guid portfolioId,
-        decimal amount,
-        IReadOnlyList<ContributionScenarioOption> scenarios,
-        IReadOnlyList<ContributionCandidate> candidates,
-        InvestorPolicy investorPolicy,
-        ContributionRebalanceMode rebalanceMode,
-        CancellationToken cancellationToken)
-    {
-        Exception? last = null;
-        for (var attempt = 0; attempt < 2; attempt++)
-        {
-            try
-            {
-                var selection = await provider.SelectScenarioAsync(portfolioId, amount, scenarios, candidates, investorPolicy, cancellationToken);
-                var selected = ContributionScenarioValidator.Select(selection, scenarios, amount, candidates);
-                if (!HasGroundedReason(selection, selected))
-                    throw new InvalidOperationException("A IA retornou uma justificativa insuficiente para o cenário selecionado.");
-                if (rebalanceMode == ContributionRebalanceMode.Required && selected.Improvement + 0.01m < scenarios[0].Improvement)
-                    throw new InvalidOperationException("A IA retornou um cenário inferior ao cenário-base seguro.");
-
-                if (attempt > 0) metrics.RecordAiOutcome("retry-succeeded");
-                else metrics.RecordAiOutcome("selected");
-                return (selection, selected, attempt);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                last = exception;
-                if (attempt == 0)
-                {
-                    metrics.RecordAiOutcome("retry");
-                    logger.LogWarning(exception, "Resposta da IA não passou na validação; uma nova tentativa será feita");
-                }
-            }
-        }
-
-        metrics.RecordAiOutcome("fallback");
-        throw last ?? new InvalidOperationException("A IA não retornou um cenário válido.");
-    }
-
-    private static (ContributionScenarioSelection Selection, ContributionScenarioOption Selected, int RetryCount) SingleScenarioSelection(ContributionScenarioOption scenario)
-    {
-        var selection = new ContributionScenarioSelection(
-            scenario.ScenarioKey,
-            scenario.Summary,
-            Array.Empty<string>(),
-            ContributionIntelligenceAvailability.PartialIntelligence,
-            new("R17.8", "portfolio-rules", ContributionIntelligencePrompt.Version, "deterministic-single-scenario", "none", DateTimeOffset.UtcNow));
-        return (selection, scenario, 0);
-    }
-
-    private static bool HasGroundedReason(ContributionScenarioSelection selection, ContributionScenarioOption scenario)
-    {
-        var text = $"{selection.Reason} {string.Join(" ", selection.Considerations)} {scenario.Summary}".Trim().ToLowerInvariant();
-        if (text.Length < 12) return false;
-        var criteria = new[] { "classe", "target", "desvio", "divers", "concent", "aporte", "assessment", "bloque", "exposi", "segur", "candidat" };
-        return criteria.Any(text.Contains);
     }
 
     private static PersistedContributionGuidanceAllocation[] ToPersistedAllocations(Guid guidanceId, ContributionScenarioOption scenario, IReadOnlyList<ContributionCandidate> candidates)

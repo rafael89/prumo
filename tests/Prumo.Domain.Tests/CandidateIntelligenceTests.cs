@@ -1,4 +1,3 @@
-using Prumo.Application.Abstractions;
 using Prumo.Application.Contributions;
 using Prumo.Application.Explainability;
 using Prumo.Domain.Entities;

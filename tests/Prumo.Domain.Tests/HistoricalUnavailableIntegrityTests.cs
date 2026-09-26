@@ -27,13 +27,13 @@ public sealed class HistoricalUnavailableIntegrityTests
             anchor.Items.Add(new(anchor.Id, asset.Id, 10, 10));
             db.AddRange(anchor, new AssetPrice(asset.Id, new(2026, 9, 2), 10, "BRL", "test", DateTimeOffset.UtcNow));
         }
-        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken); db.ChangeTracker.Clear();
         var coverage = new CoverageService(db);
         var state = new HistoricalFinancialStateService(db, coverage, new TransactionReconciliationService(db));
-        var opening = await state.Get(portfolio.Id, new(2026, 9, 1), null, default);
+        var opening = await state.Get(portfolio.Id, new(2026, 9, 1), null, TestContext.Current.CancellationToken);
         Assert.Null(opening!.Anchor); Assert.Equal("Unavailable", opening.Coverage);
         var controller = new HistoricalPerformanceController(new HistoricalPerformanceService(db, state, coverage));
-        var response = await controller.Get(portfolio.Id, new(2026, 9, 1), new(2026, 9, 2), default);
+        var response = await controller.Get(portfolio.Id, new(2026, 9, 1), new(2026, 9, 2), TestContext.Current.CancellationToken);
         var result = Assert.IsType<HistoricalPerformanceDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
         Assert.Null(result.StartingValuation.Value); Assert.Equal("Unavailable", result.StartingValuation.Coverage);
         Assert.Contains("NoAnchor", result.StartingValuation.Reasons);
@@ -57,10 +57,10 @@ public sealed class HistoricalUnavailableIntegrityTests
         db.AddRange(portfolio, asset, anchor, sale);
         foreach (var dimension in new[] { FinancialHistoryCoverageDimension.Transactions, FinancialHistoryCoverageDimension.CorporateActions, FinancialHistoryCoverageDimension.Position, FinancialHistoryCoverageDimension.CostBasis })
             db.Add(new FinancialHistoryCoverage(portfolio.Id, dimension, from, to, FinancialSource.Manual));
-        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken); db.ChangeTracker.Clear();
         var coverage = new CoverageService(db);
         var service = new HistoricalPerformanceService(db, new HistoricalFinancialStateService(db, coverage, new TransactionReconciliationService(db)), coverage);
-        var result = await service.Get(portfolio.Id, from, to, default);
+        var result = await service.Get(portfolio.Id, from, to, TestContext.Current.CancellationToken);
         Assert.Equal(0, result!.EndingValuation.Value); Assert.Equal("Complete", result.EndingValuation.Coverage);
         Assert.Equal(0, Assert.Single(result.EndingValuation.Assets).Quantity);
         Assert.Null(result.StartingValuation.Value); // Quantity exists, but its price is unknown.

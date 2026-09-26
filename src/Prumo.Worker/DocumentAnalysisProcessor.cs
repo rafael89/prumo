@@ -4,7 +4,6 @@ using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Application.Portfolio;
-using Prumo.Domain.Rules;
 using Prumo.Application.Intelligence;
 using Prumo.Application.PortfolioImports;
 using Prumo.Application.Documents;
@@ -304,24 +303,6 @@ public sealed class DocumentAnalysisProcessor
             new AiInvestmentEventResult(InvestmentEventType.Other, document.PublishedAt, analysis.Summary, Array.Empty<string>(), new[] { ticker })
         }, cancellationToken);
         logger.LogInformation("Evento documental reconstruído para análise já persistida {AnalysisId}.", analysis.Id);
-    }
-
-    private async Task EnsureAssessmentsForEventAsync(DocumentAnalysis analysis, InvestmentEvent investmentEvent, CancellationToken cancellationToken)
-    {
-        var assetIds = investmentEvent.AffectedAssets.Select(asset => asset.Id).ToArray();
-        if (assetIds.Length == 0) return;
-        var portfolios = await dbContext.Portfolios.Include(portfolio => portfolio.Positions).ThenInclude(position => position.Asset).Where(portfolio => portfolio.Positions.Any(position => assetIds.Contains(position.AssetId) && position.Quantity > 0)).ToListAsync(cancellationToken);
-        foreach (var portfolio in portfolios.OrderBy(x => x.Id))
-        {
-            var targets = await dbContext.TargetAllocations.Where(target => target.PortfolioId == portfolio.Id).ToListAsync(cancellationToken);
-            var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
-            var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
-            var relevantPositions = portfolio.Positions.Where(position => assetIds.Contains(position.AssetId) && position.Quantity > 0).Select(position => new RelevantPositionContext(position.AssetId, position.Asset?.Ticker ?? string.Empty, position.Asset?.AssetClass ?? AssetClass.Other, position.CurrentValue ?? 0, position.PortfolioWeight)).ToList();
-            var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health, analysis.Importance, analysis.RequiresAction, analysis.SuggestedAction));
-            var snapshotKey = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
-            if (await dbContext.PortfolioAssessments.AnyAsync(item => item.PortfolioId == portfolio.Id && item.InvestmentEventId == investmentEvent.Id && item.PortfolioSnapshotKey == snapshotKey && item.TargetAllocationKey == targetKey && item.AssessmentVersion == portfolioImpactAssessmentService.Version, cancellationToken)) continue;
-            dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, AssessmentStatus.Detected, AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, portfolioImpactAssessmentService.Version, snapshotKey, investmentEvent.Version));
-        }
     }
 
     private async Task PersistEventsAndAssessmentsAsync(DocumentAnalysis analysis, IReadOnlyList<AiInvestmentEventResult> results, CancellationToken cancellationToken)

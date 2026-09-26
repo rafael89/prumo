@@ -1,6 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Infrastructure.Persistence;
 

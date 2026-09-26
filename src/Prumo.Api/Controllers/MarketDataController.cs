@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Prumo.Infrastructure.MarketData;
 using Prumo.Infrastructure.Persistence;
-using Prumo.Domain.Enums;
 
 namespace Prumo.Api.Controllers;
 

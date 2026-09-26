@@ -1,4 +1,3 @@
-using Prumo.Application.Abstractions;
 using Prumo.Application.Intelligence;
 using Prumo.Application.Portfolio;
 using Prumo.Application.Radar;
@@ -196,7 +195,7 @@ public sealed class PortfolioImpactAssessmentServiceTests
 
         Assert.Single(current);
         Assert.Equal(PortfolioImpactAssessmentService.CurrentVersion, current[0].AssessmentVersion);
-        Assert.Equal(1, await db.PortfolioAssessments.CountAsync());
+        Assert.Equal(1, await db.PortfolioAssessments.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]

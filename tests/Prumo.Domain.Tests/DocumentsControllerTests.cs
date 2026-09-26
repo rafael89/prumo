@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Prumo.Api.Controllers;
-using Prumo.Application.Portfolio;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Domain.Rules;
@@ -28,7 +27,7 @@ public sealed class DocumentsControllerTests
         dbContext.DocumentAnalyses.AddRange(oldAnalysis, latestAnalysis);
         dbContext.Entry(oldAnalysis).Property(analysis => analysis.CreatedAt).CurrentValue = DateTimeOffset.UtcNow.AddMinutes(-2);
         dbContext.Entry(latestAnalysis).Property(analysis => analysis.CreatedAt).CurrentValue = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new DocumentsController(dbContext).GetLatestAnalysis(document.Id, CancellationToken.None);
 
@@ -36,7 +35,7 @@ public sealed class DocumentsControllerTests
         var response = Assert.IsType<DocumentAnalysisResponse>(ok.Value);
         Assert.Equal("gemini-3.5-flash-lite", response.Model);
         Assert.Equal(latestAnalysis.Id, response.Id);
-        Assert.Equal(2, await dbContext.DocumentAnalyses.CountAsync(analysis => analysis.DocumentId == document.Id));
+        Assert.Equal(2, await dbContext.DocumentAnalyses.CountAsync(analysis => analysis.DocumentId == document.Id, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -63,7 +62,7 @@ public sealed class DocumentsControllerTests
             AssessmentUserState.Unread, "Resumo", "Motivo", "Revisar", IntelligenceConfidence.High,
             null, "portfolio-impact-v6", "snapshot-antigo", investmentEvent.Version);
         db.AddRange(asset, portfolio, document, analysis, investmentEvent, stale);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new DocumentsController(db).GetLatestAnalysis(document.Id, portfolio.Id, CancellationToken.None);
 

@@ -26,24 +26,24 @@ public sealed class HistoricalMaterialityReconciliationTests
             var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.Distribution, document.PublishedAt, "Distribuição recorrente", Array.Empty<string>());
             investmentEvent.AffectedAssets.Add(asset);
             seed.AddRange(asset, portfolio, document, analysis, investmentEvent);
-            await seed.SaveChangesAsync();
+            await seed.SaveChangesAsync(TestContext.Current.CancellationToken);
 
             var snapshot = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
             var assessment = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, AttentionPriority.High, ActionRequirement.Review, CapitalDecisionImpact.Caution, AssessmentStatus.Detected, AssessmentUserState.Unread, "avaliação antiga", "motivo antigo", "ação antiga", IntelligenceConfidence.High, null, PortfolioImpactAssessmentService.CurrentVersion, snapshot, investmentEvent.Version);
             assessment.AttachInvestmentEvent(investmentEvent);
             seed.PortfolioAssessments.Add(assessment);
-            await seed.SaveChangesAsync();
-            Assert.Equal(1, await seed.Documents.CountAsync());
-            Assert.Equal(DocumentProcessingStatus.Processed, (await seed.Documents.SingleAsync()).ProcessingStatus);
+            await seed.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(1, await seed.Documents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+            Assert.Equal(DocumentProcessingStatus.Processed, (await seed.Documents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).ProcessingStatus);
         }
 
         HistoricalMaterialityReconciliationReport firstReport;
         await using (var run = CreateDb(databaseName))
         {
-            Assert.Equal(1, await run.Documents.CountAsync());
-            Assert.Equal(DocumentProcessingStatus.Processed, (await run.Documents.SingleAsync()).ProcessingStatus);
-            Assert.Equal(1, await run.Documents.Where(x => x.ProcessingStatus == DocumentProcessingStatus.Processed).CountAsync());
-            Assert.Equal((await run.Documents.SingleAsync()).Id, (await run.DocumentAnalyses.SingleAsync()).DocumentId);
+            Assert.Equal(1, await run.Documents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+            Assert.Equal(DocumentProcessingStatus.Processed, (await run.Documents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).ProcessingStatus);
+            Assert.Equal(1, await run.Documents.Where(x => x.ProcessingStatus == DocumentProcessingStatus.Processed).CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+            Assert.Equal((await run.Documents.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).Id, (await run.DocumentAnalyses.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).DocumentId);
             firstReport = await Service(run).ReconcileAsync(CancellationToken.None);
         }
 
@@ -53,11 +53,11 @@ public sealed class HistoricalMaterialityReconciliationTests
 
         await using (var verify = CreateDb(databaseName))
         {
-            var persisted = await verify.DocumentAnalyses.AsNoTracking().SingleAsync();
+            var persisted = await verify.DocumentAnalyses.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(AnalysisImportance.Informative, persisted.Importance);
-            Assert.Equal(1, await verify.DocumentAnalyses.CountAsync());
-            Assert.Equal(1, await verify.InvestmentEvents.CountAsync());
-            var assessment = await verify.PortfolioAssessments.AsNoTracking().SingleAsync();
+            Assert.Equal(1, await verify.DocumentAnalyses.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+            Assert.Equal(1, await verify.InvestmentEvents.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+            var assessment = await verify.PortfolioAssessments.AsNoTracking().SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(ActionRequirement.None, assessment.ActionRequirement);
             Assert.Equal(CapitalDecisionImpact.None, assessment.CapitalDecisionImpact);
             Assert.Equal(AttentionPriority.Low, assessment.AttentionPriority);

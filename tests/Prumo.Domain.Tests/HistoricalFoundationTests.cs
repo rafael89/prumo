@@ -26,26 +26,26 @@ public sealed class HistoricalFoundationTests
     [Fact]
     public async Task Coverage_unions_overlaps_and_detects_gaps()
     {
-        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); db.Portfolios.Add(portfolio); await db.SaveChangesAsync();
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); db.Portfolios.Add(portfolio); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var service = new CoverageService(db);
-        await service.Create(portfolio.Id, new(FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 6, 30), FinancialSource.Manual), default);
-        await service.Create(portfolio.Id, new(FinancialHistoryCoverageDimension.Transactions, new(2025, 7, 1), new(2025, 12, 31), FinancialSource.Manual), default);
-        var complete = await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), null, default);
+        await service.Create(portfolio.Id, new(FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 6, 30), FinancialSource.Manual), TestContext.Current.CancellationToken);
+        await service.Create(portfolio.Id, new(FinancialHistoryCoverageDimension.Transactions, new(2025, 7, 1), new(2025, 12, 31), FinancialSource.Manual), TestContext.Current.CancellationToken);
+        var complete = await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), null, TestContext.Current.CancellationToken);
         Assert.Equal("Complete", complete.Status);
-        await service.Delete(portfolio.Id, complete.Evidence[0].Id, default);
-        var partial = await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), null, default);
+        await service.Delete(portfolio.Id, complete.Evidence[0].Id, TestContext.Current.CancellationToken);
+        var partial = await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), null, TestContext.Current.CancellationToken);
         Assert.Equal("Partial", partial.Status);
     }
 
     [Fact]
     public async Task Coverage_does_not_cross_dimensions_or_assets()
     {
-        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var assetA = new Asset("AAA3", "A", AssetType.Stock, null); var assetB = new Asset("BBB3", "B", AssetType.Stock, null); db.AddRange(portfolio, assetA, assetB); await db.SaveChangesAsync();
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); var assetA = new Asset("AAA3", "A", AssetType.Stock, null); var assetB = new Asset("BBB3", "B", AssetType.Stock, null); db.AddRange(portfolio, assetA, assetB); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var service = new CoverageService(db);
-        await service.Create(portfolio.Id, new(FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), FinancialSource.Manual, assetA.Id), default);
-        Assert.Equal("Complete", (await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), assetA.Id, default)).Status);
-        Assert.Equal("Unavailable", (await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.CostBasis, new(2025, 1, 1), new(2025, 12, 31), assetA.Id, default)).Status);
-        Assert.Equal("Unavailable", (await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), assetB.Id, default)).Status);
+        await service.Create(portfolio.Id, new(FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), FinancialSource.Manual, assetA.Id), TestContext.Current.CancellationToken);
+        Assert.Equal("Complete", (await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), assetA.Id, TestContext.Current.CancellationToken)).Status);
+        Assert.Equal("Unavailable", (await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.CostBasis, new(2025, 1, 1), new(2025, 12, 31), assetA.Id, TestContext.Current.CancellationToken)).Status);
+        Assert.Equal("Unavailable", (await service.Resolve(portfolio.Id, FinancialHistoryCoverageDimension.Transactions, new(2025, 1, 1), new(2025, 12, 31), assetB.Id, TestContext.Current.CancellationToken)).Status);
     }
 
     private static PrumoDbContext CreateDb() => new(new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

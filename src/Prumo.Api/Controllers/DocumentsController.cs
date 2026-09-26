@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Prumo.Domain.Enums;
 using Prumo.Domain.Entities;
 using Prumo.Application.Radar;
-using Prumo.Application.Documents;
 using Prumo.Application.Intelligence;
 using Prumo.Application.Portfolio;
 using Prumo.Infrastructure.Persistence;

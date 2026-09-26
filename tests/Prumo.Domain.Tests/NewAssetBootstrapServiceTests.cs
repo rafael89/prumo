@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
@@ -20,7 +19,7 @@ public sealed class NewAssetBootstrapServiceTests
         var portfolioB = new Portfolio("B");
         db.AddRange(asset, portfolioA, portfolioB);
         db.PortfolioPositions.Add(new PortfolioPosition(portfolioA.Id, asset.Id, 1, 0, 100));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var source = new FakeSource();
         var service = new NewAssetBootstrapService(db, source, NullLogger<NewAssetBootstrapService>.Instance);
@@ -42,7 +41,7 @@ public sealed class NewAssetBootstrapServiceTests
         var portfolio = new Portfolio("Test");
         db.AddRange(asset, portfolio);
         db.PortfolioPositions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1, 0, 100));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = new NewAssetBootstrapService(db, new MultipleDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);
         await service.DiscoverLatestOnlyAsync(new[] { asset.Id }, CancellationToken.None);
@@ -63,7 +62,7 @@ public sealed class NewAssetBootstrapServiceTests
         var portfolio = new Portfolio("Test");
         db.AddRange(asset, portfolio);
         db.PortfolioPositions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1, 0, 100));
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var service = new NewAssetBootstrapService(db, new BootstrapDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);
         await service.DiscoverLatestOnlyAsync(new[] { asset.Id }, CancellationToken.None);

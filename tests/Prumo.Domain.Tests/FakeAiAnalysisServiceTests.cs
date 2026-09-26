@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
-using Prumo.Application.Abstractions;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Ai;
 
@@ -13,7 +11,7 @@ public sealed class FakeAiAnalysisServiceTests
         var service = new FakeAiAnalysisService();
         var context = new PortfolioAnalysisContext("XPLG11", "Fii", "Logística", 10, 100, 1100, 25);
 
-        var result = await service.AnalyzeAsync("texto", context);
+        var result = await service.AnalyzeAsync("texto", context, TestContext.Current.CancellationToken);
 
         Assert.Equal("fake-e2e", service.Model);
         Assert.Equal(AnalysisImportance.Informative, result.Importance);

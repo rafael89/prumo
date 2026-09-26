@@ -1,14 +1,11 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Prumo.Application.Abstractions;
 using Prumo.Application.Contributions;
-using Prumo.Application.Explainability;
 using Prumo.Application.Portfolio;
 using Prumo.Api.Services;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
-using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.Reconciliation;
 using Prumo.Infrastructure.MarketData;

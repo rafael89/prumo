@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.DocumentSources;
@@ -26,8 +25,8 @@ public sealed class DocumentDiscoveryServiceTests
             Candidate(asset, "outside", To.AddSeconds(1)));
         var service = CreateService(db, source);
 
-        var first = await service.DiscoverAsync(From, To);
-        var second = await service.DiscoverAsync(From, To);
+        var first = await service.DiscoverAsync(From, To, TestContext.Current.CancellationToken);
+        var second = await service.DiscoverAsync(From, To, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, first.NewDocuments);
         Assert.Equal(0, first.ExistingDocuments);
@@ -48,7 +47,7 @@ public sealed class DocumentDiscoveryServiceTests
             Candidate(firstAsset, "relevant", From.AddDays(1), DocumentType.RelevantFact),
             Candidate(secondAsset, "communication", From.AddDays(2), DocumentType.Communication));
 
-        var result = await CreateService(db, source).DiscoverAsync(From, To);
+        var result = await CreateService(db, source).DiscoverAsync(From, To, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.NewDocuments);
         Assert.Equal(2, db.Documents.Count());
@@ -63,7 +62,7 @@ public sealed class DocumentDiscoveryServiceTests
         AddPositionedAsset(db, "AAA3");
         var source = new FakeDocumentSource { Failure = new InvalidOperationException("source failure") };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService(db, source).DiscoverAsync(From, To));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService(db, source).DiscoverAsync(From, To, TestContext.Current.CancellationToken));
         Assert.Empty(db.Documents);
         Assert.Empty(db.ProcessingJobs);
     }
@@ -84,7 +83,7 @@ public sealed class DocumentDiscoveryServiceTests
             "Anúncio de Início",
             null));
 
-        var result = await CreateService(db, source).DiscoverAsync(From, To);
+        var result = await CreateService(db, source).DiscoverAsync(From, To, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.NewDocuments);
         Assert.Empty(db.ProcessingJobs);

@@ -19,7 +19,7 @@ public sealed class PortfolioHistoryServiceTests
         AddEvent(db, seeded.Asset, "2026-08-10", "Evento X");
         AddEvent(db, seeded.Asset, "2026-08-27", "Evento Y");
         AddEvent(db, seeded.Asset, "2026-08-30", "Evento Z");
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioHistoryService(db).GetAssetHistoryAsync(seeded.Portfolio.Id, seeded.Asset.Id, 100, CancellationToken.None);
 
@@ -35,7 +35,7 @@ public sealed class PortfolioHistoryServiceTests
         await using var db = CreateDb();
         var seeded = await SeedAsync(db);
         AddEvent(db, seeded.Asset, "2026-08-27", "Evento sem compra");
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioHistoryService(db).GetAssetHistoryAsync(seeded.Portfolio.Id, seeded.Asset.Id, 100, CancellationToken.None);
 
@@ -52,7 +52,7 @@ public sealed class PortfolioHistoryServiceTests
         AddAssessment(db, seeded.Portfolio.Id, eventItem, "2026-08-21", CapitalDecisionImpact.Favor);
         AddAssessment(db, seeded.Portfolio.Id, eventItem, "2026-08-22", CapitalDecisionImpact.Favor);
         AddAssessment(db, seeded.Portfolio.Id, eventItem, "2026-08-23", CapitalDecisionImpact.Caution);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioHistoryService(db).GetAssetHistoryAsync(seeded.Portfolio.Id, seeded.Asset.Id, 100, CancellationToken.None);
 
@@ -71,7 +71,7 @@ public sealed class PortfolioHistoryServiceTests
         db.PortfolioPositions.Add(new PortfolioPosition(second.Id, first.Asset.Id, 1, 10, 10));
         AddPurchase(db, first.Portfolio.Id, first.Asset.Id, "2026-08-01", 1);
         AddPurchase(db, second.Id, first.Asset.Id, "2026-08-02", 1);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioHistoryService(db).GetAssetHistoryAsync(first.Portfolio.Id, first.Asset.Id, 100, CancellationToken.None);
 

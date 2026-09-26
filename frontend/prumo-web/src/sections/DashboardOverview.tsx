@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleInfo, faEye, faEyeSlash, faRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl } from '../api/client'
 import { TransactionReconciliationSection } from './TransactionReconciliationSection'
@@ -126,11 +126,8 @@ type DashboardOverviewProps = {
 const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros ativos' }
 const priorityLabels = ['Baixa', 'Média', 'Alta', 'Crítica']
 const suggestedActionLabels: Record<string, string> = { Maintain: 'Manter', IncreasePosition: 'Aumentar posição', ReduceExposure: 'Reduzir exposição', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem ação', OpenPosition: 'Abrir posição' }
-const capitalImpactLabels = ['Favorável a aumentar exposição', 'Sem impacto relevante', 'Cautela ao aumentar exposição', 'Evitar aumentar exposição agora']
 const importanceLabels: Record<string, string> = { Critical: 'Crítico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem ação' }
 const classificationLabels: Record<string, string> = { CorporateAction: 'Ação corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribuição', CapitalRaise: 'Captação', AssetTransaction: 'Transação de ativos', Governance: 'Governança', Operational: 'Operacional', Liquidation: 'Liquidação', Other: 'Outro' }
-
-void capitalImpactLabels
 
 function officialDocumentUrl(url: string) {
   return url.replace('/fnet/publico/downloadDocumento', '/fnet/publico/exibirDocumento')
@@ -157,103 +154,6 @@ function formatRelativeDate(value: string | null) {
   if (elapsedDays < 7) return `${elapsedDays} dias atrás`
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date)
 }
-
-function PortfolioHealthCardLegacy({ data }: { data: Dashboard }) {
-  const health = data.portfolioHealthSummary
-  const overview = data.portfolioOverview
-  const deviations = health?.allocationDeviations.slice(0, 2) ?? []
-  const notConfigured = health?.status === 'NotConfigured'
-  const aligned = health?.status === 'Aligned'
-
-  return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Saúde da carteira</p>
-    <h2 className="mt-4 flex items-center justify-between gap-4 text-xl font-semibold tracking-tight text-slate-950">
-      <span>{health?.summary ?? overview?.healthSummary ?? 'Estado da carteira indisponível.'}</span>
-      <span aria-hidden="true" className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-base shadow-sm ${aligned ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : notConfigured ? 'border-slate-200 bg-slate-100 text-slate-600' : 'border-amber-300 bg-amber-100 text-amber-700 shadow-amber-100'}`}>
-        <FontAwesomeIcon icon={aligned ? faCircleCheck : notConfigured ? faCircleInfo : faTriangleExclamation} />
-      </span>
-    </h2>
-    {overview?.mainDeviationSummary && <p className="mt-2 text-sm leading-6 text-slate-600">{overview.mainDeviationSummary}</p>}
-
-    {deviations.length > 0 && <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100">
-      {deviations.map(item => <div key={item.assetClass} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
-        <strong>{assetClassLabels[item.assetClass] ?? 'Outros ativos'}</strong>
-        <span className="text-slate-500">Atual {formatPercentage(item.currentPercentage)}% · alvo {formatPercentage(item.targetPercentage)}%</span>
-      </div>)}
-    </div>}
-
-    {notConfigured && <div className="mt-5 rounded-2xl bg-stone-50 p-4 text-sm leading-6 text-slate-600">
-      Configure as alocações-alvo para que o Prumo possa avaliar a distribuição da carteira e orientar seus aportes.
-      <Link to="/portfolio" className="mt-3 flex w-fit items-center gap-2 font-semibold text-slate-900">Configurar alocação-alvo <FontAwesomeIcon icon={faArrowRight} /></Link>
-    </div>}
-  </article>
-}
-
-void PortfolioHealthCardLegacy
-
-function healthScore(status: string | undefined) {
-  if (status === 'Aligned') return 100
-  if (status === 'SlightlyUnbalanced') return 80
-  if (status === 'Unbalanced') return 60
-  if (status === 'StronglyUnbalanced') return 35
-  return 0
-}
-
-function healthLabel(status: string | undefined) {
-  if (status === 'Aligned') return 'Alinhada'
-  if (status === 'SlightlyUnbalanced') return 'Levemente desbalanceada'
-  if (status === 'Unbalanced') return 'Desbalanceada'
-  if (status === 'StronglyUnbalanced') return 'Fortemente desbalanceada'
-  if (status === 'EmptyPortfolio') return 'Sem posições'
-  return 'Não configurada'
-}
-
-function healthTone(status: string | undefined) {
-  if (status === 'Aligned') return { ring: '#334155', badge: 'bg-slate-100 text-slate-700' }
-  if (status === 'SlightlyUnbalanced') return { ring: '#eab308', badge: 'bg-yellow-50 text-yellow-700' }
-  if (status === 'Unbalanced') return { ring: '#f97316', badge: 'bg-orange-50 text-orange-700' }
-  if (status === 'StronglyUnbalanced') return { ring: '#ef4444', badge: 'bg-rose-50 text-rose-700' }
-  return { ring: '#94a3b8', badge: 'bg-slate-100 text-slate-600' }
-}
-
-function PortfolioHealthCard({ data }: { data: Dashboard }) {
-  const health = data.portfolioHealthSummary
-  const overview = data.portfolioOverview
-  const deviations = [...(health?.allocationDeviations ?? [])]
-    .sort((left, right) => Math.abs(right.deviationPercentagePoints) - Math.abs(left.deviationPercentagePoints))
-    .slice(0, 3)
-  const score = healthScore(health?.status)
-  const tone = healthTone(health?.status)
-
-  return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Saúde da carteira</p>
-    <div className="mt-5 grid gap-5 md:grid-cols-[minmax(150px,0.72fr)_minmax(0,1.28fr)] md:gap-7">
-      <div className="flex flex-col items-center justify-center border-b border-slate-100 pb-5 md:border-b-0 md:border-r md:pb-0 md:pr-7">
-        <div className="relative grid h-32 w-32 place-items-center rounded-full" style={{ background: `conic-gradient(${tone.ring} ${score * 3.6}deg, #f1f5f9 0deg)` }}>
-          <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center">
-            <div><strong className="block text-3xl leading-none text-slate-950">{score}</strong><span className="text-xs font-semibold text-slate-500">/100</span></div>
-          </div>
-        </div>
-        <span className={`mt-4 rounded-xl px-6 py-2 text-sm font-semibold ${tone.badge}`}>{healthLabel(health?.status)}</span>
-      </div>
-      <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-slate-950">Resumo</h2>
-        {deviations.length > 0 ? <div className="mt-3 space-y-3">
-          {deviations.map(item => {
-            const aligned = Math.abs(item.deviationPercentagePoints) <= 2
-            const above = item.deviationPercentagePoints > 0
-            return <div key={item.assetClass} className="flex items-start gap-3">
-              <span aria-hidden="true" className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl ${aligned ? 'bg-emerald-50 text-emerald-600' : above ? 'bg-amber-50 text-amber-600' : 'bg-sky-50 text-sky-600'}`}><FontAwesomeIcon icon={aligned ? faCircleCheck : above ? faTriangleExclamation : faCircleInfo} /></span>
-              <div className="min-w-0"><p className="text-sm font-semibold leading-5 text-slate-800">{aligned ? `${assetClassLabels[item.assetClass] ?? 'Classe'} alinhada ao ideal` : `${assetClassLabels[item.assetClass] ?? 'Classe'} ${above ? 'acima' : 'abaixo'} do ideal`}</p><p className="text-xs leading-5 text-slate-500">Atual {formatPercentage(item.currentPercentage)}% · meta {formatPercentage(item.targetPercentage)}%</p></div>
-            </div>
-          })}
-        </div> : <div className="mt-3 flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600"><FontAwesomeIcon icon={faCircleInfo} /></span><div><p className="text-sm font-semibold text-slate-800">Defina uma alocação-alvo</p><p className="text-xs leading-5 text-slate-500">{overview?.healthSummary ?? 'Configure sua carteira para acompanhar este indicador.'}</p></div></div>}
-      </div>
-    </div>
-  </article>
-}
-
-void PortfolioHealthCard
 
 function priorityClasses(priority: number) {
   if (priority >= 3) return 'bg-rose-100 text-rose-700'
@@ -359,28 +259,7 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
     metadata.append(document.createTextNode(`Modelo: ${analysis.data.model || 'Não informado'} · Prompt: ${analysis.data.promptVersion || 'Não informado'}`))
     confidenceValue.appendChild(metadata)
   }, [analysis.data])
-  /*
-  useEffect(() => {
-    if ((!onMarkSeen && !onResolve) || !analysis.data) return
-    const dialog = document.querySelector('[aria-labelledby="recent-analysis-title"]')
-    const content = dialog?.firstElementChild!
-    if (!content || content.querySelector('[data-radar-actions]')) return
-    const actions = document.createElement('div')
-    actions.dataset.radarActions = 'true'
-    actions.className = 'mt-6 flex flex-wrap gap-2 border-t border-slate-200 pt-5'
-    if (onMarkSeen) {
-      const seen = document.createElement('button')
-      seen.type = 'button'; seen.className = 'cursor-pointer rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50'; seen.textContent = 'Marcar como visto'; seen.disabled = actionPending; seen.onclick = onMarkSeen!; actions.appendChild(seen)
-    }
-    if (onResolve) {
-      const resolve = document.createElement('button')
-      // @ts-expect-error legacy DOM action builder is disabled; actions render in JSX below.
-      resolve.type = 'button'; resolve.className = 'cursor-pointer rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-amber-500 hover:text-amber-700 disabled:opacity-50'; resolve.textContent = 'Fechar situação'; resolve.disabled = actionPending; resolve.onclick = onResolve; actions.appendChild(resolve)
-    }
-    content!.appendChild(actions)
-    return () => actions.remove()
-  }, [analysis.data, onMarkSeen, onResolve, actionPending])
-  */
+
 
   const hasVisibleAction = canManageSituation() && ((!isResolved && Boolean(onResolve)) || (isResolved && Boolean(onReopen)))
 

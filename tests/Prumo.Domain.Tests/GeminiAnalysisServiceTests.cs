@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Prumo.Application.Abstractions;
 using Prumo.Application.Documents;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Ai;
@@ -18,7 +17,7 @@ public sealed class GeminiAnalysisServiceTests
     public async Task EnviaGenerateContentComSchemaEExtraiResposta()
     {
         var handler = new StubHandler(_ => JsonResponse(ValidResponse()));
-        var result = await CreateService(handler).AnalyzeAsync("texto", Context);
+        var result = await CreateService(handler).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal(AnalysisImportance.Informative, result.Importance);
         Assert.Equal(AnalysisClassification.Distribution, result.Classification);
@@ -38,7 +37,7 @@ public sealed class GeminiAnalysisServiceTests
             {"candidates":[{"content":{"parts":[{"text":"{\"importance\":\"RELEVANT\",\"classification\":\"OTHER\",\"requiresAction\":false,\"suggestedAction\":\"NO_ACTION\",\"summary\":\"Resumo\",\"impact\":\"Impacto\",\"affectedAssets\":[],\"confidence\":0.9,\"events\":[{\"eventType\":\"FINANCIAL_RESULT\",\"occurredAt\":null,\"summary\":\"Resultado\",\"facts\":[],\"affectedAssets\":[]}] }"} ]}}]}
             """));
 
-        var result = await CreateService(handler).AnalyzeAsync("texto", Context);
+        var result = await CreateService(handler).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal(SuggestedAction.NoAction, result.SuggestedAction);
         var eventResult = Assert.Single(result.Events!);
@@ -52,7 +51,7 @@ public sealed class GeminiAnalysisServiceTests
         var response = $"{{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":{JsonSerializer.Serialize(payload)}}}]}}}}]}}";
         var handler = new StubHandler(_ => JsonResponse(response));
 
-        var result = await CreateService(handler).AnalyzeAsync("texto", Context);
+        var result = await CreateService(handler).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal(DateTimeOffset.Parse("2026-08-27T00:00:00Z"), Assert.Single(result.Events!).OccurredAt);
     }
@@ -61,7 +60,7 @@ public sealed class GeminiAnalysisServiceTests
     public async Task UsaChaveNoHeaderProprioDoGemini()
     {
         var handler = new StubHandler(_ => JsonResponse(ValidResponse()));
-        await CreateService(handler).AnalyzeAsync("texto", Context);
+        await CreateService(handler).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal("test-key", handler.GeminiApiKey);
         Assert.Null(handler.Authorization);
@@ -75,7 +74,7 @@ public sealed class GeminiAnalysisServiceTests
             Content = new StringContent("{\"error\":{\"details\":[{\"retryDelay\":\"7s\"}]}}", Encoding.UTF8, "application/json")
         };
 
-        var exception = await Assert.ThrowsAsync<AiProviderRateLimitException>(() => CreateService(new StubHandler(_ => response)).AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<AiProviderRateLimitException>(() => CreateService(new StubHandler(_ => response)).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Equal(TimeSpan.FromSeconds(7), exception.RetryAfter);
     }
@@ -103,7 +102,7 @@ public sealed class GeminiAnalysisServiceTests
             new AiAnalysisValidator(),
             NullLogger<GeminiAnalysisService>.Instance);
 
-        var result = await service.AnalyzeAsync("texto", Context);
+        var result = await service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal("gemini-3.1-flash-lite", result.Model);
         Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", requests[1].ToString());
@@ -121,7 +120,7 @@ public sealed class GeminiAnalysisServiceTests
             new AiAnalysisValidator(),
             NullLogger<GeminiAnalysisService>.Instance);
 
-        var result = await service.AnalyzeAsync("texto", Context);
+        var result = await service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal("fallback", result.Model);
     }
@@ -133,7 +132,7 @@ public sealed class GeminiAnalysisServiceTests
     [InlineData(HttpStatusCode.InternalServerError, typeof(HttpRequestException))]
     public async Task TrataErrosHttp(HttpStatusCode statusCode, Type exceptionType)
     {
-        var exception = await Record.ExceptionAsync(() => CreateService(new StubHandler(_ => new HttpResponseMessage(statusCode))).AnalyzeAsync("texto", Context));
+        var exception = await Record.ExceptionAsync(() => CreateService(new StubHandler(_ => new HttpResponseMessage(statusCode))).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
         Assert.NotNull(exception);
         Assert.IsType(exceptionType, exception);
     }
@@ -157,7 +156,7 @@ public sealed class GeminiAnalysisServiceTests
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return JsonResponse(ValidResponse());
         }), 1);
-        await Assert.ThrowsAnyAsync<TaskCanceledException>(() => service.AnalyzeAsync("texto", Context));
+        await Assert.ThrowsAnyAsync<TaskCanceledException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -166,7 +165,7 @@ public sealed class GeminiAnalysisServiceTests
     [InlineData("{\"candidates\":[{\"finishReason\":\"STOP\",\"content\":{\"parts\":[]}}]}", "vazia")]
     public async Task RejeitaRespostaSemTextoOuBloqueada(string response, string expected)
     {
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService(new StubHandler(_ => JsonResponse(response))).AnalyzeAsync("texto", Context));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService(new StubHandler(_ => JsonResponse(response))).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
         Assert.Contains(expected, exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -174,7 +173,7 @@ public sealed class GeminiAnalysisServiceTests
     public async Task RejeitaJsonInternoInvalido()
     {
         const string response = "{\"candidates\":[{\"finishReason\":\"STOP\",\"content\":{\"parts\":[{\"text\":\"not-json\"}]}}]}";
-        await Assert.ThrowsAsync<JsonException>(() => CreateService(new StubHandler(_ => JsonResponse(response))).AnalyzeAsync("texto", Context));
+        await Assert.ThrowsAsync<JsonException>(() => CreateService(new StubHandler(_ => JsonResponse(response))).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -182,7 +181,7 @@ public sealed class GeminiAnalysisServiceTests
     {
         const string invalidPayload = "{\"importance\":\"RELEVANT\",\"classification\":\"OTHER\",\"requiresAction\":false,\"suggestedAction\":\"NO_ACTION\",\"summary\":\"\",\"impact\":\"impacto\",\"portfolioImpact\":\"impacto\",\"affectedAssets\":[],\"confidence\":1}";
         var response = $"{{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":{JsonSerializer.Serialize(invalidPayload)}}}]}}}}]}}";
-        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService(new StubHandler(_ => JsonResponse(response))).AnalyzeAsync("texto", Context));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateService(new StubHandler(_ => JsonResponse(response))).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
     }
 
     private static GeminiAnalysisService CreateService(HttpMessageHandler handler, int timeoutSeconds = 5) => new(

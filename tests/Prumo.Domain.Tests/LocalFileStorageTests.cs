@@ -17,11 +17,11 @@ public sealed class LocalFileStorageTests
             var storage = new LocalFileStorage(rootPath);
             await using var input = new MemoryStream(content);
 
-            var storedFile = await storage.SaveAsync(documentId, input, "pdf");
+            var storedFile = await storage.SaveAsync(documentId, input, "pdf", TestContext.Current.CancellationToken);
 
-            await using var reopened = await storage.OpenReadAsync(storedFile.Path);
+            await using var reopened = await storage.OpenReadAsync(storedFile.Path, TestContext.Current.CancellationToken);
             using var reader = new MemoryStream();
-            await reopened.CopyToAsync(reader);
+            await reopened.CopyToAsync(reader, TestContext.Current.CancellationToken);
 
             Assert.Equal(content, reader.ToArray());
             Assert.False(string.IsNullOrWhiteSpace(storedFile.Hash));

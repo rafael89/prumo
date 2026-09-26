@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
@@ -34,7 +33,7 @@ public sealed class DocumentStorageRepairWorkerTests
         {
             var db = seedScope.ServiceProvider.GetRequiredService<PrumoDbContext>();
             db.AddRange(asset, portfolio, position, existingFile, missingFile, failedAnalysis);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         var worker = new DocumentStorageRepairWorker(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<DocumentStorageRepairWorker>.Instance);
@@ -42,15 +41,15 @@ public sealed class DocumentStorageRepairWorkerTests
 
         await using var verifyScope = provider.CreateAsyncScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<PrumoDbContext>();
-        var persistedAnalysisJob = await verifyDb.ProcessingJobs.SingleAsync(job => job.Id == failedAnalysis.Id);
-        var persistedExistingFile = await verifyDb.Documents.SingleAsync(document => document.Id == existingFile.Id);
-        var persistedMissingFile = await verifyDb.Documents.SingleAsync(document => document.Id == missingFile.Id);
+        var persistedAnalysisJob = await verifyDb.ProcessingJobs.SingleAsync(job => job.Id == failedAnalysis.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var persistedExistingFile = await verifyDb.Documents.SingleAsync(document => document.Id == existingFile.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var persistedMissingFile = await verifyDb.Documents.SingleAsync(document => document.Id == missingFile.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ProcessingJobStatus.Failed, persistedAnalysisJob.Status);
         Assert.Equal(1, persistedAnalysisJob.Attempts);
         Assert.Equal(DocumentProcessingStatus.Error, persistedExistingFile.ProcessingStatus);
         Assert.Equal("existing.pdf", persistedExistingFile.FilePath);
         Assert.Null(persistedMissingFile.FilePath);
-        Assert.Single(await verifyDb.ProcessingJobs.Where(job => job.DocumentId == missingFile.Id && job.JobType == ProcessingJobType.DownloadDocument).ToListAsync());
+        Assert.Single(await verifyDb.ProcessingJobs.Where(job => job.DocumentId == missingFile.Id && job.JobType == ProcessingJobType.DownloadDocument).ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     private static Document NewDocument(Guid assetId, string path)

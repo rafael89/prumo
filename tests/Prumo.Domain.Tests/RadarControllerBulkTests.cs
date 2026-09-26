@@ -19,7 +19,7 @@ public sealed class RadarControllerBulkTests
         var portfolioId = Guid.NewGuid();
         var actionItem = AddAssessment(db, portfolioId, AnalysisImportance.Relevant, ActionRequirement.Review);
         var informativeItem = AddAssessment(db, portfolioId, AnalysisImportance.Informative, ActionRequirement.None);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new RadarController(db).ResolveAll(portfolioId, CancellationToken.None);
 

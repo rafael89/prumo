@@ -1,12 +1,10 @@
 using System.IO.Compression;
 using System.Net;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Prumo.Domain.Enums;
-using Prumo.Application.Abstractions;
 using Prumo.Infrastructure.DocumentSources;
 
 namespace Prumo.Domain.Tests;
@@ -24,7 +22,7 @@ public sealed class CvmFnetDocumentSourceTests
             DocumentosEventuaisUrlTemplate = "https://dados.cvm.gov.br/eventual_{0}.csv"
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
-        var candidates = await source.FindAsync(new[] { new DocumentSourceAsset("ABCD11", "11.111.111/0001-11") });
+        var candidates = await source.FindAsync(new[] { new DocumentSourceAsset("ABCD11", "11.111.111/0001-11") }, TestContext.Current.CancellationToken);
 
         Assert.Single(candidates);
         Assert.Equal("ABCD11", candidates[0].Ticker);
@@ -49,7 +47,7 @@ public sealed class CvmFnetDocumentSourceTests
             }),
             NullLogger<CvmFnetDocumentSource>.Instance);
 
-        var candidates = await source.FindAsync(new[] { "XPLG11" });
+        var candidates = await source.FindAsync(new[] { "XPLG11" }, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, candidates.Count);
         Assert.Equal(DocumentType.RelevantFact, candidates[0].DocumentType);
@@ -71,7 +69,7 @@ public sealed class CvmFnetDocumentSourceTests
             CnpjPorTicker = new Dictionary<string, string> { ["XPLG11"] = "26.502.794/0001-85" }
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
-        var candidate = Assert.Single(await source.FindAsync(new[] { "XPLG11" }));
+        var candidate = Assert.Single(await source.FindAsync(new[] { "XPLG11" }, TestContext.Current.CancellationToken));
 
         Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1306470&cvm=true", candidate.SourceUrl);
         Assert.Equal("https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1306470&cvm=true", candidate.DownloadUrl);
@@ -88,7 +86,7 @@ public sealed class CvmFnetDocumentSourceTests
             DocumentosEventuaisUrlTemplate = "https://dados.cvm.gov.br/eventual_{0}.csv"
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
-        var candidate = Assert.Single(await source.FindAsync(new[] { new DocumentSourceAsset("ABCD11", "11.111.111/0001-11") }));
+        var candidate = Assert.Single(await source.FindAsync(new[] { new DocumentSourceAsset("ABCD11", "11.111.111/0001-11") }, TestContext.Current.CancellationToken));
 
         Assert.Equal("Relatórios", candidate.SourceCategory);
         Assert.Equal("Relatório Gerencial", candidate.SourceType);
@@ -109,7 +107,7 @@ public sealed class CvmFnetDocumentSourceTests
             FnetDocumentsUrl = "https://fnet.test/documents"
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
-        var candidate = Assert.Single(await source.FindAsync(new[] { new DocumentSourceAsset("HGBS11", "08.431.747/0001-06", AssetClass.Fii) }));
+        var candidate = Assert.Single(await source.FindAsync(new[] { new DocumentSourceAsset("HGBS11", "08.431.747/0001-06", AssetClass.Fii) }, new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 14, 0, 0, 0, TimeSpan.Zero), TestContext.Current.CancellationToken));
 
         Assert.Equal("1315141", candidate.SourceIdentifier);
         Assert.Equal(DocumentType.ManagementReport, candidate.DocumentType);
@@ -129,10 +127,7 @@ public sealed class CvmFnetDocumentSourceTests
             FnetDocumentsUrl = "https://fnet.test/documents"
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
-        var candidates = await source.FindAsync(
-            new[] { new DocumentSourceAsset("VGIP11", "34.197.811/0001-46", AssetClass.Fii) },
-            new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2026, 9, 14, 0, 0, 0, TimeSpan.Zero));
+        var candidates = await source.FindAsync(new[] { new DocumentSourceAsset("VGIP11", "34.197.811/0001-46", AssetClass.Fii) }, new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 14, 0, 0, 0, TimeSpan.Zero), TestContext.Current.CancellationToken);
 
         var candidate = Assert.Single(candidates);
         Assert.Equal("1316192", candidate.SourceIdentifier);
@@ -154,7 +149,7 @@ public sealed class CvmFnetDocumentSourceTests
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
         var candidates = await source.FindAsync(new[]
-            { new DocumentSourceAsset("HGBS11", "08.431.747/0001-06", AssetClass.Fii) });
+            { new DocumentSourceAsset("HGBS11", "08.431.747/0001-06", AssetClass.Fii) }, TestContext.Current.CancellationToken);
 
         Assert.Single(candidates);
         Assert.Equal("1306470", candidates[0].SourceIdentifier);
@@ -169,7 +164,7 @@ public sealed class CvmFnetDocumentSourceTests
             Options.Create(new CvmFnetOptions()),
             NullLogger<CvmFnetDocumentSource>.Instance);
 
-        var candidates = await source.FindAsync(new[] { "BBSE3" });
+        var candidates = await source.FindAsync(new[] { "BBSE3" }, TestContext.Current.CancellationToken);
 
         Assert.Empty(candidates);
     }
@@ -270,7 +265,7 @@ public sealed class CvmFnetDocumentSourceTests
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
         var candidate = Assert.Single(await source.FindAsync(new[]
-            { new DocumentSourceAsset("BBSE3", "02.916.265/0001-60", AssetClass.BrazilianStock) }));
+            { new DocumentSourceAsset("BBSE3", "02.916.265/0001-60", AssetClass.BrazilianStock) }, TestContext.Current.CancellationToken));
 
         Assert.Equal("BBSE3", candidate.Ticker);
         Assert.Equal(DocumentType.RelevantFact, candidate.DocumentType);
@@ -288,7 +283,7 @@ public sealed class CvmFnetDocumentSourceTests
         }), NullLogger<CvmFnetDocumentSource>.Instance);
 
         var candidates = await source.FindAsync(new[]
-            { new DocumentSourceAsset("BBSE3", "02.916.265/0001-60", AssetClass.BrazilianStock) });
+            { new DocumentSourceAsset("BBSE3", "02.916.265/0001-60", AssetClass.BrazilianStock) }, TestContext.Current.CancellationToken);
 
         Assert.Empty(candidates);
     }

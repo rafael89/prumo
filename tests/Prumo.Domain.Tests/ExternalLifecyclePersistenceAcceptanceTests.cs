@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using Prumo.Api.Controllers;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
-using Prumo.Infrastructure.MarketData;
 using Prumo.Infrastructure.Persistence;
 
 namespace Prumo.Domain.Tests;
@@ -22,11 +21,11 @@ public sealed class ExternalLifecyclePersistenceAcceptanceTests
         var guidance = new PersistedContributionGuidance(portfolio.Id, 100, "s", "t", "i", "R16.5D", "test", "test", "Available", "r", "{}");
         guidance.ReplaceAllocations(new[] { new PersistedContributionGuidanceAllocation(guidance.Id, identity.Key.Value, "Brapi", "EXT11", "Empresa Externa", AssetClass.BrazilianStock, AssetType.Stock, "B3", "BRL", "Tecnologia", "verified", 100, "r", .9m, "[]") });
         db.ContributionGuidances.Add(guidance);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         await using (var reloaded = CreateDb(databaseName))
         {
-            var stored = await reloaded.ContributionGuidanceAllocations.SingleAsync();
+            var stored = await reloaded.ContributionGuidanceAllocations.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(identity.Key.Value, stored.CandidateKey);
             Assert.Equal("EXT11", stored.Ticker);
             Assert.Equal("Brapi", stored.Provider);
@@ -36,17 +35,17 @@ public sealed class ExternalLifecyclePersistenceAcceptanceTests
         var first = await new PortfolioTransactionsController(db).Confirm(portfolio.Id,
             new ConfirmContributionRequest(guidance.Id, new[] { new ContributionPurchaseRequest(Guid.Empty, 1, 10, identity.Key.Value) }), CancellationToken.None);
         Assert.IsType<OkObjectResult>(first.Result);
-        var asset = await db.Assets.SingleAsync(x => x.Ticker == "EXT11");
+        var asset = await db.Assets.SingleAsync(x => x.Ticker == "EXT11", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal("Empresa Externa", asset.Name);
-        Assert.Single(await db.PortfolioTransactions.Where(x => x.ContributionGuidanceId == guidance.Id).ToListAsync());
-        Assert.Equal(10, (await db.PortfolioTransactions.SingleAsync()).TotalAmount);
-        Assert.Equal(1, (await db.PortfolioPositions.SingleAsync()).Quantity);
+        Assert.Single(await db.PortfolioTransactions.Where(x => x.ContributionGuidanceId == guidance.Id).ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(10, (await db.PortfolioTransactions.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).TotalAmount);
+        Assert.Equal(1, (await db.PortfolioPositions.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).Quantity);
 
         var second = await new PortfolioTransactionsController(db).Confirm(portfolio.Id,
             new ConfirmContributionRequest(guidance.Id, new[] { new ContributionPurchaseRequest(Guid.Empty, 1, 10, identity.Key.Value) }), CancellationToken.None);
         Assert.IsType<ConflictObjectResult>(second.Result);
-        Assert.Single(await db.Assets.Where(x => x.Ticker == "EXT11").ToListAsync());
-        Assert.Single(await db.PortfolioTransactions.ToListAsync());
+        Assert.Single(await db.Assets.Where(x => x.Ticker == "EXT11").ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Single(await db.PortfolioTransactions.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -59,14 +58,14 @@ public sealed class ExternalLifecyclePersistenceAcceptanceTests
         var guidance = new PersistedContributionGuidance(portfolio.Id, 50, "s", "t", "i", "R16.5D", "test", "test", "Available", "r", "{}");
         guidance.ReplaceAllocations(new[] { new PersistedContributionGuidanceAllocation(guidance.Id, identity.Key.Value, "Brapi", "EXT11", "Novo nome", AssetClass.BrazilianStock, AssetType.Stock, "B3", "BRL", null, "verified", 50, "r", .9m, "[]") });
         db.AddRange(portfolio, existing, guidance);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioTransactionsController(db).Confirm(portfolio.Id,
             new ConfirmContributionRequest(guidance.Id, new[] { new ContributionPurchaseRequest(Guid.Empty, 1, 10, identity.Key.Value) }), CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Single(await db.Assets.Where(x => x.Ticker == "EXT11").ToListAsync());
-        Assert.Equal(existing.Id, (await db.PortfolioTransactionItems.SingleAsync()).AssetId);
+        Assert.Single(await db.Assets.Where(x => x.Ticker == "EXT11").ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(existing.Id, (await db.PortfolioTransactionItems.SingleAsync(cancellationToken: TestContext.Current.CancellationToken)).AssetId);
     }
 
     [Fact]
@@ -78,14 +77,14 @@ public sealed class ExternalLifecyclePersistenceAcceptanceTests
         var guidance = new PersistedContributionGuidance(portfolio.Id, 50, "s", "t", "i", "R16.5D", "test", "test", "Available", "r", "{}");
         guidance.ReplaceAllocations(new[] { new PersistedContributionGuidanceAllocation(guidance.Id, identity.Key.Value, "Brapi", "EXT11", "Externa", AssetClass.BrazilianStock, AssetType.Stock, "B3", "BRL", null, "verified", 50, "r", .9m, "[]") });
         db.AddRange(portfolio, guidance);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioTransactionsController(db).Confirm(portfolio.Id,
             new ConfirmContributionRequest(guidance.Id, new[] { new ContributionPurchaseRequest(Guid.Empty, 1, 10, "ExternalDiscovery:Brapi:B3:FORGED") }), CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
-        Assert.Empty(await db.Assets.ToListAsync());
-        Assert.Empty(await db.PortfolioTransactions.ToListAsync());
+        Assert.Empty(await db.Assets.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Empty(await db.PortfolioTransactions.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -102,7 +101,7 @@ public sealed class ExternalLifecyclePersistenceAcceptanceTests
             new(guidance.Id, identity.Key.Value, "Brapi", "EXT11", "Externa", AssetClass.BrazilianStock, AssetType.Stock, "B3", "BRL", null, "verified", 60, "external", .9m, "[]")
         });
         db.AddRange(portfolio, known, guidance);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioTransactionsController(db).Confirm(portfolio.Id,
             new ConfirmContributionRequest(guidance.Id, new[]
@@ -112,9 +111,9 @@ public sealed class ExternalLifecyclePersistenceAcceptanceTests
             }), CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Equal(2, await db.PortfolioTransactionItems.CountAsync());
-        Assert.Contains(known.Id, await db.PortfolioTransactionItems.Select(x => x.AssetId).ToListAsync());
-        Assert.Single(await db.Assets.Where(x => x.Ticker == "EXT11").ToListAsync());
+        Assert.Equal(2, await db.PortfolioTransactionItems.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Contains(known.Id, await db.PortfolioTransactionItems.Select(x => x.AssetId).ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Single(await db.Assets.Where(x => x.Ticker == "EXT11").ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     private static PrumoDbContext CreateDb(string? name = null)

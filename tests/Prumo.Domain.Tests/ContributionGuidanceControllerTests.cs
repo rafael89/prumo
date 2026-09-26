@@ -5,7 +5,6 @@ using Prumo.Application.Intelligence;
 using Prumo.Application.Portfolio;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
-using Prumo.Domain.Rules;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.MarketData;
 using Microsoft.AspNetCore.Mvc;
@@ -24,12 +23,12 @@ public sealed class ContributionGuidanceControllerTests
         await using var db = CreateDbContext();
         var (portfolio, targets) = await SeedPortfolioAsync(db);
         var oldGuidance = AddCompletedGuidance(db, portfolio, targets, "R4-2.0");
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
 
         Assert.IsType<AcceptedResult>(result.Result);
-        var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync();
+        var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(2, guidances.Count);
         Assert.Equal(oldGuidance.Id, guidances[0].Id);
         Assert.Equal("R4-9.2", guidances[1].EngineVersion);
@@ -37,7 +36,7 @@ public sealed class ContributionGuidanceControllerTests
         Assert.Equal(ContributionGuidanceJobStatus.Queued, await db.ContributionGuidanceJobs
             .Where(x => x.ContributionGuidanceId == guidances[1].Id)
             .Select(x => x.Status)
-            .SingleAsync());
+            .SingleAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -46,12 +45,12 @@ public sealed class ContributionGuidanceControllerTests
         await using var db = CreateDbContext();
         var (portfolio, targets) = await SeedPortfolioAsync(db);
         var currentGuidance = AddCompletedGuidance(db, portfolio, targets, "R4-9.2");
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
 
         Assert.IsType<AcceptedResult>(result.Result);
-        var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync();
+        var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(2, guidances.Count);
         Assert.Equal(currentGuidance.Id, guidances[0].Id);
         Assert.Equal("R4-9.2", guidances[1].EngineVersion);
@@ -59,7 +58,7 @@ public sealed class ContributionGuidanceControllerTests
         Assert.Equal(ContributionGuidanceJobStatus.Queued, await db.ContributionGuidanceJobs
             .Where(x => x.ContributionGuidanceId == guidances[1].Id)
             .Select(x => x.Status)
-            .SingleAsync());
+            .SingleAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -68,12 +67,12 @@ public sealed class ContributionGuidanceControllerTests
         await using var db = CreateDbContext();
         var (portfolio, targets) = await SeedPortfolioAsync(db);
         var staleGuidance = AddCompletedGuidance(db, portfolio, targets, "R4-3.0", "stale-intelligence-context");
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
 
         Assert.IsType<AcceptedResult>(result.Result);
-        var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync();
+        var guidances = await db.ContributionGuidances.OrderBy(x => x.GeneratedAt).ToListAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(2, guidances.Count);
         Assert.Equal(staleGuidance.Id, guidances[0].Id);
         Assert.Equal(ContributionIntelligenceContextKeyCalculator.Calculate(Array.Empty<GuidanceAssessment>()), guidances[1].IntelligenceContextKey);
@@ -86,7 +85,7 @@ public sealed class ContributionGuidanceControllerTests
         var (portfolio, targets) = await SeedPortfolioAsync(db);
         var guidance = AddCompletedGuidance(db, portfolio, targets, "R4-9.2");
         guidance.UpdateIntelligence("AI", "model-x", "IntelligenceAvailable", "Aloca\u00e7\u00e3o R5.", "{\"engineVersion\":\"R5-ai-allocation\"}");
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await CreateController(db).Get(portfolio.Id, guidance.Id, CancellationToken.None);
 
@@ -104,12 +103,12 @@ public sealed class ContributionGuidanceControllerTests
         var (portfolio, targets) = await SeedPortfolioAsync(db);
         var catalogAsset = new Asset("WEGE3", "WEG", AssetType.Stock, "Industrial");
         db.Assets.Add(catalogAsset);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
 
         Assert.IsType<AcceptedResult>(result.Result);
-        var job = await db.ContributionGuidanceJobs.SingleAsync();
+        var job = await db.ContributionGuidanceJobs.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         var workItem = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(job.CandidatesJson);
         Assert.NotNull(workItem);
         Assert.DoesNotContain("positions", job.CandidatesJson, StringComparison.OrdinalIgnoreCase);
@@ -126,7 +125,7 @@ public sealed class ContributionGuidanceControllerTests
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
 
         Assert.IsType<AcceptedResult>(result.Result);
-        var petr4 = await db.Assets.SingleAsync(asset => asset.Ticker == "PETR4");
+        var petr4 = await db.Assets.SingleAsync(asset => asset.Ticker == "PETR4", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(EconomicSector.Energy, petr4.SectorCategory);
         Assert.Equal("BR", petr4.ListingCountryCode);
         Assert.Equal("BRL", petr4.TradingCurrency);
@@ -138,19 +137,19 @@ public sealed class ContributionGuidanceControllerTests
     {
         await using var db = CreateDbContext();
         var (portfolio, _) = await SeedPortfolioAsync(db);
-        var asset = await db.Assets.SingleAsync(x => x.Ticker == "PETR4");
+        var asset = await db.Assets.SingleAsync(x => x.Ticker == "PETR4", cancellationToken: TestContext.Current.CancellationToken);
         for (var index = 0; index < 40; index++)
         {
             var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow.AddDays(-index), new string('E', 8_000), new[] { new string('F', 2_000) });
             investmentEvent.AffectedAssets.Add(asset);
             db.InvestmentEvents.Add(investmentEvent);
         }
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), CancellationToken.None);
 
         Assert.IsType<AcceptedResult>(result.Result);
-        var job = await db.ContributionGuidanceJobs.SingleAsync();
+        var job = await db.ContributionGuidanceJobs.SingleAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(job.CandidatesJson.Length > 200_000);
         var workItem = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(job.CandidatesJson);
         Assert.NotNull(workItem);
@@ -171,13 +170,13 @@ public sealed class ContributionGuidanceControllerTests
         var (portfolio, _) = await SeedPortfolioAsync(db);
         var catalogAsset = new Asset("WEGE3", "WEG", AssetType.Stock, "Industrial");
         db.Assets.Add(catalogAsset);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var result = await new PortfolioTransactionsController(db).Confirm(portfolio.Id,
             new ConfirmContributionRequest(null, new[] { new ContributionPurchaseRequest(catalogAsset.Id, 10, 40) }), CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result.Result);
-        var position = await db.PortfolioPositions.SingleAsync(x => x.AssetId == catalogAsset.Id);
+        var position = await db.PortfolioPositions.SingleAsync(x => x.AssetId == catalogAsset.Id, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(10, position.Quantity);
         Assert.Equal(400, position.CurrentValue);
     }

@@ -12,24 +12,24 @@ public sealed class HistoricalCashStateTests
     [Fact]
     public async Task Replays_cash_flows_and_canonical_buy_sell()
     {
-        await using var db = CreateDb(); var s = await Setup(db, 1000); AddFlow(db, s, PortfolioCashFlowType.Contribution, 500, new(2025, 1, 2)); AddFlow(db, s, PortfolioCashFlowType.Income, 100, new(2025, 1, 3)); AddFlow(db, s, PortfolioCashFlowType.Withdrawal, 200, new(2025, 1, 4)); AddTransaction(db, s, PortfolioTransactionType.Buy, 10, 20, new(2025, 1, 5)); AddTransaction(db, s, PortfolioTransactionType.Sell, 5, 30, new(2025, 1, 6)); await db.SaveChangesAsync();
-        var result = await Service(db).Get(s.Portfolio.Id, new(2025, 1, 6), default);
+        await using var db = CreateDb(); var s = await Setup(db, 1000); AddFlow(db, s, PortfolioCashFlowType.Contribution, 500, new(2025, 1, 2)); AddFlow(db, s, PortfolioCashFlowType.Income, 100, new(2025, 1, 3)); AddFlow(db, s, PortfolioCashFlowType.Withdrawal, 200, new(2025, 1, 4)); AddTransaction(db, s, PortfolioTransactionType.Buy, 10, 20, new(2025, 1, 5)); AddTransaction(db, s, PortfolioTransactionType.Sell, 5, 30, new(2025, 1, 6)); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var result = await Service(db).Get(s.Portfolio.Id, new(2025, 1, 6), TestContext.Current.CancellationToken);
         Assert.Equal(1350, result!.Balance); Assert.Equal("Partial", result.Coverage);
     }
 
     [Fact]
     public async Task Complete_coverage_makes_known_cash_complete_and_negative_stays_negative()
     {
-        await using var db = CreateDb(); var s = await Setup(db, 0); AddTransaction(db, s, PortfolioTransactionType.Buy, 10, 20, new(2025, 1, 2)); AddCoverage(db, s, new(2025, 1, 1), new(2025, 1, 2)); await db.SaveChangesAsync();
-        var result = await Service(db).Get(s.Portfolio.Id, new(2025, 1, 2), default);
+        await using var db = CreateDb(); var s = await Setup(db, 0); AddTransaction(db, s, PortfolioTransactionType.Buy, 10, 20, new(2025, 1, 2)); AddCoverage(db, s, new(2025, 1, 1), new(2025, 1, 2)); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var result = await Service(db).Get(s.Portfolio.Id, new(2025, 1, 2), TestContext.Current.CancellationToken);
         Assert.Equal(-200, result!.Balance); Assert.Equal("Partial", result.Coverage); Assert.Contains("NegativeCashBalance", result.Warnings);
     }
 
     [Fact]
     public async Task Missing_anchor_does_not_assume_zero()
     {
-        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); db.Add(portfolio); await db.SaveChangesAsync();
-        var result = await Service(db).Get(portfolio.Id, new(2025, 1, 2), default);
+        await using var db = CreateDb(); var portfolio = new Portfolio("Teste"); db.Add(portfolio); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var result = await Service(db).Get(portfolio.Id, new(2025, 1, 2), TestContext.Current.CancellationToken);
         Assert.Null(result!.Balance); Assert.Equal("Unavailable", result.Coverage);
     }
 

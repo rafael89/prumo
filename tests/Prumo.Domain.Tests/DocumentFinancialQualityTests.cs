@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Prumo.Application.Abstractions;
 using Prumo.Application.Contributions;
 using Prumo.Application.Documents;
 using Prumo.Domain.Entities;
@@ -167,10 +166,10 @@ public sealed class DocumentFinancialQualityTests
     {
         await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var asset = Asset("AAA3"); var document = Document(asset.Id, "a"); db.AddRange(asset, document);
-        db.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "ROE", .9m)); await db.SaveChangesAsync();
-        if (!await db.DocumentFinancialFacts.AnyAsync(x => x.DocumentId == document.Id && x.Metric == FinancialFactMetric.Roe && x.ReferencePeriod == new DateOnly(2025, 12, 31) && x.PeriodType == FinancialPeriodType.Annual)) db.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "ROE", .9m));
-        await db.SaveChangesAsync();
-        Assert.Single(await db.DocumentFinancialFacts.ToListAsync());
+        db.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "ROE", .9m)); await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        if (!await db.DocumentFinancialFacts.AnyAsync(x => x.DocumentId == document.Id && x.Metric == FinancialFactMetric.Roe && x.ReferencePeriod == new DateOnly(2025, 12, 31) && x.PeriodType == FinancialPeriodType.Annual, cancellationToken: TestContext.Current.CancellationToken)) db.DocumentFinancialFacts.Add(new DocumentFinancialFact(document.Id, asset.Id, FinancialFactMetric.Roe, new(2025, 12, 31), FinancialPeriodType.Annual, .18m, null, "ratio", "ROE", .9m));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.Single(await db.DocumentFinancialFacts.ToListAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]

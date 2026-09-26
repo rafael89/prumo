@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using Prumo.Worker;
-using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Prumo.Application.Abstractions;
 using Prumo.Application.Documents;
