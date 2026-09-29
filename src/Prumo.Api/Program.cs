@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using System.Text.Json;
 using Prumo.Application.Abstractions;
 using Prumo.Infrastructure.DocumentSources;
+using Prumo.Infrastructure.Documents;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Infrastructure.Storage;
 using Prumo.Infrastructure.Notifications;
@@ -30,6 +31,7 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMidd
 
 builder.Services.AddControllers();
 builder.Services.AddScoped<PortfolioHistoryService>();
+builder.Services.AddScoped<DividendForecastService>();
 builder.Services.AddScoped<MarketDataService>();
 builder.Services.AddScoped<ExternalAssetMaterializer>();
 builder.Services.AddScoped<AssetMetadataCatalogSyncService>();
@@ -63,6 +65,8 @@ builder.Services.AddSingleton<IPortfolioImporter, B3XlsxPortfolioImporter>();
 builder.Services.AddScoped<NewAssetBootstrapService>();
 builder.Services.AddScoped<IDocumentSource>(provider => provider.GetRequiredService<CvmFnetDocumentSource>());
 builder.Services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(builder.Configuration["Storage:RootPath"] ?? "/storage"));
+builder.Services.AddSingleton<IPdfTextExtractor, PdfPigTextExtractor>();
+builder.Services.AddMemoryCache();
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("postgres", timeout: TimeSpan.FromSeconds(5));
 builder.Services.AddSingleton<IPortfolioAssessmentFreshnessEvaluator, PortfolioAssessmentFreshnessEvaluator>();
 builder.Services.AddSingleton<IPortfolioImpactAssessmentService, PortfolioImpactAssessmentService>();

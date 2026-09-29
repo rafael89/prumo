@@ -6,7 +6,8 @@ namespace Prumo.Infrastructure.Documents;
 public enum DocumentPayloadKind
 {
     Pdf,
-    Xml
+    Xml,
+    Html
 }
 
 public static class DocumentPayloadDetector

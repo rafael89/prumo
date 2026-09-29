@@ -166,17 +166,23 @@ public sealed class DocumentDownloadWorker : BackgroundService
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        if (!DocumentPayloadDetector.TryDetect(payload, response.Content.Headers.ContentType?.MediaType, out var payloadKind))
+        var detected = DocumentPayloadDetector.TryDetect(payload, response.Content.Headers.ContentType?.MediaType, out var payloadKind);
+        if (!detected && OfficialCvmHtmlExtractor.IsOfficialCvmUrl(downloadUri) && OfficialCvmHtmlExtractor.TryExtract(payload, out _))
+        {
+            payloadKind = DocumentPayloadKind.Html;
+            detected = true;
+        }
+        if (!detected)
         {
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "<ausente>";
             var preview = Encoding.UTF8.GetString(payload, 0, Math.Min(payload.Length, 120))
                 .Replace('\r', ' ')
                 .Replace('\n', ' ');
-            throw new InvalidOperationException($"Download do documento não retornou PDF/XML válido; contentType={contentType}; preview={preview}");
+            throw new InvalidOperationException($"Download do documento não retornou PDF/XML/HTML oficial válido; contentType={contentType}; preview={preview}");
         }
 
         await using var content = new MemoryStream(payload, writable: false);
-        var extension = payloadKind == DocumentPayloadKind.Xml ? "xml" : "pdf";
+        var extension = payloadKind switch { DocumentPayloadKind.Xml => "xml", DocumentPayloadKind.Html => "html", _ => "pdf" };
         var storedFile = await storage.SaveAsync(job.Document.Id, content, extension, cancellationToken);
         var duplicate = await dbContext.Documents.AsNoTracking()
             .Where(document => document.Id != job.Document.Id && document.FileHash == storedFile.Hash && document.FilePath != null)

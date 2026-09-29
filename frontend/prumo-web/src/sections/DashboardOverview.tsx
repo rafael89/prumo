@@ -313,6 +313,37 @@ function ContributionWidget() {
   return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm sm:p-6 lg:col-span-2"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Próximo passo</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Planeje seu próximo aporte.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Simule uma distribuição usando suas alocações-alvo, posições atuais e a inteligência da carteira.</p></div><Link to="/contributions" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700">Ir para aportes <FontAwesomeIcon icon={faArrowRight} /></Link></div></article>
 }
 
+type DividendForecast = {
+  estimatedMonthlyAmount: number
+  referenceMonth: string
+  items: Array<{ assetId: string; ticker: string; estimatedMonthlyAmount: number | null; source: string; documentUrl: string | null; referenceDate: string | null; paymentDate: string | null }>
+}
+
+function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: string; privacyHidden: boolean }) {
+  const forecast = useQuery({
+    queryKey: ['dividend-forecast', portfolioId],
+    queryFn: async () => {
+      const response = await fetch(`${apiBaseUrl}/api/portfolios/${portfolioId}/dividend-forecast`)
+      if (!response.ok) throw new Error('Não foi possível carregar a previsão de rendimentos.')
+      return response.json() as Promise<DividendForecast>
+    },
+  })
+  const currency = (amount: number) => privacyHidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
+  const orderedItems = [...(forecast.data?.items ?? [])].sort((left, right) =>
+    (left.paymentDate ?? '9999-12-31').localeCompare(right.paymentDate ?? '9999-12-31')
+    || left.ticker.localeCompare(right.ticker, 'pt-BR', { sensitivity: 'base' }))
+  const monthLabel = forecast.data?.referenceMonth
+    ? new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(`${forecast.data.referenceMonth}T12:00:00`))
+    : 'mês atual'
+  return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
+    <h2 className="mt-2 text-xl font-semibold text-slate-950">Proventos de {monthLabel}</h2>
+    {forecast.isLoading ? <p className="mt-4 text-sm text-slate-500">Calculando previsão...</p> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : forecast.data?.items.length ? <>
+      <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[32rem] border-collapse text-sm"><thead><tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-3 pr-4">Ativo</th><th scope="col" className="pb-3 pr-4">Data de pagamento</th><th scope="col" className="pb-3 text-right">Valor bruto no mês</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-3 pr-4"><strong className="text-slate-900">{item.ticker}</strong><p className="text-xs text-slate-500">{item.source}{item.referenceDate ? ` · ${formatDate(item.referenceDate)}` : ''}{item.documentUrl && <> · <a className="font-semibold text-sky-700 hover:underline" href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer">Documento</a></>}</p></td><td className="py-3 pr-4 text-slate-700">{item.paymentDate ? new Intl.DateTimeFormat('pt-BR').format(new Date(`${item.paymentDate}T12:00:00`)) : 'Não informada'}</td><td className="py-3 text-right font-semibold text-slate-900">{item.estimatedMonthlyAmount === null ? 'Sem pagamento identificado' : currency(item.estimatedMonthlyAmount)}</td></tr>)}</tbody><tfoot><tr className="border-t border-slate-200"><th scope="row" colSpan={2} className="pt-4 text-left text-sm font-semibold text-slate-950">Total bruto do mês</th><td className="pt-4 text-right text-xl font-bold text-slate-950">{currency(forecast.data.estimatedMonthlyAmount)}</td></tr></tfoot></table></div>
+    </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum ativo na carteira.</p>}
+  </article>
+}
+
 function PortfolioAllocationCard({ data, privacyHidden = false, togglePrivacy }: { data: Dashboard; privacyHidden?: boolean; togglePrivacy?: () => void }) {
   const deviations = data.portfolioHealthSummary?.allocationDeviations ?? []
   const money = privacyHidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.totalValue)
@@ -349,5 +380,6 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
     </div>
     <ContributionWidget />
     <TransactionReconciliationSection portfolioId={activePortfolio.id} />
+    <DividendForecastWidget portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
   </section>
 }

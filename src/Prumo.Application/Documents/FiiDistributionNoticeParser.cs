@@ -1,0 +1,48 @@
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace Prumo.Application.Documents;
+
+public sealed record FiiDistributionNotice(decimal AmountPerUnit, DateOnly PaymentDate, DateOnly? BaseDate);
+
+public static partial class FiiDistributionNoticeParser
+{
+    [GeneratedRegex(@"(?im)^\s*(?:Valor\s+do\s+provento\s*(?:\(R\$\s*/\s*unidade\))?|ValorProvento(?:PorCota|PorUnidade)?|ValorRendimento(?:PorCota|PorUnidade)?)\s*(?:[:|]\s*|\s+)(?:R\$\s*)?(?<value>\d[\d.,]*)", RegexOptions.CultureInvariant)]
+    private static partial Regex AmountField();
+
+    [GeneratedRegex(@"(?im)^\s*(?:Data\s+do\s+pagamento|DataPagamento|DtPagamento)\s*(?:[:|]\s*|\s+)(?<value>\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}-\d{2}-\d{2})", RegexOptions.CultureInvariant)]
+    private static partial Regex PaymentField();
+
+    [GeneratedRegex(@"(?im)^\s*(?:Data-base(?:\s*\([^\r\n]*?\))?|DataBase|DtBase)\s*(?:[:|]\s*|\s+)(?<value>\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}-\d{2}-\d{2})", RegexOptions.CultureInvariant)]
+    private static partial Regex BaseField();
+
+    public static bool IsNotice(string? category, string? type)
+        => Normalize(category).Contains("AVISO AOS COTISTAS", StringComparison.Ordinal)
+            && Normalize(type).Contains("RENDIMENTOS E AMORTIZACOES", StringComparison.Ordinal);
+
+    public static FiiDistributionNotice? Parse(string text)
+    {
+        var amounts = AmountField().Matches(text).Select(x => ParseAmount(x.Groups["value"].Value)).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+        var payments = PaymentField().Matches(text).Select(x => ParseDate(x.Groups["value"].Value)).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+        if (amounts.Length != 1 || payments.Length != 1) return null;
+        var bases = BaseField().Matches(text).Select(x => ParseDate(x.Groups["value"].Value)).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+        return new FiiDistributionNotice(amounts[0], payments[0], bases.Length == 1 ? bases[0] : null);
+    }
+
+    private static decimal? ParseAmount(string value)
+    {
+        var decimalSeparator = value.LastIndexOf(',') > value.LastIndexOf('.') ? ',' : '.';
+        var normalized = decimalSeparator == ',' ? value.Replace(".", "").Replace(',', '.') : value.Replace(",", "");
+        return decimal.TryParse(normalized, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount) && amount > 0 && amount <= 1000 ? amount : null;
+    }
+
+    private static DateOnly? ParseDate(string value)
+        => DateOnly.TryParseExact(value, new[] { "d/M/yyyy", "dd/MM/yyyy", "d-M-yyyy", "dd-MM-yyyy", "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? date : null;
+
+    private static string Normalize(string? value)
+    {
+        var decomposed = (value ?? string.Empty).Normalize(NormalizationForm.FormD);
+        return new string(decomposed.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray()).ToUpperInvariant();
+    }
+}

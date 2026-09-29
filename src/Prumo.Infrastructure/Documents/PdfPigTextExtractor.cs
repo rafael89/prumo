@@ -23,6 +23,9 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             await pdf.CopyToAsync(buffer, cancellationToken);
             var bytes = buffer.ToArray();
 
+            if (OfficialCvmHtmlExtractor.TryExtract(bytes, out var htmlText))
+                return new PdfTextExtractionResult(true, htmlText, null);
+
             if (DocumentPayloadDetector.TryParseXml(bytes, out var xml))
             {
                 var text = ExtractXmlText(xml!);
