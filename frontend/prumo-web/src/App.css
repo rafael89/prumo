@@ -36,12 +36,12 @@
     width: 100%;
     margin: 0;
   }
+}
 
-  main .target-allocation-frame > section {
-    max-width: 72rem;
-    padding-top: 0;
-    padding-bottom: 0;
-  }
+.portfolio-layout .target-allocation-frame > section {
+  max-width: none;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .document-job-details { margin-top: 2rem; }
 
@@ -101,7 +101,7 @@
 .nav-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .nav-scroll::-webkit-scrollbar { display: none; }
 @media (max-width: 639px) {
-  /* Keep the document-processing message from taking the controls' row. */
+  /* Keep the import status from taking the controls' row. */
   nav > div:first-child {
     position: relative;
     display: grid;
@@ -111,13 +111,13 @@
   }
   nav > div:first-child > a:first-child { grid-column: 1; grid-row: 1; }
   nav > div:first-child > .nav-scroll { grid-column: 1 / -1; grid-row: 3; }
-  nav > div:first-child > div:nth-child(3) {
+  nav > div:first-child > .import-status {
     position: absolute;
     top: 0;
     right: 0;
     max-width: calc(100% - 8rem);
   }
-  nav > div:first-child > div:nth-child(4) { grid-column: 2; grid-row: 1; justify-self: end; }
+  nav > div:first-child > .radar-notification-control { grid-column: 2; grid-row: 1; justify-self: end; }
   nav > div:first-child > .theme-toggle { grid-column: 3; grid-row: 1; justify-self: end; }
   [data-radar-actions] { margin-top: .5rem; }
   [data-radar-actions] button { min-width: 0; gap: .375rem; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; justify-content: center; }

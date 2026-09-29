@@ -45,7 +45,6 @@ type RadarNotificationResponse = {
 }
 
 type PortfolioSummary = { id: string; name: string; totalValue: number; positionCount: number }
-type ProcessingStatus = { status: 'Pending' | 'Processing' | 'Completed' | 'Failed'; activeCount: number; failedCount: number; message: string }
 type Position = {
   id: string; assetId: string; assetClass: number
   ticker: string
@@ -112,7 +111,6 @@ function App() {
   const [historyTotalPages, setHistoryTotalPages] = useState(1)
   const [historyCursors, setHistoryCursors] = useState<Record<number, string | null>>({ 1: null })
   const [importProcessing, setImportProcessing] = useState(false)
-  const [failedNoticeOverride, setFailedNoticeOverride] = useState<{ portfolioId: string; dismissed: boolean } | null>(null)
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
     const saved = localStorage.getItem('prumo.theme.preference')
     return saved === 'light' || saved === 'dark' ? saved : 'system'
@@ -179,24 +177,12 @@ function App() {
   const activeDocumentSelectionKey = `${documentSelectionKey}|${activePortfolio?.id ?? ''}`
   const selectedDocumentId = documentSelection.key === activeDocumentSelectionKey ? documentSelection.id : documentIdFromUrl
   const setSelectedDocumentId = (id: string | null) => setDocumentSelection({ key: activeDocumentSelectionKey, id })
-  const failedNoticeDismissed = activePortfolio
-    ? failedNoticeOverride?.portfolioId === activePortfolio.id
-      ? failedNoticeOverride.dismissed
-      : localStorage.getItem(`prumo.failed-notice.${activePortfolio.id}`) === '1'
-    : false
-
   const dashboard = useQuery({
     queryKey: ['dashboard', activePortfolio?.id, positionPage],
     queryFn: () => getJson<Dashboard>(`/api/portfolios/${activePortfolio!.id}/dashboard?page=${positionPage}&pageSize=10`),
     enabled: Boolean(activePortfolio),
   })
 
-  const processingStatus = useQuery({
-    queryKey: ['document-processing-status', activePortfolio?.id],
-    queryFn: () => getJson<ProcessingStatus>(`/api/portfolios/${activePortfolio!.id}/document-processing-status`),
-    enabled: Boolean(activePortfolio),
-    refetchInterval: query => query.state.data?.status === 'Pending' || query.state.data?.status === 'Processing' ? 2000 : false,
-  })
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
   const [notificationPanelMounted, setNotificationPanelMounted] = useState(false)
   const [notificationToast, setNotificationToast] = useState<RadarNotificationItem | null>(null)
@@ -307,11 +293,6 @@ function App() {
       window.clearTimeout(hideTimeout)
     }
   }, [activePortfolio, radarNotifications.data])
-  const reprocessFailed = useMutation({
-    mutationFn: () => sendJson<{ requeuedCount: number }, { errorContains: string | null }>(`/api/portfolios/${activePortfolio!.id}/documents/reprocess-failed`, 'POST', { errorContains: null }),
-    onSuccess: async () => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: false }); localStorage.removeItem(`prumo.failed-notice.${activePortfolio.id}`) } await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }); await queryClient.invalidateQueries({ queryKey: ['documents'] }) },
-    onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
-  })
 
   const selectedAsset = dashboard.data?.positions.find((position) => position.assetId === selectedAssetId) ?? null
   const selectedNotificationAssessment: DashboardAssessment | null = selectedNotification ? {
@@ -499,8 +480,8 @@ function App() {
           <div className="mx-auto flex max-w-358 flex-wrap items-center gap-4">
             <Link to="/" className="mr-auto inline-flex items-center gap-0 text-xl font-semibold tracking-tight">prumo<span className="text-amber-600">.</span></Link>
             <div className="nav-scroll order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Dashboard</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aporte</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents')}>Documentos</Link></div>
-            <div className="order-2 flex items-center gap-2 md:order-3">{importProcessing && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span>}{processingStatus.data && processingStatus.data.failedCount > 0 && !failedNoticeDismissed && <div role="status" className="flex items-center gap-2 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800"><span>{processingStatus.data.failedCount} documento(s) com erro</span><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="underline">{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar'}</button><button type="button" aria-label="Marcar aviso como visto" onClick={() => { if (activePortfolio?.id) { setFailedNoticeOverride({ portfolioId: activePortfolio.id, dismissed: true }); localStorage.setItem(`prumo.failed-notice.${activePortfolio.id}`, '1') } }} className="text-base leading-none">×</button></div>}{processingStatus.data && processingStatus.data.status !== 'Completed' && processingStatus.data.status !== 'Failed' && <span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{processingStatus.data.status === 'Processing' ? 'Analisando seus documentos...' : 'Seus documentos serão analisados em instantes.'}</span>}</div>
-            {activePortfolio && <div ref={notificationPanelRef} className="relative order-2 md:order-3">
+            {importProcessing && <div className="import-status order-2 flex items-center gap-2 md:order-3"><span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span></div>}
+            {activePortfolio && <div ref={notificationPanelRef} className="radar-notification-control relative order-2 md:order-3">
               <button type="button" aria-label={radarNotifications.data?.unread ? `${radarNotifications.data.unread} alertas não vistas` : 'Notificações do Radar'} aria-expanded={notificationPanelOpen} title="Notificações do Radar" onClick={toggleNotificationPanel} className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 ${radarNotifications.data?.unread ? 'border-amber-400' : 'border-slate-300'}`}><FontAwesomeIcon icon={faBell} />{Boolean(radarNotifications.data?.unread) && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-4 text-white">{(radarNotifications.data?.unread ?? 0) > 99 ? '99+' : radarNotifications.data?.unread}</span>}</button>
               {notificationPanelMounted && <div className={`absolute right-0 top-11 z-50 w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-xl max-sm:fixed max-sm:inset-x-2 max-sm:top-16 max-sm:w-auto ${notificationPanelOpen ? 'notification-panel-enter' : 'notification-panel-exit'}`}>
                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">Notificações</p></div><div className="flex shrink-0 items-center gap-2"><button type="button" aria-label="Marcar todos os itens como lidos" title="Marcar todos como lidos" disabled={markAllNotificationsSeen.isPending || (radarNotifications.data?.unread ?? 0) === 0} onClick={() => markAllNotificationsSeen.mutate()} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"><FontAwesomeIcon icon={faCheckDouble} className="text-[9px]" />{markAllNotificationsSeen.isPending ? 'Lendo...' : 'Ler todos'}</button><Link to="/radar" onClick={closeNotificationPanel} className="rounded-full px-2 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 hover:text-amber-800">Ver Radar</Link></div></div>
