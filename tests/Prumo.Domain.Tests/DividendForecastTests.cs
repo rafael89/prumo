@@ -179,6 +179,84 @@ public sealed class DividendForecastTests
     }
 
     [Fact]
+    public async Task Fii_notice_uses_persisted_analysis_after_the_document_file_is_removed()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 137);
+        var payment = CurrentMonthDate(20);
+        var document = new Document(asset.Id, DocumentType.Other, DateTimeOffset.UtcNow.AddDays(-1), "FNET", "notice-1",
+            "https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=1&cvm=true", Guid.NewGuid().ToString(),
+            sourceCategory: "Aviso aos Cotistas - Estruturado", sourceType: "Rendimentos e Amortizações");
+        var summary = $"O fundo anunciou rendimentos no valor de R$ 0,81 por cota, com pagamento programado para {payment:dd/MM/yyyy}.";
+        var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1", AnalysisImportance.Informative,
+            AnalysisClassification.Distribution, false, SuggestedAction.NoAction, summary, "Impacto", "Impacto",
+            new[] { asset.Ticker }, 1, "{}");
+        db.Documents.Add(document);
+        db.DocumentAnalyses.Add(analysis);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(""), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(110.97m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(payment, result.Items[0].PaymentDate);
+        Assert.Equal(document.SourceUrl, result.Items[0].DocumentUrl);
+    }
+
+    [Fact]
+    public async Task Distinct_fii_notices_in_the_same_month_show_only_the_latest_notice()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 100);
+        AddAnalyzedFiiNotice(db, asset, 0.50m, CurrentMonthDate(10), CurrentMonthDate(1), DateTimeOffset.UtcNow.AddDays(-2));
+        AddAnalyzedFiiNotice(db, asset, 0.75m, CurrentMonthDate(25), CurrentMonthDate(15), DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(""), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Single(result!.Items);
+        Assert.Equal(75m, result.EstimatedMonthlyAmount);
+        Assert.Equal(CurrentMonthDate(25), result.Items[0].PaymentDate);
+        Assert.Equal("Aviso aos Cotistas", result.Items[0].Source);
+    }
+
+    [Fact]
+    public async Task Revised_fii_notice_replaces_the_earlier_notice_for_the_same_base_date()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 100);
+        AddAnalyzedFiiNotice(db, asset, 0.80m, CurrentMonthDate(21), CurrentMonthDate(15), DateTimeOffset.UtcNow.AddDays(-2));
+        AddAnalyzedFiiNotice(db, asset, 1.00m, CurrentMonthDate(22), CurrentMonthDate(15), DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(""), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Single(result!.Items);
+        Assert.Equal(100m, result.EstimatedMonthlyAmount);
+        Assert.Equal(CurrentMonthDate(22), result.Items[0].PaymentDate);
+    }
+
+    [Fact]
+    public async Task Official_fii_notice_takes_priority_over_analyzed_event()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 100);
+        var payment = CurrentMonthDate(22);
+        AddDistribution(db, asset, $"R$ 0,80 por cota. Pagamento em {payment:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        AddAnalyzedFiiNotice(db, asset, 1.00m, payment, CurrentMonthDate(15), DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(""), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Single(result!.Items);
+        Assert.Equal(100m, result.EstimatedMonthlyAmount);
+        Assert.Equal("Aviso aos Cotistas", result.Items[0].Source);
+    }
+
+    [Fact]
     public async Task Stock_dividend_document_provides_current_month_payment_without_income_history()
     {
         await using var db = CreateDb();
@@ -255,6 +333,18 @@ public sealed class DividendForecastTests
 
     private static void AddIncome(PrumoDbContext db, Guid portfolioId, Guid assetId, decimal amount, DateTimeOffset date)
         => db.PortfolioCashFlows.Add(new PortfolioCashFlow(portfolioId, PortfolioCashFlowType.Income, amount, date, FinancialSource.Manual, assetId));
+
+    private static void AddAnalyzedFiiNotice(PrumoDbContext db, Asset asset, decimal amount, DateOnly payment, DateOnly baseDate, DateTimeOffset publishedAt)
+    {
+        var id = Guid.NewGuid().ToString();
+        var document = new Document(asset.Id, DocumentType.Other, publishedAt, "FNET", id,
+            $"https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id={id}&cvm=true", Guid.NewGuid().ToString(),
+            sourceCategory: "Aviso aos Cotistas - Estruturado", sourceType: "Rendimentos e Amortizações");
+        var summary = $"Rendimentos no valor de R$ {amount:0.00} por cota, com data-base em {baseDate:dd/MM/yyyy} e pagamento em {payment:dd/MM/yyyy}.";
+        db.Documents.Add(document);
+        db.DocumentAnalyses.Add(new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1", AnalysisImportance.Informative,
+            AnalysisClassification.Distribution, false, SuggestedAction.NoAction, summary, "Impacto", "Impacto", new[] { asset.Ticker }, 1, "{}"));
+    }
 
     private static void AddDistribution(PrumoDbContext db, Asset asset, string summary, DateTimeOffset publishedAt)
     {

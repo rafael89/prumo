@@ -31,11 +31,21 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
                 && !db.DocumentAnalyses.Any(other => other.DocumentId == x.DocumentAnalysis!.DocumentId && other.CreatedAt > x.DocumentAnalysis.CreatedAt))
             .ToListAsync(ct);
         var items = DividendForecastCalculator.Calculate(positions, events, now, referenceMonth).ToDictionary(x => x.AssetId);
+        var fiiNoticeAssetIds = new HashSet<Guid>();
         if (storage is not null && extractor is not null && assetIds.Count > 0)
         {
             var documents = await db.Documents.AsNoTracking()
                 .Where(x => assetIds.Contains(x.AssetId) && x.PublishedAt >= now.AddDays(-90) && x.PublishedAt <= now)
-                .OrderByDescending(x => x.PublishedAt).ThenByDescending(x => x.Id).ToListAsync(ct);
+                .OrderByDescending(x => x.PublishedAt).ThenByDescending(x => x.DiscoveredAt).ThenByDescending(x => x.Id).ToListAsync(ct);
+            var fiiNoticeIds = documents.Where(x => FiiDistributionNoticeParser.IsNotice(x.SourceCategory, x.SourceType))
+                .Select(x => x.Id).ToArray();
+            var fiiSummaries = fiiNoticeIds.Length == 0 ? new Dictionary<Guid, string>() :
+                (await db.DocumentAnalyses.AsNoTracking()
+                    .Where(x => fiiNoticeIds.Contains(x.DocumentId))
+                    .Select(x => new { x.DocumentId, x.Summary, x.CreatedAt })
+                    .ToListAsync(ct))
+                .GroupBy(x => x.DocumentId)
+                .ToDictionary(x => x.Key, x => x.OrderByDescending(y => y.CreatedAt).First().Summary);
             foreach (var assetDocuments in documents.GroupBy(x => x.AssetId))
             {
                 var position = positions.Single(x => x.AssetId == assetDocuments.Key);
@@ -46,9 +56,13 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
                     {
                         var text = await ReadDocumentTextAsync(document, ct);
                         var notice = text is null ? null : FiiDistributionNoticeParser.Parse(text);
+                        if (notice is null && fiiSummaries.TryGetValue(document.Id, out var summary))
+                            notice = FiiDistributionNoticeParser.ParseAnalysisSummary(summary);
                         if (notice is null || !SameMonth(notice.PaymentDate, referenceMonth)) continue;
                         items[document.AssetId] = new DividendForecastItem(document.AssetId, position.Asset.Ticker,
-                            decimal.Round(notice.AmountPerUnit * position.Quantity, 2), "Aviso aos Cotistas", document.SourceUrl, document.PublishedAt, notice.PaymentDate);
+                            decimal.Round(notice.AmountPerUnit * position.Quantity, 2), "Aviso aos Cotistas",
+                            document.SourceUrl, document.PublishedAt, notice.PaymentDate);
+                        fiiNoticeAssetIds.Add(document.AssetId);
                         break;
                     }
                 }
@@ -68,6 +82,7 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
         }
         foreach (var position in positions.Where(x => x.Asset is not null))
         {
+            if (fiiNoticeAssetIds.Contains(position.AssetId)) continue;
             var item = items[position.AssetId];
             if (item.PaymentDate is { } paymentDate && SameMonth(paymentDate, referenceMonth)) continue;
             var received = flows.Where(x => x.AssetId == position.AssetId)

@@ -17,6 +17,15 @@ public static partial class FiiDistributionNoticeParser
     [GeneratedRegex(@"(?im)^\s*(?:Data-base(?:\s*\([^\r\n]*?\))?|DataBase|DtBase)\s*(?:[:|]\s*|\s+)(?<value>\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}-\d{2}-\d{2})", RegexOptions.CultureInvariant)]
     private static partial Regex BaseField();
 
+    [GeneratedRegex(@"(?<![\d.,])(?:R\$\s*)?(?<value>\d{1,4}(?:[.,]\d{1,12})?)\s*(?:por|/)\s*(?:cota|unidade)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NarrativeAmount();
+
+    [GeneratedRegex(@"\b(?:data\s+(?:de|do)\s+pagamento|pagamento)(?:\s+(?:do\s+rendimento|ser[aá]\s+realizado|previsto|programado))?\s*(?::|=|[eé](?:\s+de)?|em|para|no\s+dia)?\s*(?<value>\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{1,2}\s+de\s+[a-zç]+\s+de\s+\d{4})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NarrativePayment();
+
+    [GeneratedRegex(@"\b(?:data[-\s]*base|com\s+base)\s*(?:em|[eé]|:)?\s*(?<value>\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{1,2}\s+de\s+[a-zç]+\s+de\s+\d{4})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NarrativeBase();
+
     public static bool IsNotice(string? category, string? type)
         => Normalize(category).Contains("AVISO AOS COTISTAS", StringComparison.Ordinal)
             && Normalize(type).Contains("RENDIMENTOS E AMORTIZACOES", StringComparison.Ordinal);
@@ -30,6 +39,19 @@ public static partial class FiiDistributionNoticeParser
         return new FiiDistributionNotice(amounts[0], payments[0], bases.Length == 1 ? bases[0] : null);
     }
 
+    public static FiiDistributionNotice? ParseAnalysisSummary(string summary)
+    {
+        var amounts = NarrativeAmount().Matches(summary).Select(x => ParseAmount(x.Groups["value"].Value))
+            .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+        var payments = NarrativePayment().Matches(summary).Select(x => ParseNarrativeDate(x.Groups["value"].Value))
+            .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+        var bases = NarrativeBase().Matches(summary).Select(x => ParseNarrativeDate(x.Groups["value"].Value))
+            .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
+        return amounts.Length == 1 && payments.Length == 1
+            ? new FiiDistributionNotice(amounts[0], payments[0], bases.Length == 1 ? bases[0] : null)
+            : null;
+    }
+
     private static decimal? ParseAmount(string value)
     {
         var decimalSeparator = value.LastIndexOf(',') > value.LastIndexOf('.') ? ',' : '.';
@@ -39,6 +61,10 @@ public static partial class FiiDistributionNoticeParser
 
     private static DateOnly? ParseDate(string value)
         => DateOnly.TryParseExact(value, new[] { "d/M/yyyy", "dd/MM/yyyy", "d-M-yyyy", "dd-MM-yyyy", "yyyy-MM-dd" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? date : null;
+
+    private static DateOnly? ParseNarrativeDate(string value)
+        => DateOnly.TryParseExact(value, new[] { "d/M/yyyy", "dd/MM/yyyy", "d-M-yyyy", "dd-MM-yyyy", "d.M.yyyy", "dd.MM.yyyy", "yyyy-MM-dd", "d 'de' MMMM 'de' yyyy", "dd 'de' MMMM 'de' yyyy" },
+            CultureInfo.GetCultureInfo("pt-BR"), DateTimeStyles.None, out var date) ? date : null;
 
     private static string Normalize(string? value)
     {

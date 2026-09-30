@@ -329,18 +329,35 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
     },
   })
   const currency = (amount: number) => privacyHidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
-  const orderedItems = [...(forecast.data?.items ?? [])].sort((left, right) =>
-    (left.paymentDate ?? '9999-12-31').localeCompare(right.paymentDate ?? '9999-12-31')
-    || left.ticker.localeCompare(right.ticker, 'pt-BR', { sensitivity: 'base' }))
+  const orderedItems = (forecast.data?.items ?? [])
+    .filter(item => item.paymentDate !== null && item.estimatedMonthlyAmount !== null)
+    .sort((left, right) =>
+      (left.paymentDate ?? '9999-12-31').localeCompare(right.paymentDate ?? '9999-12-31')
+      || left.ticker.localeCompare(right.ticker, 'pt-BR', { sensitivity: 'base' }))
   const monthLabel = forecast.data?.referenceMonth
     ? new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(`${forecast.data.referenceMonth}T12:00:00`))
     : 'mês atual'
+  const paymentDate = (value: string) => new Intl.DateTimeFormat('pt-BR').format(new Date(`${value}T12:00:00`))
+  const total = currency(forecast.data?.estimatedMonthlyAmount ?? 0)
   return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
     <h2 className="mt-2 text-xl font-semibold text-slate-950">Proventos de {monthLabel}</h2>
-    {forecast.isLoading ? <p className="mt-4 text-sm text-slate-500">Calculando previsão...</p> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : forecast.data?.items.length ? <>
-      <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[32rem] border-collapse text-sm"><thead><tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-3 pr-4">Ativo</th><th scope="col" className="pb-3 pr-4">Data de pagamento</th><th scope="col" className="pb-3 text-right">Valor bruto no mês</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-3 pr-4"><strong className="text-slate-900">{item.ticker}</strong><p className="text-xs text-slate-500">{item.source}{item.referenceDate ? ` · ${formatDate(item.referenceDate)}` : ''}{item.documentUrl && <> · <a className="font-semibold text-sky-700 hover:underline" href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer">Documento</a></>}</p></td><td className="py-3 pr-4 text-slate-700">{item.paymentDate ? new Intl.DateTimeFormat('pt-BR').format(new Date(`${item.paymentDate}T12:00:00`)) : 'Não informada'}</td><td className="py-3 text-right font-semibold text-slate-900">{item.estimatedMonthlyAmount === null ? 'Sem pagamento identificado' : currency(item.estimatedMonthlyAmount)}</td></tr>)}</tbody><tfoot><tr className="border-t border-slate-200"><th scope="row" colSpan={2} className="pt-4 text-left text-sm font-semibold text-slate-950">Total bruto do mês</th><td className="pt-4 text-right text-xl font-bold text-slate-950">{currency(forecast.data.estimatedMonthlyAmount)}</td></tr></tfoot></table></div>
-    </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum ativo na carteira.</p>}
+    {forecast.isLoading ? <p className="mt-4 text-sm text-slate-500">Calculando previsão...</p> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
+      <div className="mt-5 divide-y divide-slate-200 sm:hidden">
+        {orderedItems.map(item => <div key={item.assetId} className="min-w-0 py-4 first:pt-0">
+          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <strong className="text-sm text-slate-900">{item.ticker}</strong>
+            <strong className="text-right text-sm text-slate-900">{currency(item.estimatedMonthlyAmount!)}</strong>
+          </div>
+          <p className="mt-1 min-w-0 wrap-break-word text-xs text-slate-500">{item.source}{item.referenceDate ? ` · ${formatDate(item.referenceDate)}` : ''}{item.documentUrl && <> · <a className="font-semibold text-sky-700 hover:underline" href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer">Documento</a></>}</p>
+          <p className="mt-2 text-sm text-slate-700">Pagamento: <time dateTime={item.paymentDate!} className="font-semibold">{paymentDate(item.paymentDate!)}</time></p>
+        </div>)}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pt-4 text-slate-950">
+          <strong className="text-sm">Total bruto do mês</strong><strong className="text-lg">{total}</strong>
+        </div>
+      </div>
+      <div className="mt-5 hidden overflow-x-auto sm:block"><table className="w-full min-w-[32rem] border-collapse text-sm"><thead><tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-3 pr-4">Ativo</th><th scope="col" className="pb-3 pr-4">Data de pagamento</th><th scope="col" className="pb-3 text-right">Valor bruto no mês</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-3 pr-4"><strong className="text-slate-900">{item.ticker}</strong><p className="text-xs text-slate-500">{item.source}{item.referenceDate ? ` · ${formatDate(item.referenceDate)}` : ''}{item.documentUrl && <> · <a className="font-semibold text-sky-700 hover:underline" href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer">Documento</a></>}</p></td><td className="py-3 pr-4 text-slate-700">{paymentDate(item.paymentDate!)}</td><td className="py-3 text-right font-semibold text-slate-900">{currency(item.estimatedMonthlyAmount!)}</td></tr>)}</tbody><tfoot><tr className="border-t border-slate-200"><th scope="row" colSpan={2} className="pt-4 text-left text-sm font-semibold text-slate-950">Total bruto do mês</th><td className="pt-4 text-right text-xl font-bold text-slate-950">{total}</td></tr></tfoot></table></div>
+    </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum pagamento com valor e data informados neste mês.</p>}
   </article>
 }
 
