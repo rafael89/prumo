@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -35,7 +35,6 @@ export type DashboardAssessment = {
   actionRequirement: number
   capitalDecisionImpact: number
   status: number | string
-  userState: number | string
   documentImportance?: string
   events?: Array<{ investmentEventId: string; eventType: number; occurredAt: string | null; summary: string }>
   hasRadarAssessment?: boolean
@@ -173,7 +172,7 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
   const [visibleCount, setVisibleCount] = useState(3)
   const queryClient = useQueryClient()
-  const statusMutation = useMutation({ mutationFn: ({ id, resolved }: { id: string; resolved: boolean }) => fetch(`${contributionApiUrl}/api/radar/${id}/${resolved ? 'status' : 'seen'}?portfolioId=${portfolioId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(resolved ? { status: 'Closed' } : { status: 'Seen' }) }).then(response => { if (!response.ok) throw new Error('Não foi possível atualizar o Radar.'); return response }), onSuccess: (_, variables) => { void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }); if (variables.resolved) setSelectedItem(null); else setSelectedItem(current => current ? { ...current, userState: 'Seen' } : current) } })
+  const statusMutation = useMutation({ mutationFn: (id: string) => fetch(`${contributionApiUrl}/api/radar/${id}/status?portfolioId=${portfolioId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Closed' }) }).then(response => { if (!response.ok) throw new Error('Não foi possível atualizar o Radar.'); return response }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] }); void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] }); setSelectedItem(null) } })
   return <article className="order-2 min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Radar</p>
     {items.length === 0 ? <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
@@ -188,22 +187,11 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
       </div> : <div key={item.assessmentId} className="grid min-w-0 grid-cols-2 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
         <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div><div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isSeen={selectedItem.userState === 1 || selectedItem.userState === 'Seen'} isResolved={selectedItem.status === 3 || selectedItem.status === 'Closed'} onClose={() => setSelectedItem(null)} onMarkSeen={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: false })} onResolve={() => statusMutation.mutate({ id: selectedItem.assessmentId, resolved: true })} actionPending={statusMutation.isPending} />}
+    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isResolved={selectedItem.status === 3 || selectedItem.status === 'Closed'} onClose={() => setSelectedItem(null)} onResolve={() => statusMutation.mutate(selectedItem.assessmentId)} actionPending={statusMutation.isPending} />}
   </article>
 }
 
-export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResolved = false, onClose, onMarkSeen, onResolve, onReopen, actionPending = false }: { item: DashboardAssessment; portfolioId: string; isSeen?: boolean; isResolved?: boolean; onClose: () => void; onMarkSeen?: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean }) {
-  const markSeenCallback = useRef(onMarkSeen)
-  const markSeenAttemptedFor = useRef<string | null>(null)
-  useEffect(() => {
-    markSeenCallback.current = onMarkSeen
-  }, [onMarkSeen])
-  useEffect(() => {
-    if (!isSeen && !isResolved && markSeenCallback.current && markSeenAttemptedFor.current !== item.assessmentId) {
-      markSeenAttemptedFor.current = item.assessmentId
-      markSeenCallback.current()
-    }
-  }, [item.assessmentId, isSeen, isResolved])
+export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onClose, onResolve, onReopen, actionPending = false }: { item: DashboardAssessment; portfolioId: string; isResolved?: boolean; onClose: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -284,17 +272,6 @@ export function RecentAnalysisModal({ item, portfolioId, isSeen = false, isResol
 function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
   const [visibleCount, setVisibleCount] = useState(5)
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
-  const queryClient = useQueryClient()
-  const markSeen = useMutation({
-    mutationFn: (assessmentId: string) => fetch(`${contributionApiUrl}/api/radar/${assessmentId}/seen?portfolioId=${portfolioId}`, { method: 'PATCH' }).then(response => {
-      if (!response.ok) throw new Error('Não foi possível marcar o documento como visto.')
-      return response
-    }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] })
-      void queryClient.invalidateQueries({ queryKey: ['radar', portfolioId] })
-    },
-  })
   return <article className="order-3 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhum documento recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
@@ -305,12 +282,8 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
         <div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isSeen={selectedItem.userState === 1 || selectedItem.userState === 'Seen'} onClose={() => setSelectedItem(null)} onMarkSeen={selectedItem.hasRadarAssessment === false ? undefined : () => markSeen.mutate(selectedItem.assessmentId)} actionPending={markSeen.isPending} />}
+    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
   </article>
-}
-
-function ContributionWidget() {
-  return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 text-slate-950 shadow-sm sm:p-6 lg:col-span-2"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Próximo passo</p><h2 className="mt-2 text-2xl font-semibold tracking-tight">Planeje seu próximo aporte.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Simule uma distribuição usando suas alocações-alvo, posições atuais e a inteligência da carteira.</p></div><Link to="/contributions" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700">Ir para aportes <FontAwesomeIcon icon={faArrowRight} /></Link></div></article>
 }
 
 type DividendForecast = {
@@ -353,10 +326,10 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
           <p className="mt-2 text-sm text-slate-700">Pagamento: <time dateTime={item.paymentDate!} className="font-semibold">{paymentDate(item.paymentDate!)}</time></p>
         </div>)}
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pt-4 text-slate-950">
-          <strong className="text-sm">Total bruto do mês</strong><strong className="text-lg">{total}</strong>
+          <strong className="text-sm">Total</strong><strong className="text-lg">{total}</strong>
         </div>
       </div>
-      <div className="mt-5 hidden overflow-x-auto sm:block"><table className="w-full min-w-[32rem] border-collapse text-sm"><thead><tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-3 pr-4">Ativo</th><th scope="col" className="pb-3 pr-4">Data de pagamento</th><th scope="col" className="pb-3 text-right">Valor bruto no mês</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-3 pr-4"><strong className="text-slate-900">{item.ticker}</strong><p className="text-xs text-slate-500">{item.source}{item.referenceDate ? ` · ${formatDate(item.referenceDate)}` : ''}{item.documentUrl && <> · <a className="font-semibold text-sky-700 hover:underline" href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer">Documento</a></>}</p></td><td className="py-3 pr-4 text-slate-700">{paymentDate(item.paymentDate!)}</td><td className="py-3 text-right font-semibold text-slate-900">{currency(item.estimatedMonthlyAmount!)}</td></tr>)}</tbody><tfoot><tr className="border-t border-slate-200"><th scope="row" colSpan={2} className="pt-4 text-left text-sm font-semibold text-slate-950">Total bruto do mês</th><td className="pt-4 text-right text-xl font-bold text-slate-950">{total}</td></tr></tfoot></table></div>
+      <div className="mt-5 hidden overflow-x-auto sm:block"><table className="w-full min-w-lg border-collapse text-sm"><thead><tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-3 pr-4">Ativo</th><th scope="col" className="pb-3 pr-4">Data de pagamento</th><th scope="col" className="pb-3 text-right">Valor</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-3 pr-4"><strong className="text-slate-900">{item.ticker}</strong><p className="text-xs text-slate-500">{item.source}{item.referenceDate ? ` · ${formatDate(item.referenceDate)}` : ''}{item.documentUrl && <> · <a className="font-semibold text-sky-700 hover:underline" href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer">Documento</a></>}</p></td><td className="py-3 pr-4 text-slate-700">{paymentDate(item.paymentDate!)}</td><td className="py-3 text-right font-semibold text-slate-900">{currency(item.estimatedMonthlyAmount!)}</td></tr>)}</tbody><tfoot><tr className="border-t border-slate-200"><th scope="row" colSpan={2} className="pt-4 text-left text-sm font-semibold text-slate-950">Total</th><td className="pt-4 text-right text-xl font-bold text-slate-950">{total}</td></tr></tfoot></table></div>
     </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum pagamento com valor e data informados neste mês.</p>}
   </article>
 }
@@ -395,7 +368,6 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
       <RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} />
       <div className="order-3 min-w-0 self-start"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
     </div>
-    <ContributionWidget />
     <TransactionReconciliationSection portfolioId={activePortfolio.id} />
     <DividendForecastWidget portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
   </section>

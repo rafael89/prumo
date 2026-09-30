@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Prumo.Api.Controllers;
+using Prumo.Application.Intelligence;
+using Prumo.Application.Portfolio;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
@@ -26,6 +28,66 @@ public sealed class RadarControllerBulkTests
         Assert.Equal(1, Assert.IsType<RadarBulkUpdateResponse>(Assert.IsType<OkObjectResult>(result.Result).Value).UpdatedCount);
         Assert.Equal(AssessmentStatus.Closed, actionItem.Status);
         Assert.Equal(AssessmentStatus.Detected, informativeItem.Status);
+    }
+
+    [Fact]
+    public async Task Reading_a_notification_does_not_close_its_radar_situation()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrumoDbContext(options);
+        var portfolioId = Guid.NewGuid();
+        var assessment = AddAssessment(db, portfolioId, AnalysisImportance.Relevant, ActionRequirement.Review);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new RadarController(db).DismissNotification(assessment.Id, portfolioId, TestContext.Current.CancellationToken);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(AssessmentUserState.Seen, assessment.UserState);
+        Assert.Equal(AssessmentStatus.Detected, assessment.Status);
+    }
+
+    [Fact]
+    public async Task Radar_lists_only_attention_and_resolved_documents()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new PrumoDbContext(options);
+        var portfolio = new Portfolio("Carteira teste");
+        var asset = new Asset("TEST", "Ativo teste", AssetType.Stock, "Teste");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 10m, 10m, 10m));
+        db.AddRange(portfolio, asset);
+        var attention = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Active);
+        var resolved = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Closed);
+        var other = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.None, AssessmentStatus.Active);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new RadarController(db).Get(portfolio.Id, null, null, null, ct: TestContext.Current.CancellationToken);
+        var response = Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        var listed = response.AttentionNow.Concat(response.RecentUpdates).Select(item => item.AssessmentId).ToList();
+
+        Assert.Equal(2, response.TotalItems);
+        Assert.Contains(attention.Id, listed);
+        Assert.Contains(resolved.Id, listed);
+        Assert.DoesNotContain(other.Id, listed);
+    }
+
+    private static PortfolioAssessment AddDocumentAssessment(PrumoDbContext db, Portfolio portfolio, Asset asset, ActionRequirement action, AssessmentStatus status)
+    {
+        var document = new Document(asset.Id, (DocumentType)0, DateTimeOffset.UtcNow, "Teste", null, "https://example.com/document", Guid.NewGuid().ToString());
+        var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1", AnalysisImportance.Relevant,
+            AnalysisClassification.Other, action != ActionRequirement.None, SuggestedAction.Monitor,
+            "Resumo", "Impacto", "Impacto", [asset.Ticker], 1, "{}");
+        var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento", []);
+        investmentEvent.AffectedAssets.Add(asset);
+        var assessment = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, AttentionPriority.High, action,
+            CapitalDecisionImpact.None, status, AssessmentUserState.Unread,
+            "Resumo", "Motivo", "Comportamento", IntelligenceConfidence.High, null,
+            PortfolioImpactAssessmentService.CurrentVersion, PortfolioSnapshotKeyCalculator.Calculate(portfolio), investmentEvent.Version);
+        db.AddRange(document, analysis, investmentEvent, assessment);
+        return assessment;
     }
 
     private static PortfolioAssessment AddAssessment(PrumoDbContext db, Guid portfolioId, AnalysisImportance importance, ActionRequirement action)

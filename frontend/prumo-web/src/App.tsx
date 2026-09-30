@@ -30,7 +30,6 @@ type RadarNotificationItem = {
   actionRequirement: number
   capitalDecisionImpact: number
   status: number | string
-  userState: number
   summary: string
   whyItMatters: string
   suggestedBehavior: string
@@ -41,7 +40,6 @@ type RadarNotificationItem = {
 }
 type RadarNotificationResponse = {
   attentionNow: RadarNotificationItem[]
-  unread: number
 }
 
 type PortfolioSummary = { id: string; name: string; totalValue: number; positionCount: number }
@@ -110,6 +108,7 @@ function App() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [historyTotalPages, setHistoryTotalPages] = useState(1)
   const [historyCursors, setHistoryCursors] = useState<Record<number, string | null>>({ 1: null })
+  const [historyPage, setHistoryPage] = useState(1)
   const [importProcessing, setImportProcessing] = useState(false)
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
     const saved = localStorage.getItem('prumo.theme.preference')
@@ -119,9 +118,9 @@ function App() {
   const darkMode = themePreference === 'dark' || (themePreference === 'system' && systemDarkMode)
   const [positionPage, setPositionPage] = useState(1)
   const handleHistoryPageInfo = useCallback((hasMore: boolean, nextBefore: string | null) => {
-    setHistoryTotalPages(hasMore ? positionPage + 1 : positionPage)
-    if (nextBefore) setHistoryCursors(current => ({ ...current, [positionPage + 1]: nextBefore }))
-  }, [positionPage])
+    setHistoryTotalPages(hasMore ? historyPage + 1 : historyPage)
+    if (nextBefore) setHistoryCursors(current => ({ ...current, [historyPage + 1]: nextBefore }))
+  }, [historyPage])
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     const onSystemThemeChange = (event: MediaQueryListEvent) => setSystemDarkMode(event.matches)
@@ -215,28 +214,25 @@ function App() {
   })
   const radarNotifications = useQuery({
     queryKey: ['radar-notifications', activePortfolio?.id],
-    queryFn: () => getJson<RadarNotificationResponse>(`/api/radar?portfolioId=${activePortfolio!.id}&page=1&pageSize=100&requiresAttention=true&userState=Unread`),
+    queryFn: () => getJson<RadarNotificationResponse>(`/api/radar?portfolioId=${activePortfolio!.id}&page=1&pageSize=100&requiresAttention=true&notificationPending=true`),
     enabled: Boolean(activePortfolio),
     refetchInterval: 20000,
   })
-  const markNotificationSeen = useMutation({
-    mutationFn: (assessmentId: string) => sendJson<unknown, object>(`/api/radar/${assessmentId}/seen?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] })
-      await queryClient.invalidateQueries({ queryKey: ['radar', activePortfolio?.id] })
-      await queryClient.invalidateQueries({ queryKey: ['dashboard', activePortfolio?.id] })
-    },
+  const notificationItems = radarNotifications.data?.attentionNow ?? []
+  const dismissRadarNotification = useMutation({
+    mutationFn: (assessmentId: string) => sendJson<unknown, object>(`/api/radar/${assessmentId}/dismiss-notification?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] }) },
     onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
-  const markAllNotificationsSeen = useMutation({
-    mutationFn: () => sendJson<{ updatedCount: number }, object>(`/api/radar/seen-all?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] })
-      await queryClient.invalidateQueries({ queryKey: ['radar', activePortfolio?.id] })
-      await queryClient.invalidateQueries({ queryKey: ['dashboard', activePortfolio?.id] })
-    },
+  const readAllRadarNotifications = useMutation({
+    mutationFn: () => sendJson<{ updatedCount: number }, object>(`/api/radar/notifications/read-all?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
+    onSuccess: async () => { dismissNotificationToast(); await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] }) },
     onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
+  const dismissNotification = (item: RadarNotificationItem) => {
+    dismissRadarNotification.mutate(item.assessmentId)
+    if (notificationToast?.documentAnalysisId === item.documentAnalysisId) dismissNotificationToast()
+  }
   const resolveNotification = useMutation({
     mutationFn: (assessmentId: string) => sendJson<unknown, { status: string }>(`/api/radar/${assessmentId}/status?portfolioId=${activePortfolio!.id}`, 'PATCH', { status: 'Closed' }),
     onSuccess: async () => {
@@ -249,8 +245,8 @@ function App() {
   })
   const openNotification = (item: RadarNotificationItem) => {
     closeNotificationPanel()
-    setSelectedNotification({ ...item, documentId: item.documentId ?? item.evidence?.[0]?.documentId ?? null, userState: 1 })
-    if (item.userState === 0) markNotificationSeen.mutate(item.assessmentId)
+    setSelectedNotification({ ...item, documentId: item.documentId ?? item.evidence?.[0]?.documentId ?? null })
+    dismissNotification(item)
   }
   const dismissNotificationToast = () => {
     setNotificationToastVisible(false)
@@ -307,7 +303,6 @@ function App() {
     actionRequirement: selectedNotification.actionRequirement,
     capitalDecisionImpact: selectedNotification.capitalDecisionImpact,
     status: selectedNotification.status,
-    userState: selectedNotification.userState,
     documentImportance: selectedNotification.documentImportance,
   } : null
   const createPortfolio = useMutation({
@@ -482,11 +477,11 @@ function App() {
             <div className="nav-scroll order-3 flex w-full gap-5 overflow-x-auto pt-2 text-sm md:order-2 md:w-auto md:pt-2"><Link to="/" aria-current={route === '/' ? 'page' : undefined} className={navigationLinkClass(route === '/')}>Dashboard</Link><Link to="/portfolio" aria-current={route === '/portfolio' ? 'page' : undefined} className={navigationLinkClass(route === '/portfolio')}>Carteira</Link><Link to="/radar" aria-current={route === '/radar' ? 'page' : undefined} className={navigationLinkClass(route === '/radar')}>Radar</Link><Link to="/contributions" aria-current={route === '/contributions' ? 'page' : undefined} className={navigationLinkClass(route === '/contributions')}>Aporte</Link><Link to="/documents" aria-current={route === '/documents' ? 'page' : undefined} className={navigationLinkClass(route === '/documents')}>Documentos</Link></div>
             {importProcessing && <div className="import-status order-2 flex items-center gap-2 md:order-3"><span role="status" className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Importando carteira...</span></div>}
             {activePortfolio && <div ref={notificationPanelRef} className="radar-notification-control relative order-2 md:order-3">
-              <button type="button" aria-label={radarNotifications.data?.unread ? `${radarNotifications.data.unread} alertas não vistas` : 'Notificações do Radar'} aria-expanded={notificationPanelOpen} title="Notificações do Radar" onClick={toggleNotificationPanel} className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 ${radarNotifications.data?.unread ? 'border-amber-400' : 'border-slate-300'}`}><FontAwesomeIcon icon={faBell} />{Boolean(radarNotifications.data?.unread) && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-4 text-white">{(radarNotifications.data?.unread ?? 0) > 99 ? '99+' : radarNotifications.data?.unread}</span>}</button>
+              <button type="button" aria-label={notificationItems.length ? `${notificationItems.length} notificações não lidas` : 'Notificações do Radar'} aria-expanded={notificationPanelOpen} title="Notificações do Radar" onClick={toggleNotificationPanel} className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 ${notificationItems.length ? 'border-amber-400' : 'border-slate-300'}`}><FontAwesomeIcon icon={faBell} />{notificationItems.length > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-4 text-white">{notificationItems.length > 99 ? '99+' : notificationItems.length}</span>}</button>
               {notificationPanelMounted && <div className={`absolute right-0 top-11 z-50 w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-xl max-sm:fixed max-sm:inset-x-2 max-sm:top-16 max-sm:w-auto ${notificationPanelOpen ? 'notification-panel-enter' : 'notification-panel-exit'}`}>
-                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">Notificações</p></div><div className="flex shrink-0 items-center gap-2"><button type="button" aria-label="Marcar todos os itens como lidos" title="Marcar todos como lidos" disabled={markAllNotificationsSeen.isPending || (radarNotifications.data?.unread ?? 0) === 0} onClick={() => markAllNotificationsSeen.mutate()} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"><FontAwesomeIcon icon={faCheckDouble} className="text-[9px]" />{markAllNotificationsSeen.isPending ? 'Lendo...' : 'Ler todos'}</button><Link to="/radar" onClick={closeNotificationPanel} className="rounded-full px-2 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 hover:text-amber-800">Ver Radar</Link></div></div>
-                {(radarNotifications.data?.attentionNow.length ?? 0) === 0 && <p className="px-4 py-6 text-sm text-slate-500">Nenhuma nova atenção no Radar.</p>}
-                <div className="max-h-80 overflow-y-auto">{radarNotifications.data?.attentionNow.map(item => <button key={item.assessmentId} type="button" onClick={() => openNotification(item)} className="block w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-stone-50 last:border-b-0"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{item.affectedAssets[0] ?? 'Carteira'}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.eventSummary || item.summary}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{item.summary}</p></button>)}</div>
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><p className="text-sm font-semibold text-slate-900">Notificações</p><div className="flex items-center gap-2"><button type="button" disabled={readAllRadarNotifications.isPending || notificationItems.length === 0} onClick={() => readAllRadarNotifications.mutate()} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-amber-300 hover:text-amber-800 disabled:opacity-50"><FontAwesomeIcon icon={faCheckDouble} className="text-[9px]" />Ler todos</button><Link to="/radar" onClick={closeNotificationPanel} className="rounded-full px-2 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 hover:text-amber-800">Ver Radar</Link></div></div>
+                {notificationItems.length === 0 && <p className="px-4 py-6 text-sm text-slate-500">Nenhuma notificação no sino.</p>}
+                <div className="max-h-80 overflow-y-auto">{notificationItems.map(item => <div key={item.documentAnalysisId} className="flex items-start gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0"><button type="button" onClick={() => openNotification(item)} className="min-w-0 flex-1 text-left transition hover:text-amber-800"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{item.affectedAssets[0] ?? 'Carteira'}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.eventSummary || item.summary}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{item.summary}</p></button><button type="button" aria-label={`Marcar notificação de ${item.affectedAssets[0] ?? 'Carteira'} como lida`} onClick={() => dismissNotification(item)} className="shrink-0 rounded-full border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:border-amber-300 hover:text-amber-800">Marcar como lido</button></div>)}</div>
               </div>}
             </div>}
             <button type="button" aria-label={themePreference === 'system' ? 'Personalizar tema' : 'Seguir tema do sistema'} title={themePreference === 'system' ? `Tema do sistema: ${darkMode ? 'dark' : 'claro'}` : 'Seguir tema do sistema'} onClick={() => setThemePreference(current => current === 'system' ? (darkMode ? 'light' : 'dark') : 'system')} className="theme-toggle order-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 md:order-3"><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /></button>
@@ -494,11 +489,11 @@ function App() {
         </nav>
         {notificationToast && <div role="status" className={`fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6 ${notificationToastVisible ? 'notification-toast-enter' : 'notification-toast-exit'}`}><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={dismissNotificationToast} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={dismissNotificationToast} className="text-lg leading-none text-amber-800">×</button></div></div>}
         <Suspense fallback={<p role="status" className="mx-auto max-w-6xl p-6 text-slate-500">Carregando tela…</p>}>
-        {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isSeen={selectedNotificationAssessment.userState === 1} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
+        {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
         {route === '/dashboard' && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} portfoliosError={portfolios.isError} retryPortfolios={() => void portfolios.refetch()} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} />}
         {route === '/about' && <AboutSection />}
-        {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={positionPage} before={historyCursors[positionPage]} onPageInfo={handleHistoryPageInfo} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={positionPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setPositionPage(nextPage) }} /></div>}</>}
+        {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={historyPage} before={historyCursors[historyPage]} onPageInfo={handleHistoryPageInfo} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={historyPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setHistoryPage(nextPage) }} /></div>}</>}
         {route === '/contributions' && activePortfolio && <ContributionSection key={activePortfolio.id} portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !portfolios.isError && !activePortfolio && <EmptyPortfolioRoute />}
         <section className={`mx-auto max-w-358 px-6 ${route === '/documents' || route.startsWith('/documents/') || route === '/radar' ? 'pt-0 pb-0' : 'pt-3 pb-12'}`}>

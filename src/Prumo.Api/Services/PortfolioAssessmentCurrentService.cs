@@ -37,12 +37,8 @@ public sealed class PortfolioAssessmentCurrentService
         var current = new List<PortfolioAssessment>();
         var keys = new HashSet<string>();
         var pending = new List<PortfolioAssessment>();
-        // A portfolio change creates a new assessment version, but it must not
-        // turn an already handled document into a new Radar notification. The
-        // Radar state is document-oriented: duplicate event assessments for
-        // one document must share the strongest state found in the history.
-        // This is important when one old assessment is Seen and another stale
-        // duplicate is still Unread.
+        // Duplicate event assessments for one document share both the closed
+        // situation status and the notification state across recalculations.
         var stateByDocument = assessments
             .Where(x => x.InvestmentEvent is not null)
             .GroupBy(x => x.InvestmentEvent!.DocumentAnalysisId)
@@ -97,10 +93,8 @@ public sealed class PortfolioAssessmentCurrentService
                 output.AttentionPriority,
                 output.ActionRequirement,
                 output.CapitalDecisionImpact,
-                // Recalculating the portfolio impact must not turn an old Radar
-                // item into a new notification. Preserve the user state from the
-                // current assessment; a closed assessment still takes precedence
-                // so a target/portfolio change cannot reopen it.
+                // A target or portfolio change cannot reopen a closed situation
+                // or put a read notification back in the bell.
                 previousState?.IsClosed == true ? AssessmentStatus.Closed : assessment.Status,
                 previousState?.WasSeen == true ? AssessmentUserState.Seen : assessment.UserState,
                 output.Summary,
@@ -203,5 +197,4 @@ public sealed class PortfolioAssessmentCurrentService
     }
 
     private sealed record DocumentRadarState(bool IsClosed, bool WasSeen);
-
 }

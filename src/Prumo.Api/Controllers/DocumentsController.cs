@@ -238,7 +238,7 @@ public sealed class DocumentsController : ControllerBase
 
         var radarStatus = persisted.Status == AssessmentStatus.Closed
             ? RadarItemStatus.Resolved
-            : persisted.UserState == AssessmentUserState.Seen ? RadarItemStatus.Read : RadarItemStatus.Unread;
+            : RadarItemStatus.Unread;
         return new PortfolioDocumentAssessment(
             portfolioId,
             persisted.InvestmentEvent!.AffectedAssets.FirstOrDefault()?.Id ?? position.AssetId,
@@ -315,7 +315,7 @@ public sealed class DocumentsController : ControllerBase
             analysis.Confidence,
             analysis.CreatedAt,
             analysis.Document!.PublishedAt,
-            assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.RadarStatus.ToString(), assessment.ActionRequirement.ToString(), assessment.CapitalDecisionImpact.ToString()));
+            assessment is null ? null : new PortfolioAssessmentResponse(assessment.PortfolioId, assessment.AssetId, assessment.CurrentValue, assessment.CurrentWeight, assessment.Priority.ToString(), assessment.RequiresAttention, assessment.Reasons.Select(r => r.ToString()).ToList(), assessment.PortfolioImpactText, assessment.ActionRequirement.ToString(), assessment.CapitalDecisionImpact.ToString()));
     }
 }
 
@@ -364,4 +364,4 @@ public sealed record DocumentAnalysisResponse(
     DateTimeOffset PublishedAt,
     PortfolioAssessmentResponse? PortfolioAssessment = null);
 
-public sealed record PortfolioAssessmentResponse(Guid PortfolioId, Guid AssetId, decimal? CurrentValue, decimal CurrentWeight, string Priority, bool RequiresAttention, IReadOnlyList<string> Reasons, string PortfolioImpactText, string RadarStatus, string ActionRequirement = "None", string CapitalDecisionImpact = "None");
+public sealed record PortfolioAssessmentResponse(Guid PortfolioId, Guid AssetId, decimal? CurrentValue, decimal CurrentWeight, string Priority, bool RequiresAttention, IReadOnlyList<string> Reasons, string PortfolioImpactText, string ActionRequirement = "None", string CapitalDecisionImpact = "None");
