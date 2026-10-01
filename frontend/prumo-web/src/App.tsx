@@ -219,20 +219,11 @@ function App() {
     refetchInterval: 20000,
   })
   const notificationItems = radarNotifications.data?.attentionNow ?? []
-  const dismissRadarNotification = useMutation({
-    mutationFn: (assessmentId: string) => sendJson<unknown, object>(`/api/radar/${assessmentId}/dismiss-notification?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
-    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] }) },
-    onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
-  })
   const readAllRadarNotifications = useMutation({
     mutationFn: () => sendJson<{ updatedCount: number }, object>(`/api/radar/notifications/read-all?portfolioId=${activePortfolio!.id}`, 'PATCH', {}),
     onSuccess: async () => { dismissNotificationToast(); await queryClient.invalidateQueries({ queryKey: ['radar-notifications', activePortfolio?.id] }) },
     onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
-  const dismissNotification = (item: RadarNotificationItem) => {
-    dismissRadarNotification.mutate(item.assessmentId)
-    if (notificationToast?.documentAnalysisId === item.documentAnalysisId) dismissNotificationToast()
-  }
   const resolveNotification = useMutation({
     mutationFn: (assessmentId: string) => sendJson<unknown, { status: string }>(`/api/radar/${assessmentId}/status?portfolioId=${activePortfolio!.id}`, 'PATCH', { status: 'Closed' }),
     onSuccess: async () => {
@@ -246,7 +237,7 @@ function App() {
   const openNotification = (item: RadarNotificationItem) => {
     closeNotificationPanel()
     setSelectedNotification({ ...item, documentId: item.documentId ?? item.evidence?.[0]?.documentId ?? null })
-    dismissNotification(item)
+    if (notificationToast?.documentAnalysisId === item.documentAnalysisId) dismissNotificationToast()
   }
   const dismissNotificationToast = () => {
     setNotificationToastVisible(false)
@@ -481,7 +472,7 @@ function App() {
               {notificationPanelMounted && <div className={`absolute right-0 top-11 z-50 w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-xl max-sm:fixed max-sm:inset-x-2 max-sm:top-16 max-sm:w-auto ${notificationPanelOpen ? 'notification-panel-enter' : 'notification-panel-exit'}`}>
                 <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3"><p className="text-sm font-semibold text-slate-900">Notificações</p><div className="flex items-center gap-2"><button type="button" disabled={readAllRadarNotifications.isPending || notificationItems.length === 0} onClick={() => readAllRadarNotifications.mutate()} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-amber-300 hover:text-amber-800 disabled:opacity-50"><FontAwesomeIcon icon={faCheckDouble} className="text-[9px]" />Ler todos</button><Link to="/radar" onClick={closeNotificationPanel} className="rounded-full px-2 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 hover:text-amber-800">Ver Radar</Link></div></div>
                 {notificationItems.length === 0 && <p className="px-4 py-6 text-sm text-slate-500">Nenhuma notificação no sino.</p>}
-                <div className="max-h-80 overflow-y-auto">{notificationItems.map(item => <div key={item.documentAnalysisId} className="flex items-start gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0"><button type="button" onClick={() => openNotification(item)} className="min-w-0 flex-1 text-left transition hover:text-amber-800"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{item.affectedAssets[0] ?? 'Carteira'}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.eventSummary || item.summary}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{item.summary}</p></button><button type="button" aria-label={`Marcar notificação de ${item.affectedAssets[0] ?? 'Carteira'} como lida`} onClick={() => dismissNotification(item)} className="shrink-0 rounded-full border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:border-amber-300 hover:text-amber-800">Marcar como lido</button></div>)}</div>
+                <div className="max-h-80 overflow-y-auto">{notificationItems.map(item => <div key={item.documentAnalysisId} className="flex items-start gap-2 border-b border-slate-100 px-4 py-3 last:border-b-0"><button type="button" onClick={() => openNotification(item)} className="min-w-0 flex-1 text-left transition hover:text-amber-800"><p className="text-xs font-bold uppercase tracking-wide text-amber-700">{item.affectedAssets[0] ?? 'Carteira'}</p><p className="mt-1 text-sm font-semibold text-slate-900">{item.eventSummary || item.summary}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{item.summary}</p></button></div>)}</div>
               </div>}
             </div>}
             <button type="button" aria-label={themePreference === 'system' ? 'Personalizar tema' : 'Seguir tema do sistema'} title={themePreference === 'system' ? `Tema do sistema: ${darkMode ? 'dark' : 'claro'}` : 'Seguir tema do sistema'} onClick={() => setThemePreference(current => current === 'system' ? (darkMode ? 'light' : 'dark') : 'system')} className="theme-toggle order-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 md:order-3"><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /></button>

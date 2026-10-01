@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
-import { apiBaseUrl } from '../api/client'
+import { apiBaseUrl, sendJson } from '../api/client'
 import { TransactionReconciliationSection } from './TransactionReconciliationSection'
 const contributionApiUrl = apiBaseUrl
 
@@ -192,6 +192,24 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
 }
 
 export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onClose, onResolve, onReopen, actionPending = false }: { item: DashboardAssessment; portfolioId: string; isResolved?: boolean; onClose: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean }) {
+  const queryClient = useQueryClient()
+  const readAttemptedFor = useRef<string | null>(null)
+  const { mutate: markRead, isError: markReadFailed } = useMutation({
+    mutationFn: ({ assessmentId, portfolioId: id }: { assessmentId: string; portfolioId: string }) => sendJson<unknown, object>(`/api/radar/${assessmentId}/dismiss-notification?portfolioId=${id}`, 'PATCH', {}),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['radar-notifications', variables.portfolioId] })
+      void queryClient.invalidateQueries({ queryKey: ['radar', variables.portfolioId] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard', variables.portfolioId] })
+    },
+  })
+  useEffect(() => {
+    if (!portfolioId || !item.assessmentId || item.hasRadarAssessment === false) return
+    const key = `${portfolioId}:${item.assessmentId}`
+    if (readAttemptedFor.current === key) return
+    readAttemptedFor.current = key
+    markRead({ assessmentId: item.assessmentId, portfolioId })
+  }, [item.assessmentId, item.hasRadarAssessment, portfolioId, markRead])
+
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -255,6 +273,7 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
     <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><h2 id="recent-analysis-title" className="text-xl font-semibold text-slate-950">Análise de <span className="text-amber-700">{item.asset}</span></h2>{documentDetails.data?.sourceUrl && <a href={officialDocumentUrl(documentDetails.data.sourceUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-normal text-slate-500 transition hover:text-amber-700"><span>{documentTypeLabel(documentDetails.data)}</span><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="text-[10px]" /></a>}</div></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      {markReadFailed && <p role="alert" className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível marcar o documento como lido. Feche e abra a análise para tentar novamente.</p>}
       {analysis.data && <div className="mb-5 grid grid-cols-2 gap-1 border-b border-slate-200 pb-4 pt-4 text-[11px] leading-4 text-slate-600"><span className="min-w-0"><strong>Publicado:</strong> {formatDate(analysis.data.publishedAt)}</span><span className="min-w-0"><strong>Analisado:</strong> {formatDate(analysis.data.createdAt)}</span></div>}
       {analysis.isLoading && <p className="py-8 text-sm text-slate-500">Carregando análise...</p>}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
