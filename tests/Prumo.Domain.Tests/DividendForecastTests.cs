@@ -33,21 +33,24 @@ public sealed class DividendForecastTests
     {
         await using var db = CreateDb();
         var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 10);
+        // The service excludes future income, so use a date that has already occurred even on the first day of the month.
+        var paymentDate = CurrentMonthDate(1);
+        var occurredAt = new DateTimeOffset(paymentDate.ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(-3));
         var other = new Portfolio("Outra");
         db.Portfolios.Add(other);
         AddIncome(db, portfolio.Id, asset.Id, 40, LocalNoon(CurrentMonthDate(10).AddMonths(-1)));
-        AddIncome(db, other.Id, asset.Id, 900, LocalNoon(CurrentMonthDate(10)));
+        AddIncome(db, other.Id, asset.Id, 900, occurredAt);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var first = await new DividendForecastService(db).GetAsync(portfolio.Id, CancellationToken.None);
         Assert.Single(first!.Items);
         Assert.Null(first.Items[0].EstimatedMonthlyAmount);
 
-        AddIncome(db, portfolio.Id, asset.Id, 60, LocalNoon(CurrentMonthDate(10)));
+        AddIncome(db, portfolio.Id, asset.Id, 60, occurredAt);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var second = await new DividendForecastService(db).GetAsync(portfolio.Id, CancellationToken.None);
         Assert.Equal(60m, second!.EstimatedMonthlyAmount);
-        Assert.Equal(CurrentMonthDate(10), second.Items[0].PaymentDate);
+        Assert.Equal(paymentDate, second.Items[0].PaymentDate);
         Assert.Equal("Rendimento registrado", second.Items[0].Source);
     }
 
