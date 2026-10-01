@@ -4,8 +4,9 @@
   display: none;
 }
 
-.portfolio-overview-header { background-color: #334155; }
-[data-theme='dark'] .portfolio-overview-header { background-color: #10182d; }
+.portfolio-overview-header, .about-highlight { background-color: #334155; }
+[data-theme='dark'] .portfolio-overview-header,
+[data-theme='dark'] .about-highlight { background-color: #10182d; }
 
 @media (min-width: 1280px) {
   .portfolio-layout {

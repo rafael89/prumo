@@ -103,7 +103,13 @@ function App() {
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
   const [purchaseConfirmation, setPurchaseConfirmation] = useState<PurchaseConfirmation | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
-  const [privacyHidden, setPrivacyHidden] = useState(false)
+  const [privacyHidden, setPrivacyHidden] = useState(() => {
+    try {
+      return localStorage.getItem('prumo.privacy.hidden') === 'true'
+    } catch {
+      return false
+    }
+  })
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [historyTotalPages, setHistoryTotalPages] = useState(1)
@@ -121,6 +127,13 @@ function App() {
     setHistoryTotalPages(hasMore ? historyPage + 1 : historyPage)
     if (nextBefore) setHistoryCursors(current => ({ ...current, [historyPage + 1]: nextBefore }))
   }, [historyPage])
+  useEffect(() => {
+    try {
+      localStorage.setItem('prumo.privacy.hidden', String(privacyHidden))
+    } catch {
+      // Keep the toggle usable when browser storage is unavailable.
+    }
+  }, [privacyHidden])
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     const onSystemThemeChange = (event: MediaQueryListEvent) => setSystemDarkMode(event.matches)

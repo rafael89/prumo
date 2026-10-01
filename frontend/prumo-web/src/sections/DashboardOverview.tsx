@@ -288,6 +288,16 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
   </div>
 }
 
+function newsPreview(summary: string) {
+  const text = summary.replace(/\s+/g, ' ').trim()
+  const sentenceEnd = text.search(/[.!?](?=\s+[A-ZÀ-Ú]|$)/)
+  const firstSentence = sentenceEnd >= 0 ? text.slice(0, sentenceEnd + 1) : text
+  if (firstSentence.length <= 160) return firstSentence
+  const excerpt = firstSentence.slice(0, 159)
+  const lastSpace = excerpt.lastIndexOf(' ')
+  return `${(lastSpace > 0 ? excerpt.slice(0, lastSpace) : excerpt).replace(/[,;:]+$/, '')}…`
+}
+
 function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
   const [visibleCount, setVisibleCount] = useState(5)
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
@@ -295,10 +305,10 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhum documento recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
       {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
-        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}{(item.events?.length ?? 0) > 1 && <span className="ml-2 text-xs font-medium text-slate-500">· {item.events!.length} acontecimentos</span>}</h3></div>
+        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 sm:line-clamp-1 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </button> : <div key={item.assessmentId} className="flex min-w-0 items-center gap-2 py-3 first:pt-0">
-        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>
+        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 sm:line-clamp-1 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
     </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
