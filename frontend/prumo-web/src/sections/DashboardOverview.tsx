@@ -5,7 +5,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl, sendJson } from '../api/client'
-import { TransactionReconciliationSection } from './TransactionReconciliationSection'
 const contributionApiUrl = apiBaseUrl
 
 type Position = {
@@ -397,7 +396,6 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
       <RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} />
       <div className="order-3 min-w-0 self-start"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
     </div>
-    <TransactionReconciliationSection portfolioId={activePortfolio.id} />
     <DividendForecastWidget portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
   </section>
 }

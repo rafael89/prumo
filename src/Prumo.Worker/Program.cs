@@ -79,7 +79,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddScoped<CvmFiiMonthlyIngestionService>();
         services.AddScoped<CvmFiiCnpjEnrichmentService>();
         services.Configure<CvmFiiIngestionOptions>(context.Configuration.GetSection("CvmFiiIngestion"));
-        services.AddHttpClient("documents");
+        services.AddHttpClient("documents", client => client.Timeout = TimeSpan.FromSeconds(180));
         services.Configure<JobProcessingOptions>(context.Configuration.GetSection("Jobs"));
         services.AddSingleton<IValidateOptions<AiProviderOptions>, AiProviderOptionsValidator>();
         services.AddOptions<AiProviderOptions>().Bind(context.Configuration.GetSection("AI")).ValidateOnStart();
