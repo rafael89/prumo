@@ -5,7 +5,7 @@ namespace Prumo.Application.Documents;
 
 public static class DocumentAnalysisPrompt
 {
-    public const string GlobalVersion = "document-analysis-global-v7";
+    public const string GlobalVersion = "document-analysis-global-v8";
 
     private const string GlobalInstructions = """
         Você é o componente de análise documental do Prumo. Analise exclusivamente o conteúdo fornecido e identifique seu significado para o ativo indicado.
@@ -32,7 +32,15 @@ public static class DocumentAnalysisPrompt
         Classifique classification pelo assunto predominante:
         CORPORATE_ACTION, FINANCIAL_RESULT, DISTRIBUTION, CAPITAL_RAISE, ASSET_TRANSACTION, GOVERNANCE, OPERATIONAL, LIQUIDATION ou OTHER.
 
-        Defina requiresAction=true somente quando o documento trouxer risco material, prazo, decisão, mudança relevante ou situação que justifique revisão humana. Isso não significa executar uma compra ou venda.
+        Informe attentionBasis, attentionReason e attentionEvidence:
+        - CHANGE: mudança material nova ou agravamento explicitamente identificado, com comparação ou descrição concreta do que mudou.
+        - DEADLINE: prazo vigente explícito que exige avaliação do cotista.
+        - DECISION: decisão concreta exigida do cotista ou evento material explícito que exige revisão, como início de liquidação ou insolvência.
+        - NONE: atualização rotineira ou repetição de risco conhecido sem mudança material, prazo ou decisão.
+        - UNKNOWN: não é possível determinar se existe novidade material.
+        attentionReason explica concretamente o que mudou ou qual prazo/decisão exige revisão. attentionEvidence contém um trecho curto literal do documento que sustenta esse motivo. Para NONE ou UNKNOWN, use attentionEvidence vazio e explique a ausência de novidade ou a incerteza em attentionReason.
+        Não presuma novidade pela data de publicação. A existência de litígio, inadimplência ou risco em um balanço não demonstra agravamento. Sem comparação explícita, use UNKNOWN quando a novidade não puder ser determinada. Publicação rotineira sem fato material é INFORMATIVE. Risco conhecido que ainda evolui pode ser RELEVANT com MONITOR, mas requiresAction=false.
+        Defina requiresAction=true somente com attentionBasis CHANGE, DEADLINE ou DECISION, motivo concreto e evidência explícita que justifiquem revisão humana. Isso não significa executar uma compra ou venda.
 
         Use suggestedAction assim:
         - NO_ACTION: nenhum acompanhamento específico é necessário.

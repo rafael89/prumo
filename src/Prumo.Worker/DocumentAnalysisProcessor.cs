@@ -160,6 +160,11 @@ public sealed class DocumentAnalysisProcessor
         logger.LogInformation("Iniciando analise do documento {DocumentId}; providerModel={Model}; promptVersion={PromptVersion}.", document.Id, aiAnalysisService.Model, aiAnalysisService.PromptVersion);
 
         var result = await aiAnalysisService.AnalyzeAsync(extraction.Text, context, cancellationToken);
+        // A claimed change must cite the actual source, not a generated explanation.
+        if (result.AttentionBasis is "CHANGE" or "DEADLINE" or "DECISION"
+            && (string.IsNullOrWhiteSpace(result.AttentionEvidence)
+                || !NormalizeEvidence(extraction.Text).Contains(NormalizeEvidence(result.AttentionEvidence), StringComparison.OrdinalIgnoreCase)))
+            result = result with { AttentionBasis = "UNKNOWN", AttentionEvidence = null, RequiresAction = false, SuggestedAction = SuggestedAction.Monitor };
         var analysis = new DocumentAnalysis(
             job.Id,
             document.Id,
@@ -174,7 +179,7 @@ public sealed class DocumentAnalysisProcessor
             "O impacto na carteira é calculado separadamente para cada carteira.",
             result.AffectedAssets,
             result.Confidence,
-            result.RawResponse);
+            result.RawResponse, result.AttentionBasis, result.AttentionReason, result.AttentionEvidence);
         dbContext.DocumentAnalyses.Add(analysis);
         foreach (var rejection in result.RejectedFinancialFacts ?? Array.Empty<AiFinancialFactRejection>())
         {
@@ -195,6 +200,9 @@ public sealed class DocumentAnalysisProcessor
         await ReleasePdfAfterAnalysisAsync(document, cancellationToken);
         logger.LogInformation("Analise persistida com sucesso para o documento {DocumentId} e job {JobId}.", document.Id, job.Id);
     }
+
+    private static string NormalizeEvidence(string text)
+        => string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private async Task ReleasePdfAfterAnalysisAsync(Document document, CancellationToken cancellationToken)
     {

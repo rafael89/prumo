@@ -317,9 +317,8 @@ public sealed class PortfolioImpactAssessmentServiceTests
         var portfolio = new Portfolio("Carteira teste");
         var asset = new Asset("TEST", "Ativo teste", AssetType.Stock, "Teste");
         var investmentEvent = new InvestmentEvent(Guid.NewGuid(), eventType, DateTimeOffset.UtcNow, "Evento teste", Array.Empty<string>());
-        if (importance is not null)
-            typeof(InvestmentEvent).GetProperty(nameof(InvestmentEvent.DocumentAnalysis))!.SetValue(investmentEvent,
-                new DocumentAnalysis(Guid.NewGuid(), Guid.NewGuid(), "test", "test-v1", importance.Value, AnalysisClassification.Other, requiresAction, action, "Resumo", "Impacto", "Impacto", new[] { asset.Ticker }, 1, "{}"));
+        typeof(InvestmentEvent).GetProperty(nameof(InvestmentEvent.DocumentAnalysis))!.SetValue(investmentEvent,
+            new DocumentAnalysis(Guid.NewGuid(), Guid.NewGuid(), "test", "test-v1", importance ?? AnalysisImportance.Relevant, AnalysisClassification.Other, requiresAction, action, "Resumo", "Impacto", "Impacto", new[] { asset.Ticker }, 1, "{}", "CHANGE", "A inadimplência aumentou de 1% para 8%.", "A inadimplência aumentou de 1% para 8%."));
         return new PortfolioImpactAssessmentService().AssessPortfolioImpact(new(
             investmentEvent,
             portfolio,

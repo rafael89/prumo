@@ -21,7 +21,8 @@ public sealed record AiAnalysisPayload(
     IReadOnlyList<string>? AffectedAssets,
     decimal? Confidence,
     IReadOnlyList<AiInvestmentEventPayload>? Events = null,
-    IReadOnlyList<AiFinancialFactPayload>? FinancialFacts = null);
+    IReadOnlyList<AiFinancialFactPayload>? FinancialFacts = null,
+    string? AttentionBasis = null, string? AttentionReason = null, string? AttentionEvidence = null);
 
 public sealed record AiFinancialFactPayload(string? Metric, decimal? Value, string? ReferencePeriod, string? PeriodType, string? Currency, string? Unit, string? Evidence, decimal? Confidence);
 
@@ -85,7 +86,8 @@ public sealed record AiAnalysisResult(
     IReadOnlyList<AiInvestmentEventResult>? Events = null,
     string? Model = null,
     IReadOnlyList<AiFinancialFactResult>? FinancialFacts = null,
-    IReadOnlyList<AiFinancialFactRejection>? RejectedFinancialFacts = null);
+    IReadOnlyList<AiFinancialFactRejection>? RejectedFinancialFacts = null,
+    string? AttentionBasis = null, string? AttentionReason = null, string? AttentionEvidence = null);
 
 public sealed record AiFinancialFactResult(FinancialFactMetric Metric, DateOnly ReferencePeriod, FinancialPeriodType PeriodType, decimal Value, string? Currency, string Unit, string Evidence, decimal Confidence);
 

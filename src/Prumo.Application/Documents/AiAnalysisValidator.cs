@@ -38,6 +38,13 @@ public sealed class AiAnalysisValidator
         var normalization = DocumentMaterialityNormalization.Normalize(
             importance, classification, payload.RequiresAction.Value, suggestedAction, summary, impact,
             events.Select(item => new MaterialityEventFacts(item.Summary, item.Facts)));
+        var basis = payload.AttentionBasis?.Trim().ToUpperInvariant();
+        if (basis is not null && basis is not ("CHANGE" or "DEADLINE" or "DECISION" or "NONE" or "UNKNOWN"))
+            throw new InvalidOperationException("AttentionBasis inválido.");
+        var confirmed = (basis is "CHANGE" or "DEADLINE" or "DECISION")
+            && !string.IsNullOrWhiteSpace(payload.AttentionReason) && !string.IsNullOrWhiteSpace(payload.AttentionEvidence);
+        if (basis is not null && !confirmed)
+            normalization = normalization with { RequiresAction = false, SuggestedAction = normalization.Importance == AnalysisImportance.Relevant ? SuggestedAction.Monitor : SuggestedAction.NoAction };
         importance = normalization.Importance;
         suggestedAction = normalization.SuggestedAction;
         payload = payload with { RequiresAction = normalization.RequiresAction };
@@ -52,7 +59,8 @@ public sealed class AiAnalysisValidator
             portfolioImpact,
             payload.AffectedAssets.Where(asset => !string.IsNullOrWhiteSpace(asset)).Select(asset => asset.Trim().ToUpperInvariant()).Distinct().ToArray(),
             payload.Confidence.Value,
-            LimitRawResponse(rawResponse), events, null, financialFacts, rejectedFinancialFacts);
+            LimitRawResponse(rawResponse), events, null, financialFacts, rejectedFinancialFacts,
+            basis, payload.AttentionReason?.Trim(), payload.AttentionEvidence?.Trim());
     }
 
     private static string LimitRawResponse(string rawResponse) => string.IsNullOrWhiteSpace(rawResponse)

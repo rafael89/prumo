@@ -22,7 +22,7 @@ public sealed class RadarController : ControllerBase
     public RadarController(PrumoDbContext db, IPortfolioAssessmentFreshnessEvaluator? freshnessEvaluator = null, PortfolioAssessmentCurrentService? currentAssessmentService = null) { this.db = db; this.freshnessEvaluator = freshnessEvaluator ?? new PortfolioAssessmentFreshnessEvaluator(); this.currentAssessmentService = currentAssessmentService ?? new PortfolioAssessmentCurrentService(db, new PortfolioImpactAssessmentService(), this.freshnessEvaluator, Microsoft.Extensions.Logging.Abstractions.NullLogger<PortfolioAssessmentCurrentService>.Instance); }
 
     [HttpGet]
-    public async Task<ActionResult<RadarResponse>> Get([FromQuery] Guid portfolioId, [FromQuery] AttentionPriority? priority, [FromQuery] AssessmentStatus? status, [FromQuery] bool? requiresAttention, [FromQuery] bool notificationPending = false, [FromQuery] string? asset = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
+    public async Task<ActionResult<RadarResponse>> Get([FromQuery] Guid portfolioId, [FromQuery] AttentionPriority? priority, [FromQuery] AssessmentStatus? status, [FromQuery] bool? requiresAttention, [FromQuery] bool notificationPending = false, [FromQuery] string? asset = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default, [FromQuery] bool monitoringOnly = false)
     {
         if (portfolioId == Guid.Empty) return BadRequest("PortfolioId é obrigatório.");
         var query = db.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
@@ -50,8 +50,10 @@ public sealed class RadarController : ControllerBase
             .ThenByDescending(x => x.Representative.Id)
             .ToList();
         var items = groupedAssessments.Select(x => ToDto(x.Representative, x.Events)).ToList();
-        items = items.Where(x => x.RequiresAttention || x.Status == AssessmentStatus.Closed).ToList();
+        items = items.Where(x => x.RequiresAttention || x.ActionRequirement == ActionRequirement.Monitor || x.Status == AssessmentStatus.Closed).ToList();
         if (requiresAttention.HasValue) items = items.Where(x => x.RequiresAttention == requiresAttention.Value).ToList();
+        if (monitoringOnly)
+            items = items.Where(x => !x.RequiresAttention && x.ActionRequirement == ActionRequirement.Monitor && x.Status != AssessmentStatus.Closed).ToList();
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100);
         var total = items.Count; var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return Ok(new RadarResponse(pageItems.Where(x => x.RequiresAttention).ToList(), pageItems.Where(x => !x.RequiresAttention).ToList(), items.Count(x => x.RequiresAttention), page, pageSize, total, (int)Math.Ceiling(total / (double)pageSize)));

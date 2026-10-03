@@ -6,7 +6,7 @@ public static class DocumentAnalysisJsonSchemas
     private static readonly string[] ClassificationValues = ["CORPORATE_ACTION", "FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER"];
     private static readonly string[] SuggestedActionValues = ["MAINTAIN", "INCREASE_POSITION", "REDUCE_EXPOSURE", "EVALUATE_SALE", "MONITOR", "NO_ACTION", "OPEN_POSITION"];
     private static readonly string[] EventTypeValues = ["FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "CORPORATE_ACTION", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER"];
-    private static readonly string[] RootRequired = ["importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence", "events", "financialFacts"];
+    private static readonly string[] RootRequired = ["importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence", "events", "financialFacts", "attentionBasis", "attentionReason", "attentionEvidence"];
     private static readonly string[] EventRequired = ["eventType", "occurredAt", "summary", "facts", "affectedAssets"];
 
     public static object CreateForGemini() => Create(strict: false, includeDateTimeFormat: true);
@@ -39,6 +39,9 @@ public static class DocumentAnalysisJsonSchemas
             ["properties"] = new Dictionary<string, object>
             {
                 ["importance"] = EnumSchema(ImportanceValues),
+                ["attentionBasis"] = EnumSchema(["CHANGE", "DEADLINE", "DECISION", "NONE", "UNKNOWN"]),
+                ["attentionReason"] = StringSchema(),
+                ["attentionEvidence"] = StringSchema(),
                 ["classification"] = EnumSchema(ClassificationValues),
                 ["requiresAction"] = new Dictionary<string, object> { ["type"] = "boolean" },
                 ["suggestedAction"] = EnumSchema(SuggestedActionValues),

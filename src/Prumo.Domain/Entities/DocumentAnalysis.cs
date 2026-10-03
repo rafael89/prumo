@@ -22,7 +22,8 @@ public sealed class DocumentAnalysis
         string portfolioImpact,
         IEnumerable<string> affectedAssets,
         decimal confidence,
-        string rawResponse)
+        string rawResponse,
+        string? attentionBasis = null, string? attentionReason = null, string? attentionEvidence = null)
     {
         if (processingJobId == Guid.Empty) throw new ArgumentException("O job de processamento e obrigatorio.", nameof(processingJobId));
         if (documentId == Guid.Empty) throw new ArgumentException("O documento e obrigatorio.", nameof(documentId));
@@ -55,9 +56,15 @@ public sealed class DocumentAnalysis
             .ToList();
         Confidence = confidence;
         RawResponse = rawResponse;
+        AttentionBasis = attentionBasis;
+        AttentionReason = attentionReason;
+        AttentionEvidence = attentionEvidence;
         CreatedAt = DateTimeOffset.UtcNow;
     }
 
+    public string? AttentionBasis { get; private set; }
+    public string? AttentionReason { get; private set; }
+    public string? AttentionEvidence { get; private set; }
     public Guid Id { get; private set; }
     public Guid ProcessingJobId { get; private set; }
     public Guid DocumentId { get; private set; }

@@ -17,7 +17,7 @@ namespace Prumo.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -578,6 +578,15 @@ namespace Prumo.Infrastructure.Migrations
                     b.Property<string>("AffectedAssets")
                         .IsRequired()
                         .HasColumnType("jsonb");
+
+                    b.Property<string>("AttentionBasis")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AttentionEvidence")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AttentionReason")
+                        .HasColumnType("text");
 
                     b.Property<int>("Classification")
                         .HasColumnType("integer");
