@@ -202,7 +202,6 @@ function App() {
   const [selectedNotification, setSelectedNotification] = useState<RadarNotificationItem | null>(null)
   const notificationPanelRef = useRef<HTMLDivElement>(null)
   const notificationCloseTimerRef = useRef<number | null>(null)
-  const notificationToastCloseTimerRef = useRef<number | null>(null)
   const closeNotificationPanel = () => {
     setNotificationPanelOpen(false)
     if (notificationCloseTimerRef.current !== null) window.clearTimeout(notificationCloseTimerRef.current)
@@ -252,18 +251,26 @@ function App() {
     setSelectedNotification({ ...item, documentId: item.documentId ?? item.evidence?.[0]?.documentId ?? null })
     if (notificationToast?.documentAnalysisId === item.documentAnalysisId) dismissNotificationToast()
   }
-  const dismissNotificationToast = () => {
-    setNotificationToastVisible(false)
-    if (notificationToastCloseTimerRef.current !== null) window.clearTimeout(notificationToastCloseTimerRef.current)
-    notificationToastCloseTimerRef.current = window.setTimeout(() => {
-      setNotificationToast(null)
-      notificationToastCloseTimerRef.current = null
-    }, 160)
-  }
+  const dismissNotificationToast = useCallback(() => setNotificationToastVisible(false), [])
+  // Query refreshes must not cancel the toast's dismissal timer.
+  useEffect(() => {
+    if (!notificationToast) return
+    const timeout = window.setTimeout(
+      notificationToastVisible ? dismissNotificationToast : () => setNotificationToast(null),
+      notificationToastVisible ? 6000 : 160,
+    )
+    return () => window.clearTimeout(timeout)
+  }, [notificationToast, notificationToastVisible, dismissNotificationToast])
+  useEffect(() => {
+    if (notificationToast && radarNotifications.data && !radarNotifications.data.attentionNow.some(item => item.documentAnalysisId === notificationToast.documentAnalysisId)) {
+      dismissNotificationToast()
+    }
+  }, [notificationToast, radarNotifications.data, dismissNotificationToast])
+  const notificationPortfolioId = activePortfolio?.id
   useEffect(() => {
     const items = radarNotifications.data?.attentionNow ?? []
-    if (!activePortfolio || !radarNotifications.data) return
-    const storageKey = `prumo.radar-notifications.${activePortfolio.id}`
+    if (!notificationPortfolioId || !radarNotifications.data) return
+    const storageKey = `prumo.radar-notifications.${notificationPortfolioId}`
     let notified = new Set<string>()
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? '[]')
@@ -276,23 +283,18 @@ function App() {
     // so those technical replacements must not produce a new toast.
     const next = items.find(item => !notified.has(item.documentAnalysisId))
     if (!next) return
-    notified.add(next.documentAnalysisId)
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(Array.from(notified).slice(-200)))
-    } catch {
-      // The persistent Radar state remains authoritative when storage is unavailable.
-    }
     const showTimeout = window.setTimeout(() => {
-      if (notificationToastCloseTimerRef.current !== null) window.clearTimeout(notificationToastCloseTimerRef.current)
+      notified.add(next.documentAnalysisId)
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(Array.from(notified).slice(-200)))
+      } catch {
+        // The persistent Radar state remains authoritative when storage is unavailable.
+      }
       setNotificationToast(next)
       setNotificationToastVisible(true)
     }, 0)
-    const hideTimeout = window.setTimeout(dismissNotificationToast, 6000)
-    return () => {
-      window.clearTimeout(showTimeout)
-      window.clearTimeout(hideTimeout)
-    }
-  }, [activePortfolio, radarNotifications.data])
+    return () => window.clearTimeout(showTimeout)
+  }, [notificationPortfolioId, radarNotifications.data])
 
   const selectedAsset = dashboard.data?.positions.find((position) => position.assetId === selectedAssetId) ?? null
   const selectedNotificationAssessment: DashboardAssessment | null = selectedNotification ? {

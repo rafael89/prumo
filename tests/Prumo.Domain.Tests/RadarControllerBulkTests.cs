@@ -68,6 +68,7 @@ public sealed class RadarControllerBulkTests
         var response = Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
         var listed = response.AttentionNow.Concat(response.RecentUpdates).Select(item => item.AssessmentId).ToList();
 
+        Assert.All(response.AttentionNow.Concat(response.RecentUpdates), item => Assert.Equal("Impacto do documento", item.Impact));
         Assert.Equal(2, response.TotalItems);
         Assert.Contains(attention.Id, listed);
         Assert.Contains(resolved.Id, listed);
@@ -79,7 +80,7 @@ public sealed class RadarControllerBulkTests
         var document = new Document(asset.Id, (DocumentType)0, DateTimeOffset.UtcNow, "Teste", null, "https://example.com/document", Guid.NewGuid().ToString());
         var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1", AnalysisImportance.Relevant,
             AnalysisClassification.Other, action != ActionRequirement.None, SuggestedAction.Monitor,
-            "Resumo", "Impacto", "Impacto", [asset.Ticker], 1, "{}");
+            "Resumo", "Impacto do documento", "Impacto da carteira", [asset.Ticker], 1, "{}");
         var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento", []);
         investmentEvent.AffectedAssets.Add(asset);
         var assessment = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, AttentionPriority.High, action,
