@@ -141,3 +141,19 @@
   #radar article button,
   [data-radar-actions] button { min-height: 2.25rem; padding: .5rem .75rem; font-size: .75rem; line-height: 1rem; gap: .5rem; }
 }
+
+.level-card { position: relative; overflow: hidden; }
+.level-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background-color: var(--level-color);
+  pointer-events: none;
+}
+.level-critical { --level-color: #fb7185; }
+.level-high { --level-color: #fb923c; }
+.level-medium { --level-color: #fbbf24; }
+.level-informative { --level-color: #38bdf8; }
+.level-low { --level-color: #94a3b8; }
+.radar-priority-icon { color: var(--level-color); }

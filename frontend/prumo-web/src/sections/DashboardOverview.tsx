@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl, sendJson } from '../api/client'
 const contributionApiUrl = apiBaseUrl
@@ -153,11 +153,12 @@ function formatRelativeDate(value: string | null) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date)
 }
 
-function priorityClasses(priority: number) {
-  if (priority >= 3) return 'bg-rose-100 text-rose-700'
-  if (priority === 2) return 'bg-orange-100 text-orange-700'
-  if (priority === 1) return 'bg-amber-50 text-amber-700'
-  return 'bg-sky-50 text-sky-700'
+function RadarPriorityIcon({ priority }: { priority: number }) {
+  const level = priority >= 3 ? 3 : priority === 2 ? 2 : priority === 1 ? 1 : 0
+  const icons = [faCircleInfo, faClock, faTriangleExclamation, faCircleExclamation]
+  const tones = ['level-low', 'level-medium', 'level-high', 'level-critical']
+  const label = `Prioridade: ${priorityLabels[level]}`
+  return <span role="img" aria-label={label} title={label} className={`radar-priority-icon inline-flex h-7 w-7 shrink-0 items-center justify-center text-lg ${tones[level]}`}><FontAwesomeIcon icon={icons[level]} aria-hidden="true" /></span>
 }
 
 function canManageSituation() {
@@ -178,13 +179,13 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
       <div className="flex items-start gap-3"><FontAwesomeIcon icon={faCircleCheck} className="mt-1 text-emerald-600" /><div><strong>Tudo tranquilo por aqui.</strong><p className="mt-1 text-sm leading-6 text-emerald-800">Nenhum acontecimento recente exige sua atenção.</p></div></div>
     </div> : <div className="mt-4 divide-y divide-slate-100">
       {items.slice(0, visibleCount).map(item => item.documentId ? <div key={item.assessmentId} role="button" tabIndex={0} onClick={() => setSelectedItem(item)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedItem(item) } }} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
-        <div className="shrink-0"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div>
+        <div className="shrink-0"><RadarPriorityIcon priority={item.attentionPriority} /></div>
         <div className="min-w-0 flex-1">
           <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}{(item.events?.length ?? 0) > 1 && <span className="ml-2 text-xs font-medium text-slate-500">· {item.events!.length} acontecimentos</span>}</h3>
         </div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </div> : <div key={item.assessmentId} className="grid min-w-0 grid-cols-2 gap-3 py-3 first:pt-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
-        <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-semibold ${priorityClasses(item.attentionPriority)}`}>{priorityLabels[item.attentionPriority] ?? 'Baixa'}</span></div><div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
+        <div className="order-1 flex flex-wrap gap-1.5 sm:order-1"><RadarPriorityIcon priority={item.attentionPriority} /></div><div className="order-3 col-span-2 min-w-0 sm:order-2 sm:col-span-1"><h3 className="text-sm font-semibold text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}</h3></div>{formatRelativeDate(item.occurredAt) && <span className="order-2 justify-self-end text-xs text-slate-500 sm:order-3 sm:text-right">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
     </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} isResolved={selectedItem.status === 3 || selectedItem.status === 'Closed'} onClose={() => setSelectedItem(null)} onResolve={() => statusMutation.mutate(selectedItem.assessmentId)} actionPending={statusMutation.isPending} />}
   </article>
@@ -267,9 +268,12 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
 
 
   const hasVisibleAction = canManageSituation() && ((!isResolved && Boolean(onResolve)) || (isResolved && Boolean(onReopen)))
+  const documentLevel = item.documentImportance ?? analysis.data?.importance
+  const importanceLevel = documentLevel === 'Critical' || documentLevel === 'Crítico' ? 'level-critical' : documentLevel === 'Relevant' || documentLevel === 'Relevante' ? 'level-medium' : documentLevel === 'Informative' || documentLevel === 'Informativo' ? 'level-informative' : 'level-low'
+  const modalLevel = item.hasRadarAssessment === false ? importanceLevel : ['level-low', 'level-medium', 'level-high', 'level-critical'][item.attentionPriority] ?? 'level-low'
 
   return <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="recent-analysis-title" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white p-5 shadow-2xl sm:p-7">
+    <div className={`level-card flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7 ${modalLevel}`}>
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><h2 id="recent-analysis-title" className="text-xl font-semibold text-slate-950">Análise de <span className="text-amber-700">{item.asset}</span></h2>{documentDetails.data?.sourceUrl && <a href={officialDocumentUrl(documentDetails.data.sourceUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-normal text-slate-500 transition hover:text-amber-700"><span>{documentTypeLabel(documentDetails.data)}</span><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="text-[10px]" /></a>}</div></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
       {markReadFailed && <p role="alert" className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível marcar o documento como lido. Feche e abra a análise para tentar novamente.</p>}
