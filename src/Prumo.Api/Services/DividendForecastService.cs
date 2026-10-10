@@ -23,8 +23,9 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
             : new DateOnly(localNow.Year, localNow.Month, 1);
         var startDateTime = referenceMonth.ToDateTime(TimeOnly.MinValue);
         var endDateTime = referenceMonth.AddMonths(1).ToDateTime(TimeOnly.MinValue);
-        var monthStart = new DateTimeOffset(startDateTime, timeZone.GetUtcOffset(startDateTime));
-        var monthEnd = new DateTimeOffset(endDateTime, timeZone.GetUtcOffset(endDateTime));
+        // Preserve the Sao Paulo month boundaries while sending UTC parameters to PostgreSQL.
+        var monthStart = new DateTimeOffset(startDateTime, timeZone.GetUtcOffset(startDateTime)).ToUniversalTime();
+        var monthEnd = new DateTimeOffset(endDateTime, timeZone.GetUtcOffset(endDateTime)).ToUniversalTime();
         var positions = await db.PortfolioPositions.AsNoTracking().Include(x => x.Asset)
             .Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var assetIds = positions.Select(x => x.AssetId).ToHashSet();

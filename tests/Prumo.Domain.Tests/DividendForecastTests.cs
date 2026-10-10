@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Prumo.Api.Services;
 using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
@@ -9,6 +10,50 @@ namespace Prumo.Domain.Tests;
 
 public sealed class DividendForecastTests
 {
+    [RelationalFact]
+    public async Task PostgreSql_income_query_preserves_sao_paulo_month_boundaries()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = new NpgsqlConnectionStringBuilder("Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=dev123");
+        var database = $"prumo_dividend_forecast_{Guid.NewGuid():N}";
+        await using var connection = new NpgsqlConnection(admin.ConnectionString);
+        await connection.OpenAsync(ct);
+        await using (var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", connection))
+            await create.ExecuteNonQueryAsync(ct);
+        try
+        {
+            var options = new DbContextOptionsBuilder<PrumoDbContext>()
+                .UseNpgsql(new NpgsqlConnectionStringBuilder(admin.ConnectionString) { Database = database }.ConnectionString).Options;
+            await using var db = new PrumoDbContext(options);
+            await db.Database.MigrateAsync(ct);
+            var (portfolio, asset) = await Seed(db, AssetClass.Fii, 100);
+            var month = CurrentMonthDate(1).AddMonths(-1);
+            var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
+            var startDate = month.ToDateTime(TimeOnly.MinValue);
+            var endDate = month.AddMonths(1).ToDateTime(TimeOnly.MinValue);
+            var start = new DateTimeOffset(startDate, zone.GetUtcOffset(startDate)).ToUniversalTime();
+            var end = new DateTimeOffset(endDate, zone.GetUtcOffset(endDate)).ToUniversalTime();
+            AddIncome(db, portfolio.Id, asset.Id, 1000, start.AddSeconds(-1));
+            AddIncome(db, portfolio.Id, asset.Id, 20, start);
+            // PostgreSQL stores microseconds; avoid sub-microsecond rounding at the boundary.
+            AddIncome(db, portfolio.Id, asset.Id, 30, end.AddSeconds(-1));
+            AddIncome(db, portfolio.Id, asset.Id, 2000, end);
+            await db.SaveChangesAsync(ct);
+
+            var result = await new DividendForecastService(db).GetAsync(portfolio.Id, ct, month);
+
+            Assert.NotNull(result);
+            Assert.Equal(month, result.ReferenceMonth);
+            Assert.Equal(50m, result.EstimatedMonthlyAmount);
+            Assert.Equal(month.AddMonths(1).AddDays(-1), Assert.Single(result.Items).PaymentDate);
+        }
+        finally
+        {
+            await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", connection);
+            await drop.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+    }
+
     [Fact]
     public async Task Official_shareholder_notice_is_not_replaced_by_a_newer_market_communication()
     {
