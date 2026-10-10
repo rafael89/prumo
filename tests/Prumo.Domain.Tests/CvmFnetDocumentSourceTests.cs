@@ -401,6 +401,25 @@ public sealed class CvmFnetDocumentSourceTests
     }
 
     [Fact]
+    public async Task PreservaCategoriaAvisoAosAcionistasNaDescobertaDeAcoes()
+    {
+        const string csv = "CNPJ_Companhia;Nome_Companhia;Codigo_CVM;Data_Referencia;Categoria;Tipo;Especie;Assunto;Data_Entrega;Tipo_Apresentacao;Protocolo_Entrega;Versao;Link_Download\n" +
+            "02.916.265/0001-60;Companhia;20575;2026-04-30;Aviso aos Acionistas;Dividendos;JCP;Proventos;2026-05-04;AP;notice-1;1;https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?numProtocolo=1\n";
+        using var client = new HttpClient(new ZipHandler(csv));
+        var source = new CvmFnetDocumentSource(client, Options.Create(new CvmFnetOptions
+        {
+            CompanhiasIpeUrlTemplate = "https://dados.cvm.gov.br/ipe_{0}.zip", EnetDirectDiscoveryEnabled = false
+        }), NullLogger<CvmFnetDocumentSource>.Instance);
+
+        var candidate = Assert.Single(await source.FindAsync(new[]
+            { new DocumentSourceAsset("BBSE3", "02.916.265/0001-60", AssetClass.BrazilianStock) }, TestContext.Current.CancellationToken));
+
+        Assert.Equal("Aviso aos Acionistas", candidate.SourceCategory);
+        Assert.Equal("Dividendos", candidate.SourceType);
+        Assert.Equal("JCP", candidate.SourceSpecies);
+    }
+
+    [Fact]
     public async Task IgnoraArquivoAnualAindaNaoPublicado()
     {
         using var client = new HttpClient(new NotFoundHandler());

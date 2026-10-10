@@ -266,7 +266,7 @@ public sealed class DividendForecastTests
         var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 25);
         var payment = CurrentMonthDate(20);
         var document = new Document(asset.Id, DocumentType.Communication, DateTimeOffset.UtcNow.AddDays(-1), "CVM", "1551317",
-            "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?numProtocolo=1551317", Guid.NewGuid().ToString());
+            "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?numProtocolo=1551317", Guid.NewGuid().ToString(), sourceCategory: "Aviso aos Acionistas");
         document.MarkDownloaded("memory://stock", "stock-hash");
         db.Documents.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -277,7 +277,7 @@ public sealed class DividendForecastTests
 
         Assert.Equal(49.58m, result!.EstimatedMonthlyAmount);
         Assert.Equal(payment, result.Items[0].PaymentDate);
-        Assert.Equal("Comunicado de dividendos", result.Items[0].Source);
+        Assert.Equal("Aviso aos Acionistas", result.Items[0].Source);
     }
 
     [Fact]
@@ -349,9 +349,10 @@ public sealed class DividendForecastTests
             AnalysisClassification.Distribution, false, SuggestedAction.NoAction, summary, "Impacto", "Impacto", new[] { asset.Ticker }, 1, "{}"));
     }
 
-    private static void AddDistribution(PrumoDbContext db, Asset asset, string summary, DateTimeOffset publishedAt)
+    private static void AddDistribution(PrumoDbContext db, Asset asset, string summary, DateTimeOffset publishedAt, string? stockCategory = "Aviso aos Acionistas")
     {
-        var document = new Document(asset.Id, DocumentType.RelevantFact, publishedAt, "CVM", Guid.NewGuid().ToString(), "https://source/distribution", Guid.NewGuid().ToString());
+        var document = new Document(asset.Id, DocumentType.RelevantFact, publishedAt, "CVM", Guid.NewGuid().ToString(), "https://source/distribution", Guid.NewGuid().ToString(),
+            sourceCategory: asset.AssetClass == AssetClass.BrazilianStock ? stockCategory : null);
         var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1", AnalysisImportance.Informative, AnalysisClassification.Distribution, false, SuggestedAction.NoAction, summary, "Impacto", "Impacto", new[] { asset.Ticker }, 1, "{}");
         var item = new InvestmentEvent(analysis.Id, InvestmentEventType.Distribution, publishedAt, summary, new[] { summary });
         item.AffectedAssets.Add(asset);

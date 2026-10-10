@@ -45,6 +45,10 @@ public static class DocumentClassificationPolicy
             || value.Contains("INSTRUMENTO PARTICULAR DE EMISSAO DE COTAS", StringComparison.Ordinal));
     }
 
+    public static bool IsShareholderNotice(string? sourceCategory, string? sourceType, string? sourceSpecies)
+        => new[] { sourceCategory, sourceType, sourceSpecies }.Select(Normalize)
+            .Any(value => value is "AVISO AOS ACIONISTAS" or "AVISOS AOS ACIONISTAS");
+
     private static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return string.Empty;

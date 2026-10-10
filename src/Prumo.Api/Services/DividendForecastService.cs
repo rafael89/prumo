@@ -37,11 +37,12 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
             var documents = await db.Documents.AsNoTracking()
                 .Where(x => assetIds.Contains(x.AssetId) && x.PublishedAt >= now.AddDays(-90) && x.PublishedAt <= now)
                 .OrderByDescending(x => x.PublishedAt).ThenByDescending(x => x.DiscoveredAt).ThenByDescending(x => x.Id).ToListAsync(ct);
-            var fiiNoticeIds = documents.Where(x => FiiDistributionNoticeParser.IsNotice(x.SourceCategory, x.SourceType))
+            var noticeIds = documents.Where(x => FiiDistributionNoticeParser.IsNotice(x.SourceCategory, x.SourceType)
+                    || DocumentClassificationPolicy.IsShareholderNotice(x.SourceCategory, x.SourceType, x.SourceSpecies))
                 .Select(x => x.Id).ToArray();
-            var fiiSummaries = fiiNoticeIds.Length == 0 ? new Dictionary<Guid, string>() :
+            var noticeSummaries = noticeIds.Length == 0 ? new Dictionary<Guid, string>() :
                 (await db.DocumentAnalyses.AsNoTracking()
-                    .Where(x => fiiNoticeIds.Contains(x.DocumentId))
+                    .Where(x => noticeIds.Contains(x.DocumentId))
                     .Select(x => new { x.DocumentId, x.Summary, x.CreatedAt })
                     .ToListAsync(ct))
                 .GroupBy(x => x.DocumentId)
@@ -56,7 +57,7 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
                     {
                         var text = await ReadDocumentTextAsync(document, ct);
                         var notice = text is null ? null : FiiDistributionNoticeParser.Parse(text);
-                        if (notice is null && fiiSummaries.TryGetValue(document.Id, out var summary))
+                        if (notice is null && noticeSummaries.TryGetValue(document.Id, out var summary))
                             notice = FiiDistributionNoticeParser.ParseAnalysisSummary(summary);
                         if (notice is null || !SameMonth(notice.PaymentDate, referenceMonth)) continue;
                         items[document.AssetId] = new DividendForecastItem(document.AssetId, position.Asset.Ticker,
@@ -68,14 +69,17 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
                 }
                 else if (position.Asset.AssetClass == AssetClass.BrazilianStock)
                 {
-                    foreach (var document in assetDocuments)
+                    var evidence = DividendForecastCalculator.ReadStockEvidence(events.Where(x => x.AffectedAssets.Any(a => a.Id == position.AssetId)), now).ToList();
+                    foreach (var document in assetDocuments.Where(x => DocumentClassificationPolicy.IsShareholderNotice(x.SourceCategory, x.SourceType, x.SourceSpecies)))
                     {
                         var text = await ReadDocumentTextAsync(document, ct);
-                        var notice = text is null ? null : StockDividendNoticeParser.Parse(text);
-                        if (notice is null || !SameMonth(notice.PaymentDate, referenceMonth)) continue;
-                        items[document.AssetId] = new DividendForecastItem(document.AssetId, position.Asset.Ticker,
-                            decimal.Round(notice.AmountPerShare * position.Quantity, 2), "Comunicado de dividendos", document.SourceUrl, document.PublishedAt, notice.PaymentDate);
-                        break;
+                        if (text is null)
+                        {
+                            if (evidence.Any(x => x.Document.Id == document.Id) || !noticeSummaries.TryGetValue(document.Id, out text)) continue;
+                        }
+                        // Prefer the original when available; each official notice contributes only once.
+                        evidence.RemoveAll(x => x.Document.Id == document.Id);
+                        evidence.AddRange(StockDividendNoticeParser.ParseAll(text).Select(notice => new StockDistributionEvidence(notice, document, "Aviso aos Acionistas")));
                     }
                 }
             }
@@ -187,6 +191,36 @@ public static partial class DividendForecastCalculator
         }
         return result.OrderBy(x => x.PaymentDate is null).ThenBy(x => x.PaymentDate)
             .ThenBy(x => x.Ticker, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.AssetId).ToList();
+    }
+
+    public static IEnumerable<StockDistributionEvidence> ReadStockEvidence(IEnumerable<InvestmentEvent> events, DateTimeOffset now)
+        => events.Where(x => x.CreatedAt <= now && x.DocumentAnalysis?.Document is { } document && document.PublishedAt <= now
+                && DocumentClassificationPolicy.IsShareholderNotice(document.SourceCategory, document.SourceType, document.SourceSpecies))
+            .GroupBy(x => x.DocumentAnalysis!.DocumentId)
+            .SelectMany(group => StockDividendNoticeParser.ParseAll(string.Join("\n", group.SelectMany(x => x.Facts.Append(x.Summary)).Distinct()))
+                .Select(notice => new StockDistributionEvidence(notice, group.First().DocumentAnalysis!.Document!, "Aviso aos Acionistas")));
+
+    public static IReadOnlyList<DividendForecastItem> BuildStockItems(PortfolioPosition position, IEnumerable<StockDistributionEvidence> evidence, DateOnly referenceMonth)
+    {
+        if (position.Quantity <= 0 || position.Asset is null) return [];
+        // Publication recency resolves repeated or revised announcements of the same payment.
+        var unique = evidence.OrderByDescending(x => x.Document.PublishedAt).ThenByDescending(x => x.Document.DiscoveredAt).ThenByDescending(x => x.Document.Id)
+            .GroupBy(x => (x.Notice.Type, x.Notice.PaymentDate)).SelectMany(group => {
+                var bases = group.Where(x => x.Notice.BaseDate.HasValue).Select(x => x.Notice.BaseDate!.Value).Distinct().ToList();
+                // A summary omitting the base date must not add a second copy of an identified payment.
+                var candidates = bases.Count > 1 ? group.Where(x => x.Notice.BaseDate.HasValue) : group;
+                return candidates.GroupBy(x => x.Notice.BaseDate ?? (bases.Count == 1 ? bases[0] : (DateOnly?)null)).Select(payments => payments.First());
+            })
+            .Where(x => x.Notice.PaymentDate.Year == referenceMonth.Year && x.Notice.PaymentDate.Month == referenceMonth.Month);
+        return unique.GroupBy(x => x.Notice.PaymentDate).OrderBy(x => x.Key).Select(group => {
+            var entries = group.OrderBy(x => x.Notice.Type).ToList();
+            var components = entries.Select(x => new DividendForecastComponent(x.Notice.Type == StockDistributionType.Jcp ? "JCP" : "Dividendos",
+                x.Notice.AmountPerShare, decimal.Round(x.Notice.AmountPerShare * position.Quantity, 2), x.Notice.AmountBasis.ToString(), x.Notice.GrossAmountPerShare, x.Document.SourceUrl, x.Document.PublishedAt)).ToList();
+            var source = entries.All(x => x.Notice.Type == StockDistributionType.Dividend) ? entries[0].Source
+                : entries[0].Source + " · " + string.Join(" + ", components.Select(x => x.Type + (x.AmountBasis == "Net" ? " (líquido)" : x.AmountBasis == "Gross" ? " (bruto)" : "")).Distinct());
+            return new DividendForecastItem(position.AssetId, position.Asset.Ticker, components.Sum(x => x.EstimatedAmount), source,
+                entries[0].Document.SourceUrl, entries[0].Document.PublishedAt, group.Key, components);
+        }).ToList();
     }
 
     private static decimal? TryReadPerUnitAmount(InvestmentEvent item)
