@@ -63,6 +63,7 @@ public sealed class GeminiContributionIntelligenceProviderTests
         using var httpHandler = new SequenceHandler(
             new Response(HttpStatusCode.ServiceUnavailable, "{}"),
             new Response(HttpStatusCode.ServiceUnavailable, "{}"),
+            new Response(HttpStatusCode.ServiceUnavailable, "{}"),
             new Response(HttpStatusCode.OK, GeminiResponse("{\"decisionType\":\"NoAction\",\"allocations\":[],\"reason\":\"ok\",\"primaryFactors\":[],\"confidence\":\"low\"}")));
         using var http = new HttpClient(httpHandler);
         var settings = Options.Create(new AiProviderOptions
@@ -71,7 +72,8 @@ public sealed class GeminiContributionIntelligenceProviderTests
             Model = "gemini-3.5-flash-lite",
             FallbackModel = "gemini-3.1-flash-lite"
         });
-        var provider = new GeminiContributionIntelligenceProvider(http, settings, new ImmediateRateLimiter());
+        var time = new ImmediateTimeProvider();
+        var provider = new GeminiContributionIntelligenceProvider(http, settings, new ImmediateRateLimiter(), time);
 
         var result = await provider.ProposeAllocationAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), Array.Empty<ContributionScenarioOption>(), ct: TestContext.Current.CancellationToken);
 
@@ -80,7 +82,9 @@ public sealed class GeminiContributionIntelligenceProviderTests
         Assert.Equal("gemini-3.1-flash-lite", result.Metadata.FallbackModel);
         Assert.True(result.Metadata.UsedFallback);
         Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent", httpHandler.Requests[0].RequestUri!.ToString());
-        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", httpHandler.Requests[2].RequestUri!.ToString());
+        Assert.Equal(4, httpHandler.Requests.Count);
+        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", httpHandler.Requests[3].RequestUri!.ToString());
+        Assert.Equal(Enumerable.Repeat(TimeSpan.FromSeconds(15), 2), time.Delays);
         using var body = JsonDocument.Parse(httpHandler.Bodies[0]);
         Assert.Equal("medium", body.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingLevel").GetString());
     }
@@ -106,6 +110,49 @@ public sealed class GeminiContributionIntelligenceProviderTests
     }
 
     private static string GeminiResponse(string text) => $"{{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":{JsonSerializer.Serialize(text)}}}]}}}}]}}";
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests, true, 6)]
+    [InlineData(HttpStatusCode.RequestTimeout, true, 6)]
+    [InlineData(HttpStatusCode.InternalServerError, true, 6)]
+    [InlineData(HttpStatusCode.BadGateway, true, 6)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true, 6)]
+    [InlineData(HttpStatusCode.GatewayTimeout, true, 6)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, false, 3)]
+    [InlineData(HttpStatusCode.BadRequest, true, 1)]
+    [InlineData(HttpStatusCode.Forbidden, true, 1)]
+    public async Task RetriesTransientErrorsThreeTimesPerModel(HttpStatusCode status, bool fallback, int attempts)
+    {
+        using var handler = new SequenceHandler(new Response(status, "{}"));
+        using var http = new HttpClient(handler);
+        var time = new ImmediateTimeProvider();
+        var provider = new GeminiContributionIntelligenceProvider(http,
+            Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "primary", FallbackModel = fallback ? "fallback" : "" }),
+            new ImmediateRateLimiter(), time);
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => provider.EvaluateAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), TestContext.Current.CancellationToken));
+
+        Assert.Equal(status, exception.StatusCode);
+        Assert.Equal(attempts, handler.Requests.Count);
+        Assert.All(handler.Requests.Take(3), request => Assert.Contains("/primary:", request.RequestUri!.AbsolutePath));
+        Assert.All(handler.Requests.Skip(3), request => Assert.Contains("/fallback:", request.RequestUri!.AbsolutePath));
+        Assert.Equal(Enumerable.Repeat(TimeSpan.FromSeconds(15), attempts == 6 ? 4 : attempts == 3 ? 2 : 0), time.Delays);
+    }
+
+    [Fact]
+    public async Task CancellationStopsRetryDelayBeforeFallback()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using var handler = new SequenceHandler(new Response(HttpStatusCode.ServiceUnavailable, "{}"));
+        using var http = new HttpClient(handler);
+        var provider = new GeminiContributionIntelligenceProvider(http,
+            Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "primary", FallbackModel = "fallback" }), new ImmediateRateLimiter());
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => provider.EvaluateAsync(Guid.NewGuid(), 100m, Array.Empty<ContributionCandidate>(), cancellation.Token));
+
+        Assert.Single(handler.Requests);
+    }
 
     private sealed record Response(HttpStatusCode StatusCode, string Body);
 

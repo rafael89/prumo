@@ -69,12 +69,12 @@ public sealed class GeminiAnalysisServiceTests
     [Fact]
     public async Task LeRetryDelayDoErroEstruturadoDoGemini()
     {
-        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests)
         {
             Content = new StringContent("{\"error\":{\"details\":[{\"retryDelay\":\"7s\"}]}}", Encoding.UTF8, "application/json")
-        };
+        });
 
-        var exception = await Assert.ThrowsAsync<AiProviderRateLimitException>(() => CreateService(new StubHandler(_ => response)).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
+        var exception = await Assert.ThrowsAsync<AiProviderRateLimitException>(() => CreateService(handler).AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
 
         Assert.Equal(TimeSpan.FromSeconds(7), exception.RetryAfter);
     }
@@ -86,7 +86,7 @@ public sealed class GeminiAnalysisServiceTests
         var handler = new StubHandler(request =>
         {
             requests.Add(request.RequestUri!);
-            return requests.Count == 1
+            return requests.Count <= 3
                 ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
                 : JsonResponse(ValidResponse());
         });
@@ -100,29 +100,108 @@ public sealed class GeminiAnalysisServiceTests
                 TimeoutSeconds = 5
             }),
             new AiAnalysisValidator(),
-            NullLogger<GeminiAnalysisService>.Instance);
+            NullLogger<GeminiAnalysisService>.Instance, new ImmediateTimeProvider());
 
         var result = await service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal("gemini-3.1-flash-lite", result.Model);
-        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", requests[1].ToString());
+        Assert.Equal(4, requests.Count);
+        Assert.Equal("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", requests[3].ToString());
     }
 
     [Fact]
-    public async Task UsaModeloFallbackQuandoGeminiEstaIndisponivel()
+    public async Task Retenta503NoMesmoModeloApos15Segundos()
     {
         var requests = 0;
+        var models = new List<string>();
+        var time = new ImmediateTimeProvider();
         var service = new GeminiAnalysisService(
-            new HttpClient(new StubHandler(_ => ++requests == 1
-                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
-                : JsonResponse(ValidResponse()))),
+            new HttpClient(new StubHandler(request =>
+            {
+                models.Add(request.RequestUri!.AbsolutePath);
+                return ++requests == 1
+                    ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                    : JsonResponse(ValidResponse());
+            })),
+            Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "primary", FallbackModel = "fallback" }),
+            new AiAnalysisValidator(),
+            NullLogger<GeminiAnalysisService>.Instance, time);
+
+        var result = await service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
+
+        Assert.Equal("primary", result.Model);
+        Assert.Equal(2, requests);
+        Assert.All(models, model => Assert.Contains("/primary:", model));
+        Assert.Equal(new[] { TimeSpan.FromSeconds(15) }, time.Delays);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task ErrosTemporariosUsamTresTentativasPorModelo(HttpStatusCode status)
+    {
+        var time = new ImmediateTimeProvider();
+        var models = new List<string>();
+        var service = new GeminiAnalysisService(
+            new HttpClient(new StubHandler(request =>
+            {
+                models.Add(request.RequestUri!.AbsolutePath);
+                return new HttpResponseMessage(status);
+            })),
+            Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "primary", FallbackModel = "fallback" }),
+            new AiAnalysisValidator(),
+            NullLogger<GeminiAnalysisService>.Instance, time);
+
+        var exception = await Assert.ThrowsAnyAsync<HttpRequestException>(() => service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken));
+
+        Assert.Equal(status, exception.StatusCode);
+        Assert.Equal(6, models.Count);
+        Assert.All(models.Take(3), model => Assert.Contains("/primary:", model));
+        Assert.All(models.Skip(3), model => Assert.Contains("/fallback:", model));
+        Assert.Equal(Enumerable.Repeat(TimeSpan.FromSeconds(15), 4), time.Delays);
+    }
+
+    [Fact]
+    public async Task CancelamentoInterrompeEsperaDo503SemFallback()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var requests = 0;
+        var service = new GeminiAnalysisService(
+            new HttpClient(new StubHandler(_ =>
+            {
+                requests++;
+                cancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
+                return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+            })),
             Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "primary", FallbackModel = "fallback" }),
             new AiAnalysisValidator(),
             NullLogger<GeminiAnalysisService>.Instance);
 
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.AnalyzeAsync("texto", Context, cancellation.Token));
+
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public async Task MantemFallbackParaOutrosErrosTemporarios()
+    {
+        var requests = 0;
+        var service = new GeminiAnalysisService(
+            new HttpClient(new StubHandler(_ => ++requests <= 3
+                ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                : JsonResponse(ValidResponse()))),
+            Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "primary", FallbackModel = "fallback" }),
+            new AiAnalysisValidator(),
+            NullLogger<GeminiAnalysisService>.Instance, new ImmediateTimeProvider());
+
         var result = await service.AnalyzeAsync("texto", Context, TestContext.Current.CancellationToken);
 
         Assert.Equal("fallback", result.Model);
+        Assert.Equal(4, requests);
     }
 
     [Theory]
@@ -188,7 +267,7 @@ public sealed class GeminiAnalysisServiceTests
         new HttpClient(handler),
         Options.Create(new AiProviderOptions { ApiKey = "test-key", Model = "gemini-2.5-flash-lite", TimeoutSeconds = timeoutSeconds }),
         new AiAnalysisValidator(),
-        NullLogger<GeminiAnalysisService>.Instance);
+        NullLogger<GeminiAnalysisService>.Instance, new ImmediateTimeProvider());
 
     private static HttpResponseMessage JsonResponse(string content) => new(HttpStatusCode.OK) { Content = new StringContent(content, Encoding.UTF8, "application/json") };
 

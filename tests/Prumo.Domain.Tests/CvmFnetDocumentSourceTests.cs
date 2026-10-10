@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Prumo.Domain.Enums;
@@ -167,6 +168,132 @@ public sealed class CvmFnetDocumentSourceTests
         var candidates = await source.FindAsync(new[] { "BBSE3" }, TestContext.Current.CancellationToken);
 
         Assert.Empty(candidates);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Retenta520TransitorioSemPerderDocumentos(bool failManager)
+    {
+        var handler = new FailingFnetHandler(failures: 1, failManager: failManager);
+        using var client = new HttpClient(handler);
+        var logger = new RecordingLogger();
+        var source = CreateFailingFnetSource(client, logger);
+
+        var candidates = await FindTestFundAsync(source, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "csv", "1000" }, candidates.Select(candidate => candidate.SourceIdentifier));
+        Assert.Equal(2, handler.FailedEndpointRequests);
+        Assert.DoesNotContain(logger.Entries, entry => entry.Level >= LogLevel.Warning);
+    }
+
+    [Theory]
+    [InlineData(520, true, LogLevel.Information, 3)]
+    [InlineData(520, false, LogLevel.Warning, 3)]
+    [InlineData(403, true, LogLevel.Warning, 1)]
+    public async Task MantemFallbackENivelDeLogConformeDisponibilidadeDoCsv(int status, bool csvAvailable, LogLevel expectedLevel, int expectedAttempts)
+    {
+        var handler = new FailingFnetHandler(int.MaxValue, status: status, csvAvailable: csvAvailable);
+        using var client = new HttpClient(handler);
+        var logger = new RecordingLogger();
+        var source = CreateFailingFnetSource(client, logger);
+
+        var candidates = await FindTestFundAsync(source, TestContext.Current.CancellationToken);
+
+        Assert.Equal(csvAvailable ? 1 : 0, candidates.Count);
+        Assert.Equal(expectedAttempts, handler.FailedEndpointRequests);
+        var failure = Assert.Single(logger.Entries, entry => entry.Message.Contains("FNET direto indisponível", StringComparison.Ordinal));
+        Assert.Equal(expectedLevel, failure.Level);
+        if (csvAvailable && status == 520)
+            Assert.DoesNotContain(logger.Entries, entry => entry.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task PreservaPaginasAnterioresAo520RespeitandoDatasEStatus()
+    {
+        var handler = new FailingFnetHandler(int.MaxValue, failureStart: 100);
+        using var client = new HttpClient(handler);
+        var source = CreateFailingFnetSource(client, new RecordingLogger());
+
+        var candidates = await FindTestFundAsync(source, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "csv", "1000" }, candidates.Select(candidate => candidate.SourceIdentifier));
+        Assert.Equal(new[] { 0, 100, 100, 100 }, handler.Starts);
+    }
+
+    [Fact]
+    public async Task CancelamentoDuranteRetentativaNaoViraFallback()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var handler = new FailingFnetHandler(int.MaxValue, onFailure: () => cancellation.Cancel());
+        using var client = new HttpClient(handler);
+        var logger = new RecordingLogger();
+        var source = CreateFailingFnetSource(client, logger);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => FindTestFundAsync(source, cancellation.Token));
+
+        Assert.Equal(1, handler.FailedEndpointRequests);
+        Assert.DoesNotContain(logger.Entries, entry => entry.Message.Contains("FNET direto indisponível", StringComparison.Ordinal));
+    }
+
+    private static CvmFnetDocumentSource CreateFailingFnetSource(HttpClient client, RecordingLogger logger) => new(client, Options.Create(new CvmFnetOptions
+    {
+        DocumentosEventuaisUrlTemplate = "https://cvm.test/eventual_{0}.csv",
+        FnetManagerUrl = "https://fnet.test/manager",
+        FnetDocumentsUrl = "https://fnet.test/documents"
+    }), logger);
+
+    private static Task<IReadOnlyList<Prumo.Application.Abstractions.DocumentCandidate>> FindTestFundAsync(CvmFnetDocumentSource source, CancellationToken ct) =>
+        source.FindAsync(new[] { new DocumentSourceAsset("HGBS11", "08.431.747/0001-06", AssetClass.Fii) },
+            new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 14, 0, 0, 0, TimeSpan.Zero), ct);
+
+    private sealed class RecordingLogger : ILogger<CvmFnetDocumentSource>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
+    }
+
+    private sealed class FailingFnetHandler(int failures, int status = 520, bool csvAvailable = true, int failureStart = 0, bool failManager = false, Action? onFailure = null) : HttpMessageHandler
+    {
+        public int FailedEndpointRequests { get; private set; }
+        public List<int> Starts { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.Host == "cvm.test")
+                return Response(csvAvailable ? HttpStatusCode.OK : HttpStatusCode.NotFound,
+                    "CNPJ_FUNDO_CLASSE;DT_RECEB;TP_DOC;ID_DOC;LINK_ARQ\n08.431.747/0001-06;05/09/2026;Fato Relevante;csv;https://cvm.test/fato.pdf\n");
+
+            var manager = request.RequestUri.AbsolutePath.Contains("manager", StringComparison.Ordinal);
+            var start = manager ? 0 : int.Parse(request.RequestUri.Query.TrimStart('?').Split('&').Single(item => item.StartsWith("s=", StringComparison.Ordinal)).Split('=')[1]);
+            if (!manager) Starts.Add(start);
+            if (manager == failManager && start == failureStart)
+            {
+                FailedEndpointRequests++;
+                if (FailedEndpointRequests <= failures)
+                {
+                    onFailure?.Invoke();
+                    return Response((HttpStatusCode)status, "");
+                }
+            }
+
+            if (manager) return Response(HttpStatusCode.OK, "{}");
+            var count = failureStart == 100 ? 100 : 1;
+            var rows = Enumerable.Range(0, count).Select(index => new
+            {
+                id = 1000 + index,
+                dataEntrega = index == 2 ? "01/10/2026 12:00" : index < 2 ? "10/09/2026 12:00" : "01/01/2020 12:00",
+                tipoDocumento = "Fato Relevante",
+                status = index == 1 ? "Cancelado" : "Ativo"
+            });
+            return Response(HttpStatusCode.OK, JsonSerializer.Serialize(new { recordsTotal = failureStart == 100 ? 200 : 1, data = rows }));
+        }
+
+        private static Task<HttpResponseMessage> Response(HttpStatusCode status, string content) =>
+            Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(content) });
     }
 
     private sealed class PagedFnetHandler : HttpMessageHandler

@@ -13,12 +13,14 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
     private readonly HttpClient http;
     private readonly AiProviderOptions settings;
     private readonly IAiRequestRateLimiter limiter;
+    private readonly TimeProvider timeProvider;
 
-    public GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter)
+    public GeminiContributionIntelligenceProvider(HttpClient http, IOptions<AiProviderOptions> options, IAiRequestRateLimiter limiter, TimeProvider? timeProvider = null)
     {
         this.http = http;
         settings = options.Value;
         this.limiter = limiter;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         http.Timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
     }
 
@@ -115,30 +117,28 @@ public sealed class GeminiContributionIntelligenceProvider : IContributionIntell
     {
         HttpStatusCode lastStatus = HttpStatusCode.ServiceUnavailable;
         var lastRaw = string.Empty;
-        for (var attempt = 0; attempt < 2; attempt++)
+        for (var attempt = 1; attempt <= GeminiRetryPolicy.MaxAttempts; attempt++)
         {
-            using var permit = await limiter.AcquireAsync(estimatedTokens, ct);
-            using var message = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model)}:generateContent") { Content = JsonContent.Create(body) };
-            message.Headers.Add("x-goog-api-key", settings.ApiKey);
-            using var response = await http.SendAsync(message, ct);
-            var raw = await response.Content.ReadAsStringAsync(ct);
-            lastStatus = response.StatusCode;
-            lastRaw = raw;
-            if (response.IsSuccessStatusCode) return new GeminiResponse(raw, model);
+            {
+                using var permit = await limiter.AcquireAsync(estimatedTokens, ct);
+                using var message = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(model)}:generateContent") { Content = JsonContent.Create(body) };
+                message.Headers.Add("x-goog-api-key", settings.ApiKey);
+                using var response = await http.SendAsync(message, ct);
+                var raw = await response.Content.ReadAsStringAsync(ct);
+                lastStatus = response.StatusCode;
+                lastRaw = raw;
+                if (response.IsSuccessStatusCode) return new GeminiResponse(raw, model);
+            }
 
-            var transient = response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
-            if (!transient || attempt == 1) break;
-            await Task.Delay(TimeSpan.FromMilliseconds(500 * (attempt + 1)), ct);
+            if (!GeminiRetryPolicy.IsTransient(lastStatus) || attempt == GeminiRetryPolicy.MaxAttempts) break;
+            await Task.Delay(GeminiRetryPolicy.Delay, timeProvider, ct);
         }
 
-        if (IsTransient(lastStatus) && !string.IsNullOrWhiteSpace(ContributionFallbackModel) && !string.Equals(model, ContributionFallbackModel, StringComparison.OrdinalIgnoreCase))
+        if (GeminiRetryPolicy.IsTransient(lastStatus) && !string.IsNullOrWhiteSpace(ContributionFallbackModel) && !string.Equals(model, ContributionFallbackModel, StringComparison.OrdinalIgnoreCase))
             return await SendAsync(ContributionFallbackModel, body, estimatedTokens, ct);
         if (lastStatus != HttpStatusCode.OK) throw new HttpRequestException($"Gemini HTTP {(int)lastStatus}: {TrimError(lastRaw)}", null, lastStatus);
         return new GeminiResponse(lastRaw, model);
     }
-
-    private static bool IsTransient(HttpStatusCode statusCode) => statusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
-
     private static ContributionIntelligenceResult Parse(string raw, string model)
     {
         using var document = JsonDocument.Parse(raw); var root = document.RootElement; var text = root.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();

@@ -68,6 +68,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             try
             {
                 IReadOnlyList<CvmDocumentRecord> records;
+                var csvAvailable = false;
                 try
                 {
                     using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -76,6 +77,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     records = isStock
                         ? await ParseZipCsvAsync(content, cancellationToken)
                         : ParseCsv(Encoding.Latin1.GetString(content));
+                    csvAvailable = true;
                 }
                 catch (HttpRequestException exception)
                 {
@@ -109,7 +111,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     }
                     if (!isStock && options.FnetDirectDiscoveryEnabled)
                     {
-                        var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, from, to, cancellationToken, directFailureWarnings);
+                        var directRecords = await FindRecentFnetRecordsAsync(asset, normalizedCnpj, from, to, cancellationToken, directFailureWarnings, csvAvailable);
                         tickerRecords.AddRange(directRecords);
                     }
                     logger.LogInformation("Recurso CVM mapeou {RecordCount} registro(s) para o ticker {Ticker}", tickerRecords.Count, asset.Ticker);
@@ -232,26 +234,29 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
     private static bool TryParseEnetDate(string? value, out DateTimeOffset date)
         => DateTimeOffset.TryParseExact(value?.Trim(), new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy" }, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out date);
 
-    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct, ISet<string> directFailureWarnings)
+    private async Task<IReadOnlyList<CvmDocumentRecord>> FindRecentFnetRecordsAsync(DocumentSourceAsset asset, string normalizedCnpj, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct, ISet<string> directFailureWarnings, bool csvAvailable)
     {
         if (normalizedCnpj.Length != 14) return Array.Empty<CvmDocumentRecord>();
 
+        var upperBound = to ?? DateTimeOffset.UtcNow;
+        var cutoff = from ?? upperBound.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
+        var records = new List<CvmDocumentRecord>();
         try
         {
             // FNET establishes the session used by the grid when its manager
             // page is opened. Without this request the JSON endpoint may
             // return the upstream WAF page instead of the grid payload.
-            using var managerRequest = new HttpRequestMessage(
-                HttpMethod.Get,
-                $"{options.FnetManagerUrl}?cnpjFundo={Uri.EscapeDataString(normalizedCnpj)}");
-            managerRequest.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-            managerRequest.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
-            using var managerResponse = await httpClient.SendAsync(managerRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var managerResponse = await SendFnetWithRetryAsync(() =>
+            {
+                var managerRequest = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"{options.FnetManagerUrl}?cnpjFundo={Uri.EscapeDataString(normalizedCnpj)}");
+                managerRequest.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                managerRequest.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
+                return managerRequest;
+            }, ct);
             managerResponse.EnsureSuccessStatusCode();
 
-            var upperBound = to ?? DateTimeOffset.UtcNow;
-            var cutoff = from ?? upperBound.AddDays(-Math.Max(1, options.FnetDirectLookbackDays));
-            var records = new List<CvmDocumentRecord>();
             var pageSize = 100;
             var start = 0;
             var pageCount = 0;
@@ -264,12 +269,15 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                 if (pageCount++ >= 1000)
                     throw new InvalidOperationException("Paginação FNET excedeu o limite defensivo de páginas.");
 
-                using var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj, from, to, start, pageSize));
-                request.Headers.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
-                request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
-                request.Headers.TryAddWithoutValidation("Referer", $"{options.FnetManagerUrl}?cnpjFundo={normalizedCnpj}");
-                request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
-                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                using var response = await SendFnetWithRetryAsync(() =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, BuildFnetDocumentsUrl(normalizedCnpj, from, to, start, pageSize));
+                    request.Headers.TryAddWithoutValidation("Accept", "application/json, text/javascript, */*; q=0.01");
+                    request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+                    request.Headers.TryAddWithoutValidation("Referer", $"{options.FnetManagerUrl}?cnpjFundo={normalizedCnpj}");
+                    request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
+                    return request;
+                }, ct);
                 response.EnsureSuccessStatusCode();
                 await using var pageStream = await response.Content.ReadAsStreamAsync(ct);
                 using var pageJson = await JsonDocument.ParseAsync(pageStream, cancellationToken: ct);
@@ -324,27 +332,22 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     || pageCountReturned < pageSize)
                     break;
             }
-
-            records = records
-                .Where(record => TryParseFnetDate(record.DataRecebimento, out var publishedAt)
-                    && publishedAt >= cutoff
-                    && publishedAt <= upperBound.AddMinutes(5))
-                .ToList();
-            logger.LogInformation("FNET direto mapeou {RecordCount} documento(s) recentes para {Ticker}", records.Count, asset.Ticker);
-            return records;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (HttpRequestException exception)
         {
             if (directFailureWarnings.Add($"FNET:http:{(int?)exception.StatusCode ?? 0}"))
-                logger.LogWarning(exception, "FNET direto indisponível durante a paginação; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, (int?)exception.StatusCode ?? 0);
-            return Array.Empty<CvmDocumentRecord>();
+            {
+                if ((int?)exception.StatusCode == 520 && csvAvailable)
+                    logger.LogInformation("FNET direto indisponível após retentativas; CSV consultado com sucesso, preservando páginas já obtidas (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", asset.Ticker, 520);
+                else
+                    logger.LogWarning(exception, "FNET direto indisponível; CSV disponível: {CsvAvailable}; preservando páginas já obtidas (primeiro ticker afetado: {Ticker}, HTTP {StatusCode})", csvAvailable, asset.Ticker, (int?)exception.StatusCode ?? 0);
+            }
         }
         catch (JsonException)
         {
             if (directFailureWarnings.Add("FNET:json"))
                 logger.LogDebug("FNET direto retornou uma resposta não-JSON; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
-            return Array.Empty<CvmDocumentRecord>();
         }
         catch (Exception exception)
         {
@@ -353,7 +356,31 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             // CSV discovery path.
             if (directFailureWarnings.Add("FNET:other"))
                 logger.LogDebug(exception, "FNET direto indisponível; mantendo descoberta pelo CSV (primeiro ticker afetado: {Ticker})", asset.Ticker);
-            return Array.Empty<CvmDocumentRecord>();
+        }
+
+        records = records
+            .Where(record => TryParseFnetDate(record.DataRecebimento, out var publishedAt)
+                && publishedAt >= cutoff
+                && publishedAt <= upperBound.AddMinutes(5))
+            .ToList();
+        logger.LogInformation("FNET direto mapeou {RecordCount} documento(s) recentes para {Ticker}", records.Count, asset.Ticker);
+        return records;
+    }
+
+    private async Task<HttpResponseMessage> SendFnetWithRetryAsync(Func<HttpRequestMessage> createRequest, CancellationToken ct)
+    {
+        // Retry only the recurring 520 response, with a fresh request each time.
+        // Keep retries bounded so the CSV fallback remains promptly available.
+        for (var attempt = 0; ; attempt++)
+        {
+            using var request = createRequest();
+            var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if ((int)response.StatusCode != 520 || attempt >= 2)
+                return response;
+
+            response.Dispose();
+            logger.LogDebug("FNET retornou HTTP 520; retentativa {RetryAttempt} de 2", attempt + 1);
+            await Task.Delay(TimeSpan.FromSeconds(attempt + 1), ct);
         }
     }
 

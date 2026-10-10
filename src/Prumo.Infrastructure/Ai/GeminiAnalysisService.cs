@@ -18,10 +18,12 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
     private readonly AiProviderOptions options;
     private readonly AiAnalysisValidator validator;
     private readonly ILogger<GeminiAnalysisService> logger;
+    private readonly TimeProvider timeProvider;
 
-    public GeminiAnalysisService(HttpClient httpClient, IOptions<AiProviderOptions> options, AiAnalysisValidator validator, ILogger<GeminiAnalysisService> logger)
+    public GeminiAnalysisService(HttpClient httpClient, IOptions<AiProviderOptions> options, AiAnalysisValidator validator, ILogger<GeminiAnalysisService> logger, TimeProvider? timeProvider = null)
     {
         this.httpClient = httpClient; this.options = options.Value; this.validator = validator; this.logger = logger;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         httpClient.Timeout = TimeSpan.FromSeconds(Math.Max(1, this.options.TimeoutSeconds));
     }
 
@@ -35,17 +37,17 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         if (string.IsNullOrWhiteSpace(options.Model)) throw new InvalidOperationException("AI:Model não configurado para o provider Gemini.");
         try
         {
-            return await AnalyzeWithModelAsync(options.Model, documentText, context, cancellationToken);
+            return await AnalyzeWithRetryAsync(options.Model, documentText, context, cancellationToken);
         }
         catch (AiProviderRateLimitException) when (HasFallbackModel())
         {
             logger.LogWarning("Quota do modelo Gemini excedida; tentando fallback model={FallbackModel}; primaryModel={PrimaryModel}", options.FallbackModel, options.Model);
-            return await AnalyzeWithModelAsync(options.FallbackModel, documentText, context, cancellationToken);
+            return await AnalyzeWithRetryAsync(options.FallbackModel, documentText, context, cancellationToken);
         }
         catch (HttpRequestException exception) when (HasFallbackModel() && IsTemporaryProviderFailure(exception))
         {
             logger.LogWarning(exception, "Modelo Gemini indisponível; tentando fallback model={FallbackModel}; primaryModel={PrimaryModel}", options.FallbackModel, options.Model);
-            return await AnalyzeWithModelAsync(options.FallbackModel, documentText, context, cancellationToken);
+            return await AnalyzeWithRetryAsync(options.FallbackModel, documentText, context, cancellationToken);
         }
     }
 
@@ -53,7 +55,23 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         && !string.Equals(options.Model, options.FallbackModel, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsTemporaryProviderFailure(HttpRequestException exception)
-        => exception.StatusCode is HttpStatusCode.RequestTimeout or >= HttpStatusCode.InternalServerError;
+        => GeminiRetryPolicy.IsTransient(exception.StatusCode);
+
+    private async Task<AiAnalysisResult> AnalyzeWithRetryAsync(string model, string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await AnalyzeWithModelAsync(model, documentText, context, cancellationToken);
+            }
+            catch (HttpRequestException exception) when (IsTemporaryProviderFailure(exception) && attempt < GeminiRetryPolicy.MaxAttempts)
+            {
+                logger.LogInformation("Gemini retornou HTTP {StatusCode}; aguardando {RetryDelaySeconds}s para tentativa {Attempt}/{MaxAttempts}; model={Model}", (int?)exception.StatusCode, GeminiRetryPolicy.Delay.TotalSeconds, attempt + 1, GeminiRetryPolicy.MaxAttempts, model);
+                await Task.Delay(GeminiRetryPolicy.Delay, timeProvider, cancellationToken);
+            }
+        }
+    }
 
     private async Task<AiAnalysisResult> AnalyzeWithModelAsync(string model, string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken)
     {
