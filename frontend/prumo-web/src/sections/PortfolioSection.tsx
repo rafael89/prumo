@@ -25,6 +25,13 @@ type PortfolioSectionProps = {
 function formatCurrency(value: number | null | undefined, hidden = false) { if (hidden) return 'R$ ••••••'; if (value == null) return 'Sem valor'; return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value) }
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
+function formatAssetName(name: string, ticker: string) {
+  const description = name.trim()
+  const prefix = ticker.trim()
+  if (!prefix || !description.toUpperCase().startsWith(prefix.toUpperCase())) return description
+  const suffix = description.slice(prefix.length)
+  return /^\s*[-–—]\s*/.test(suffix) ? suffix.replace(/^\s*[-–—]\s*/, '') : description
+}
 export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, togglePrivacy, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId, onImportStateChange }: PortfolioSectionProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [portfolioToDelete, setPortfolioToDelete] = useState<PortfolioItem | null>(null)
@@ -127,7 +134,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                           <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-end">
                             <div className="col-span-2 md:col-span-1">
                               <p className="text-sm font-semibold">{position.ticker}</p>
-                              <p className="text-xs text-slate-500">{position.name}</p>
+                              <p className="text-xs text-slate-500">{formatAssetName(position.name, position.ticker)}</p>
                             </div>
                             <div className="text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
                             <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span><input aria-label="Quantidade" value={editForm.quantity} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, quantity: event.target.value }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
@@ -143,7 +150,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                           <div className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
                             <div className="col-span-2 min-w-0 md:col-span-1">
                               <p className="truncate text-sm font-semibold">{position.ticker}</p>
-                              <p className="wrap-break-word text-xs text-slate-500">{position.name}</p>
+                              <p className="wrap-break-word text-xs text-slate-500">{formatAssetName(position.name, position.ticker)}</p>
                             </div>
                             <div className="min-w-0 text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
                             <div className="min-w-0 text-right text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span>{formatNumber(position.quantity)}</div>
