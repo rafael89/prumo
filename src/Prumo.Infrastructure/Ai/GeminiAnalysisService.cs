@@ -41,7 +41,7 @@ public sealed class GeminiAnalysisService : IAiAnalysisService
         }
         catch (AiProviderRateLimitException) when (HasFallbackModel())
         {
-            logger.LogWarning("Quota do modelo Gemini excedida; tentando fallback model={FallbackModel}; primaryModel={PrimaryModel}", options.FallbackModel, options.Model);
+            logger.LogInformation("Quota do modelo Gemini excedida; tentando fallback model={FallbackModel}; primaryModel={PrimaryModel}", options.FallbackModel, options.Model);
             return await AnalyzeWithRetryAsync(options.FallbackModel, documentText, context, cancellationToken);
         }
         catch (HttpRequestException exception) when (HasFallbackModel() && IsTemporaryProviderFailure(exception))
