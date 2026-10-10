@@ -31,9 +31,7 @@ public sealed class DocumentAnalysisPromptTests
         Assert.Contains("Calibre confidence entre 0 e 1", prompt);
         Assert.Contains("não significa executar uma compra ou venda", prompt);
 
-        var marker = "DADOS NÃO CONFIÁVEIS EM JSON:\n";
-        var json = prompt[(prompt.IndexOf(marker, StringComparison.Ordinal) + marker.Length)..];
-        using var input = JsonDocument.Parse(json);
+        using var input = ReadInput(prompt);
         Assert.Equal("XPLG11", input.RootElement.GetProperty("asset").GetProperty("ticker").GetString());
         Assert.Equal(documentText, input.RootElement.GetProperty("documentText").GetString());
     }
@@ -52,8 +50,7 @@ public sealed class DocumentAnalysisPromptTests
         };
 
         var prompt = DocumentAnalysisPrompt.BuildGlobal("texto integral", context);
-        var marker = "DADOS NÃO CONFIÁVEIS EM JSON:\n";
-        using var input = JsonDocument.Parse(prompt[(prompt.IndexOf(marker, StringComparison.Ordinal) + marker.Length)..]);
+        using var input = ReadInput(prompt);
         var document = input.RootElement.GetProperty("document");
 
         Assert.Equal("RelevantFact", document.GetProperty("type").GetString());
@@ -69,8 +66,7 @@ public sealed class DocumentAnalysisPromptTests
     public void Global_prompt_preserva_metadata_documental_ausente_como_nula()
     {
         var prompt = DocumentAnalysisPrompt.BuildGlobal("texto", CreateContext(25m));
-        var marker = "DADOS NÃO CONFIÁVEIS EM JSON:\n";
-        using var input = JsonDocument.Parse(prompt[(prompt.IndexOf(marker, StringComparison.Ordinal) + marker.Length)..]);
+        using var input = ReadInput(prompt);
         var document = input.RootElement.GetProperty("document");
 
         Assert.Equal(JsonValueKind.Null, document.GetProperty("sourceCategory").ValueKind);
@@ -79,6 +75,14 @@ public sealed class DocumentAnalysisPromptTests
         Assert.Contains("publishedAt", prompt);
         Assert.Contains("occurredAt", prompt);
         Assert.Contains("publishedAt == occurredAt", prompt);
+    }
+
+    private static JsonDocument ReadInput(string prompt)
+    {
+        const string marker = "DADOS NÃO CONFIÁVEIS EM JSON:";
+        var index = prompt.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(index >= 0, "O prompt deve conter o marcador do JSON de entrada.");
+        return JsonDocument.Parse(prompt[(index + marker.Length)..].TrimStart());
     }
 
     private static PortfolioAnalysisContext CreateContext(decimal portfolioWeight) => new(

@@ -10,6 +10,276 @@ namespace Prumo.Domain.Tests;
 public sealed class DividendForecastTests
 {
     [Fact]
+    public async Task Official_shareholder_notice_is_not_replaced_by_a_newer_market_communication()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"Dividendos: R$ 1,00 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        AddDistribution(db, asset, $"Dividendos: R$ 9,00 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1), "Comunicado ao Mercado");
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(100m, result!.EstimatedMonthlyAmount);
+        Assert.Equal("Aviso aos Acionistas", Assert.Single(result.Items).Source);
+    }
+
+    [Theory]
+    [InlineData("Fato Relevante")]
+    [InlineData("Comunicado ao Mercado")]
+    [InlineData(null)]
+    public async Task Non_notice_stock_documents_are_not_used_even_with_explicit_values(string? category)
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        var text = $"Dividendos: R$ 1,00 por ação. JCP: R$ 0,50 por ação. Pagamento em {date:dd/MM/yyyy}.";
+        AddDistribution(db, asset, text, DateTimeOffset.UtcNow.AddDays(-1), category);
+        db.Documents.Local.Single().MarkDownloaded("memory://non-notice", "non-notice");
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(text), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0m, result!.EstimatedMonthlyAmount);
+        Assert.Null(Assert.Single(result.Items).PaymentDate);
+    }
+
+    [Fact]
+    public async Task Shareholder_notice_without_a_file_or_event_uses_its_persisted_analysis()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"Dividendos: R$ 1,00 por ação. JCP: R$ 0,50 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        db.InvestmentEvents.RemoveRange(db.InvestmentEvents.Local.ToList());
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(""), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(150m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(2, Assert.Single(result.Items).Components!.Count);
+    }
+
+    [Fact]
+    public async Task Future_stock_month_sums_received_announcements_but_excludes_future_publications()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var month = CurrentMonthDate(1).AddMonths(1);
+        var date = month.AddDays(14);
+        AddDistribution(db, asset, $"Dividendos: R$ 1,00 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        AddDistribution(db, asset, $"JCP: R$ 0,50 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        AddDistribution(db, asset, $"Dividendos: R$ 9,00 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(""), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+
+        Assert.Equal(150m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(date, Assert.Single(result.Items).PaymentDate);
+    }
+
+    [Fact]
+    public async Task Duplicate_announcement_without_base_date_does_not_add_another_payment()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"JCP: R$ 0,50 por ação. Data-base: {date.AddDays(-10):dd/MM/yyyy}. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        AddDistribution(db, asset, $"JCP: R$ 0,50 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(50m, result!.EstimatedMonthlyAmount);
+        Assert.Single(Assert.Single(result.Items).Components!);
+    }
+
+    [Fact]
+    public async Task Different_base_dates_preserve_separate_payments_on_the_same_day()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"JCP: R$ 0,50 por ação. Data-base: {date.AddDays(-10):dd/MM/yyyy}. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        AddDistribution(db, asset, $"JCP: R$ 0,25 por ação. Data-base: {date.AddDays(-5):dd/MM/yyyy}. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(75m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(2, Assert.Single(result.Items).Components!.Count);
+    }
+
+    [Fact]
+    public async Task Stock_dividends_and_net_jcp_from_one_document_are_summed_once()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"Dividendos: R$ 1,00 por ação. JCP: valor bruto por ação R$ 0,50. Valor líquido por ação R$ 0,425. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        AddIncome(db, portfolio.Id, asset.Id, 142.50m, LocalNoon(CurrentMonthDate(1)));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(142.50m, result!.EstimatedMonthlyAmount);
+        var item = Assert.Single(result.Items);
+        Assert.Equal(date, item.PaymentDate);
+        Assert.Equal(2, item.Components!.Count);
+        Assert.Contains("JCP (líquido)", item.Source);
+    }
+
+    [Fact]
+    public async Task Stock_payments_from_separate_documents_keep_dates_and_sum_the_month()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var dividendDate = CurrentMonthDate(10);
+        var jcpDate = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"Dividendos: R$ 1,00 por ação. Pagamento em {dividendDate:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        AddDistribution(db, asset, $"JCP bruto: R$ 0,50 por ação. Pagamento em {jcpDate:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        AddDistribution(db, asset, $"JCP: R$ 9,00 por ação. Pagamento em {jcpDate.AddMonths(1):dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(150m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(new[] { dividendDate, jcpDate }, result.Items.Select(x => x.PaymentDate!.Value));
+        Assert.Contains("JCP (bruto)", result.Items[1].Source);
+    }
+
+    [Fact]
+    public async Task Repeated_and_revised_stock_announcements_do_not_double_count()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"Dividendos: R$ 1,00 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-3));
+        AddDistribution(db, asset, $"Dividendos: R$ 1,00 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        AddDistribution(db, asset, $"Dividendos: R$ 1,10 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        AddDistribution(db, asset, $"JCP: R$ 0,50 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(160m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(2, Assert.Single(result.Items).Components!.Count);
+    }
+
+    [Fact]
+    public async Task Original_document_replaces_its_analysis_without_losing_other_documents()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 100);
+        var date = CurrentMonthDate(20);
+        AddDistribution(db, asset, $"Dividendos: R$ 2,00 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        var document = db.Documents.Local.Single();
+        document.MarkDownloaded("memory://stock", "stock-hash");
+        AddDistribution(db, asset, $"JCP: R$ 0,50 por ação. Pagamento em {date:dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-2));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage($"Dividendos: R$ 1,00 por ação. Pagamento em {date:dd/MM/yyyy}."), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(150m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(2, Assert.Single(result.Items).Components!.Count);
+    }
+
+    [Fact]
+    public async Task Historical_income_uses_sao_paulo_daylight_saving_offset()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 10);
+        var month = new DateOnly(2018, 2, 1);
+        AddIncome(db, portfolio.Id, asset.Id, 10, new DateTimeOffset(2018, 2, 1, 0, 0, 0, TimeSpan.FromHours(-2)));
+        AddIncome(db, portfolio.Id, asset.Id, 900, new DateTimeOffset(2018, 3, 1, 0, 0, 0, TimeSpan.FromHours(-3)));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+
+        Assert.Equal(10m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(month, result.Items[0].PaymentDate);
+    }
+
+    [Fact]
+    public async Task Requested_past_month_reads_old_documents_and_excludes_other_months()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 100);
+        var month = CurrentMonthDate(1).AddMonths(-12);
+        AddAnalyzedFiiNotice(db, asset, 0.75m, month.AddDays(14), month.AddDays(-1), LocalNoon(month.AddDays(-1)));
+        AddAnalyzedFiiNotice(db, asset, 1.25m, CurrentMonthDate(20), CurrentMonthDate(1), DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(""), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+
+        Assert.Equal(month, result!.ReferenceMonth);
+        Assert.Equal(75m, result.EstimatedMonthlyAmount);
+        Assert.Equal(month.AddDays(14), result.Items[0].PaymentDate);
+        Assert.Equal("Aviso aos Cotistas", result.Items[0].Source);
+    }
+
+    [Fact]
+    public async Task Requested_past_month_reads_old_analyzed_distribution()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 100);
+        var month = CurrentMonthDate(1).AddMonths(-12);
+        AddDistribution(db, asset, $"R$ 0,80 por cota. Pagamento em {month.AddDays(10):dd/MM/yyyy}.", LocalNoon(month.AddDays(-1)));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+
+        Assert.Equal(80m, result!.EstimatedMonthlyAmount);
+        Assert.Equal("Documento analisado", result.Items[0].Source);
+        Assert.Equal(month.AddDays(10), result.Items[0].PaymentDate);
+    }
+
+    [Fact]
+    public async Task Requested_future_month_uses_announced_payment_without_projecting_other_months()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 100);
+        var month = CurrentMonthDate(1).AddMonths(6);
+        AddDistribution(db, asset, $"R$ 1,10 por cota. Pagamento em {month.AddDays(10):dd/MM/yyyy}.", DateTimeOffset.UtcNow.AddDays(-1));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var service = new DividendForecastService(db);
+
+        var result = await service.GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+        var empty = await service.GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month.AddMonths(1));
+
+        Assert.Equal(month, result!.ReferenceMonth);
+        Assert.Equal(110m, result.EstimatedMonthlyAmount);
+        Assert.Equal(0m, empty!.EstimatedMonthlyAmount);
+        Assert.Null(empty.Items[0].PaymentDate);
+    }
+
+    [Fact]
+    public async Task Requested_past_month_income_respects_local_month_boundaries_and_portfolio()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 10);
+        var month = CurrentMonthDate(1).AddMonths(-12);
+        var start = new DateTimeOffset(month.ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(-3));
+        var end = start.AddMonths(1);
+        var other = new Portfolio("Outra");
+        db.Portfolios.Add(other);
+        AddIncome(db, portfolio.Id, asset.Id, 900, start.AddSeconds(-1));
+        AddIncome(db, portfolio.Id, asset.Id, 10, start);
+        AddIncome(db, portfolio.Id, asset.Id, 20, end.AddSeconds(-1));
+        AddIncome(db, portfolio.Id, asset.Id, 900, end);
+        AddIncome(db, other.Id, asset.Id, 900, start);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+
+        Assert.Equal(30m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(month.AddMonths(1).AddDays(-1), result.Items[0].PaymentDate);
+        Assert.Equal("Rendimento registrado", result.Items[0].Source);
+    }
+
+    [Fact]
     public async Task Explicit_distribution_uses_current_quantity_and_does_not_add_past_income_again()
     {
         await using var db = CreateDb();
