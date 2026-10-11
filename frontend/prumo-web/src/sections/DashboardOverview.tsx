@@ -5,6 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl, sendJson } from '../api/client'
+import { MonthSwitcher } from '../components/MonthSwitcher'
 const contributionApiUrl = apiBaseUrl
 
 type Position = {
@@ -325,10 +326,11 @@ type DividendForecast = {
 }
 
 function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: string; privacyHidden: boolean }) {
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
   const forecast = useQuery({
-    queryKey: ['dividend-forecast', portfolioId],
+    queryKey: ['dividend-forecast', portfolioId, selectedMonth],
     queryFn: async () => {
-      const response = await fetch(`${apiBaseUrl}/api/portfolios/${portfolioId}/dividend-forecast`)
+      const response = await fetch(`${apiBaseUrl}/api/portfolios/${portfolioId}/dividend-forecast${selectedMonth ? `?month=${selectedMonth}` : ''}`)
       if (!response.ok) throw new Error('Não foi possível carregar a previsão de rendimentos.')
       return response.json() as Promise<DividendForecast>
     },
@@ -339,14 +341,18 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
     .sort((left, right) =>
       (left.paymentDate ?? '9999-12-31').localeCompare(right.paymentDate ?? '9999-12-31')
       || left.ticker.localeCompare(right.ticker, 'pt-BR', { sensitivity: 'base' }))
-  const monthLabel = forecast.data?.referenceMonth
-    ? new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(`${forecast.data.referenceMonth}T12:00:00`))
+  const referenceMonth = selectedMonth ?? forecast.data?.referenceMonth
+  const monthLabel = referenceMonth
+    ? new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(`${referenceMonth}T12:00:00`))
     : 'mês atual'
   const paymentDate = (value: string) => new Intl.DateTimeFormat('pt-BR').format(new Date(`${value}T12:00:00`))
   const total = currency(forecast.data?.estimatedMonthlyAmount ?? 0)
   return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-    <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
-    <h2 className="mt-2 text-xl font-semibold text-slate-950">Proventos de {monthLabel}</h2>
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
+      <h2 className="mt-2 text-xl font-semibold text-slate-950">Proventos de {monthLabel}</h2></div>
+      {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={setSelectedMonth} />}
+    </div>
     {forecast.isLoading ? <p className="mt-4 text-sm text-slate-500">Calculando previsão...</p> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
       <div className="mt-5 divide-y divide-slate-200 sm:hidden">
         {orderedItems.map(item => <div key={item.assetId} className="min-w-0 py-4 first:pt-0">
