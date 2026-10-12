@@ -328,11 +328,19 @@ type DividendForecast = {
 function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: string; privacyHidden: boolean }) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
   const cardRef = useRef<HTMLElement>(null)
-  const [minHeight, setMinHeight] = useState<number>()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [loadingHeight, setLoadingHeight] = useState<number>()
+  const [reservedHeight, setReservedHeight] = useState(0)
   const changeMonth = (month: string) => {
-    // Keep the page from shrinking and clamping its scroll position, including
-    // while the next month loads. A minimum still lets larger lists grow.
-    setMinHeight(cardRef.current?.getBoundingClientRect().height)
+    setLoadingHeight(cardRef.current?.getBoundingClientRect().height)
+    const container = containerRef.current?.getBoundingClientRect()
+    if (container) {
+      const top = container.top + window.scrollY
+      const trailingHeight = document.documentElement.scrollHeight - top - container.height
+      // Reserve only the space below the card needed to keep the current scroll
+      // position reachable. The card itself fits the selected month's content.
+      setReservedHeight(Math.max(0, window.scrollY + window.innerHeight - top - trailingHeight))
+    }
     setSelectedMonth(month)
   }
   const forecast = useQuery({
@@ -352,7 +360,8 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
   const referenceMonth = selectedMonth ?? forecast.data?.referenceMonth
   const paymentDate = (value: string) => new Intl.DateTimeFormat('pt-BR').format(new Date(`${value}T12:00:00`))
   const total = currency(forecast.data?.estimatedMonthlyAmount ?? 0)
-  return <article ref={cardRef} style={{ minHeight, overflowAnchor: 'none' }} className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  return <div ref={containerRef} style={{ minHeight: reservedHeight, overflowAnchor: 'none' }} className="mt-4 min-w-0">
+    <article ref={cardRef} style={{ minHeight: forecast.isLoading ? loadingHeight : undefined }} className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
       {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={changeMonth} />}
@@ -374,6 +383,7 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
       <div className="mt-5 hidden overflow-x-auto sm:block"><table className="w-full min-w-lg border-collapse text-sm"><thead><tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-3 pr-4">Ativo</th><th scope="col" className="pb-3 pr-4">Data de pagamento</th><th scope="col" className="pb-3 text-right">Valor</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-3 pr-4"><strong className="text-slate-900">{item.ticker}</strong><p className="text-xs text-slate-500">{item.source}{item.referenceDate ? ` · ${formatDate(item.referenceDate)}` : ''}{item.documentUrl && <> · <a className="font-semibold text-sky-700 hover:underline" href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer">Documento</a></>}</p></td><td className="py-3 pr-4 text-slate-700">{paymentDate(item.paymentDate!)}</td><td className="py-3 text-right font-semibold text-slate-900">{currency(item.estimatedMonthlyAmount!)}</td></tr>)}</tbody><tfoot><tr className="border-t border-slate-200"><th scope="row" colSpan={2} className="pt-4 text-left text-sm font-semibold text-slate-950">Total</th><td className="pt-4 text-right text-xl font-bold text-slate-950">{total}</td></tr></tfoot></table></div>
     </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum pagamento com valor e data informados neste mês.</p>}
   </article>
+  </div>
 }
 
 function PortfolioAllocationCard({ data, privacyHidden = false, togglePrivacy }: { data: Dashboard; privacyHidden?: boolean; togglePrivacy?: () => void }) {
