@@ -327,6 +327,14 @@ type DividendForecast = {
 
 function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: string; privacyHidden: boolean }) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
+  const cardRef = useRef<HTMLElement>(null)
+  const [minHeight, setMinHeight] = useState<number>()
+  const changeMonth = (month: string) => {
+    // Keep the page from shrinking and clamping its scroll position, including
+    // while the next month loads. A minimum still lets larger lists grow.
+    setMinHeight(cardRef.current?.getBoundingClientRect().height)
+    setSelectedMonth(month)
+  }
   const forecast = useQuery({
     queryKey: ['dividend-forecast', portfolioId, selectedMonth],
     queryFn: async () => {
@@ -342,16 +350,12 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
       (left.paymentDate ?? '9999-12-31').localeCompare(right.paymentDate ?? '9999-12-31')
       || left.ticker.localeCompare(right.ticker, 'pt-BR', { sensitivity: 'base' }))
   const referenceMonth = selectedMonth ?? forecast.data?.referenceMonth
-  const monthLabel = referenceMonth
-    ? new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(`${referenceMonth}T12:00:00`))
-    : 'mês atual'
   const paymentDate = (value: string) => new Intl.DateTimeFormat('pt-BR').format(new Date(`${value}T12:00:00`))
   const total = currency(forecast.data?.estimatedMonthlyAmount ?? 0)
-  return <article className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+  return <article ref={cardRef} style={{ minHeight, overflowAnchor: 'none' }} className="mt-4 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
-      <h2 className="mt-2 text-xl font-semibold text-slate-950">Proventos de {monthLabel}</h2></div>
-      {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={setSelectedMonth} />}
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
+      {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={changeMonth} />}
     </div>
     {forecast.isLoading ? <p className="mt-4 text-sm text-slate-500">Calculando previsão...</p> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
       <div className="mt-5 divide-y divide-slate-200 sm:hidden">
@@ -406,6 +410,6 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
       <RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} />
       <div className="order-3 min-w-0 self-start"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
     </div>
-    <DividendForecastWidget portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
+    <DividendForecastWidget key={activePortfolio.id} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
   </section>
 }
