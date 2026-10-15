@@ -155,16 +155,8 @@ public sealed class DocumentDownloadWorker : BackgroundService
         }
 
         var client = httpClientFactory.CreateClient("documents");
-        using var request = new HttpRequestMessage(HttpMethod.Get, job.Document.DownloadUrl);
-        if (Uri.TryCreate(job.Document.DownloadUrl, UriKind.Absolute, out var downloadUri)
-            && downloadUri.Host.Contains("fnet.bmfbovespa.com.br", StringComparison.OrdinalIgnoreCase))
-        {
-            request.Headers.TryAddWithoutValidation("Accept", "application/pdf,application/octet-stream,*/*");
-            request.Headers.TryAddWithoutValidation("Referer", $"https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id={Uri.EscapeDataString(GetFnetDocumentId(downloadUri))}&cvm=true");
-            request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
-        }
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        Uri.TryCreate(job.Document.DownloadUrl, UriKind.Absolute, out var downloadUri);
+        using var response = await SendDownloadWithRetryAsync(client, job.Document.Id, job.Document.DownloadUrl, cancellationToken);
         var payload = await response.Content.ReadAsByteArrayAsync(cancellationToken);
         var detected = DocumentPayloadDetector.TryDetect(payload, response.Content.Headers.ContentType?.MediaType, out var payloadKind);
         if (!detected && OfficialCvmHtmlExtractor.IsOfficialCvmUrl(downloadUri) && OfficialCvmHtmlExtractor.TryExtract(payload, out _))
@@ -195,6 +187,35 @@ public sealed class DocumentDownloadWorker : BackgroundService
             logger.LogInformation("Conteúdo duplicado por hash; documento {DocumentId} reutilizará {FilePath}.", job.Document.Id, duplicate);
         }
         job.Document.MarkDownloaded(storedFile.Path, storedFile.Hash);
+    }
+
+    internal async Task<HttpResponseMessage> SendDownloadWithRetryAsync(HttpClient client, Guid documentId, string downloadUrl, CancellationToken cancellationToken)
+    {
+        Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri);
+        for (var attempt = 0; ; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
+            if (uri is not null && string.Equals(uri.Host, "fnet.bmfbovespa.com.br", StringComparison.OrdinalIgnoreCase))
+            {
+                request.Headers.TryAddWithoutValidation("Accept", "application/pdf,application/octet-stream,*/*");
+                request.Headers.TryAddWithoutValidation("Referer", $"https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id={Uri.EscapeDataString(GetFnetDocumentId(uri))}&cvm=true");
+                request.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36");
+            }
+
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if ((int)response.StatusCode == 520 && attempt < 2)
+            {
+                response.Dispose();
+                logger.LogDebug("Download retornou HTTP 520; documento={DocumentId}; host={Host}; retentativa={RetryAttempt}/2", documentId, uri?.Host, attempt + 1);
+                await Task.Delay(TimeSpan.FromSeconds(attempt + 1), cancellationToken);
+                continue;
+            }
+
+            if (response.IsSuccessStatusCode) return response;
+            var statusCode = response.StatusCode;
+            response.Dispose();
+            throw new HttpRequestException($"Falha no download; documento={documentId}; host={uri?.Host}; HTTP {(int)statusCode}; requisições={attempt + 1}.", null, statusCode);
+        }
     }
 
     private static Task<bool> HasActivePositionAsync(PrumoDbContext dbContext, Guid assetId, CancellationToken cancellationToken) =>
