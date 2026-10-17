@@ -86,6 +86,24 @@ public sealed class DocumentFinancialQualityTests
         Assert.Null(result.Fact);
     }
 
+    [Theory]
+    [InlineData("Equity", "1990000000", "PointInTime")]
+    [InlineData("Revenue", "28900000000", "Annual")]
+    public void Base_currency_facts_are_accepted_but_duplicate_billion_scale_is_rejected(string metric, string value, string periodType)
+    {
+        var payload = new AiFinancialFactPayload(metric, decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture),
+            "2025-12-31", periodType, "USD", "currency", "reported amount", .9m);
+
+        var accepted = DocumentFinancialFactNormalizer.NormalizeWithReason(payload);
+        var rejected = DocumentFinancialFactNormalizer.NormalizeWithReason(payload with { Unit = "currency_billion" });
+
+        Assert.True(accepted.IsAccepted);
+        Assert.Equal(payload.Value, accepted.Fact!.Value);
+        Assert.Equal("currency", accepted.Fact.Unit);
+        Assert.Equal("ValueOutOfRange", rejected.RejectionReason);
+        Assert.Null(rejected.Fact);
+    }
+
     [Fact]
     public void Monetary_fact_uses_database_rounding_at_range_boundary()
     {

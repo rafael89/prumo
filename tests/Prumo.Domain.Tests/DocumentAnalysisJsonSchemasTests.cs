@@ -51,6 +51,19 @@ public sealed class DocumentAnalysisJsonSchemasTests
         Assert.Equal(new[] { "Annual", "PointInTime", "Quarterly", "Ttm" }, StringValues(periodType.GetProperty("enum")));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Financial_fact_schema_limits_output_to_unscaled_units(bool openAi)
+    {
+        var schema = JsonSerializer.SerializeToElement(openAi
+            ? DocumentAnalysisJsonSchemas.CreateForOpenAi()
+            : DocumentAnalysisJsonSchemas.CreateForGemini());
+        var unit = schema.GetProperty("properties").GetProperty("financialFacts")
+            .GetProperty("items").GetProperty("properties").GetProperty("unit");
+
+        Assert.Equal(new[] { "currency", "percent", "ratio" }, StringValues(unit.GetProperty("enum")));
+    }
     private static JsonElement EventItem(JsonElement schema) => schema.GetProperty("properties").GetProperty("events").GetProperty("items");
     private static string[] PropertyNames(JsonElement element) => element.EnumerateObject().Select(property => property.Name).Order().ToArray();
     private static string[] StringValues(JsonElement element) => element.EnumerateArray().Select(value => value.GetString()!).Order().ToArray();

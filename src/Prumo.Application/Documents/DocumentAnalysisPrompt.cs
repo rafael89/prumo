@@ -5,7 +5,7 @@ namespace Prumo.Application.Documents;
 
 public static class DocumentAnalysisPrompt
 {
-    public const string GlobalVersion = "document-analysis-global-v8";
+    public const string GlobalVersion = "document-analysis-global-v9";
 
     private const string GlobalInstructions = """
         Você é o componente de análise documental do Prumo. Analise exclusivamente o conteúdo fornecido e identifique seu significado para o ativo indicado.
@@ -57,9 +57,9 @@ public static class DocumentAnalysisPrompt
 
         Retorne exclusivamente o JSON do schema fornecido com importance, classification, requiresAction, suggestedAction, summary, impact, affectedAssets, confidence, events e financialFacts. Cada evento deve conter eventType, occurredAt, summary, facts e affectedAssets.
 
-        financialFacts deve conter somente fatos financeiros numéricos explicitamente presentes no documento e aplicáveis ao ativo. Use apenas Revenue, NetIncome, Equity, TotalDebt, Cash, EBITDA, ROE, ROIC e NetMargin. Para percentuais use unit=percent e o valor como percentual humano (15 para 15%); para razões use unit=ratio. Para valores monetários use unit=currency, currency_thousand, currency_million ou currency_billion e informe a moeda. referencePeriod deve ser uma data explícita no formato YYYY-MM-DD. Para Revenue, NetIncome, EBITDA, ROE, ROIC e NetMargin, periodType deve ser Annual, Quarterly ou Ttm quando o período estiver explicitamente indicado. Para Equity, TotalDebt e Cash, que são valores de posição, periodType deve ser PointInTime e referencePeriod deve ser a data efetiva do balanço ou da posição; nunca use Monthly. Se não houver período inequívoco, não extraia o fato. Cada fato exige evidence e confidence. Não inclua P/E, P/B, EV/EBITDA, dividend yield ou preço.
+        financialFacts deve conter somente fatos financeiros numéricos explicitamente presentes no documento e aplicáveis ao ativo. Use apenas Revenue, NetIncome, Equity, TotalDebt, Cash, EBITDA, ROE, ROIC e NetMargin. Para percentuais use unit=percent e o valor como percentual humano (15 para 15%); para razões use unit=ratio. Para valores monetários use somente unit=currency, informe a moeda e converta value para a unidade monetária base. referencePeriod deve ser uma data explícita no formato YYYY-MM-DD. Para Revenue, NetIncome, EBITDA, ROE, ROIC e NetMargin, periodType deve ser Annual, Quarterly ou Ttm quando o período estiver explicitamente indicado. Para Equity, TotalDebt e Cash, que são valores de posição, periodType deve ser PointInTime e referencePeriod deve ser a data efetiva do balanço ou da posição; nunca use Monthly. Se não houver período inequívoco, não extraia o fato. Cada fato exige evidence e confidence. Não inclua P/E, P/B, EV/EBITDA, dividend yield ou preço.
 
-        Em financialFacts, value e unit devem representar juntos o valor monetário exatamente uma vez. Exemplos equivalentes para USD 28,9 bilhões: value=28.9 com unit=currency_billion; value=28900 com unit=currency_million; ou value=28900000000 com unit=currency. Nunca use value=28900000000 com unit=currency_billion, pois isso multiplica o valor por um bilhão novamente. Aplique a mesma regra a milhares e milhões. Se a escala do documento for ambígua, omita o fato.
+        Em financialFacts, expanda milhares, milhões e bilhões exatamente uma vez e retorne sempre unit=currency para dinheiro. Exemplos: USD 28,9 bilhões deve ser value=28900000000; USD 1,99 bilhão deve ser value=1990000000; BRL 500 milhões deve ser value=500000000; BRL 250 mil deve ser value=250000. Se o número já estiver em unidade monetária base, preserve-o. Não retorne currency_thousand, currency_million ou currency_billion. Preserve em evidence um trecho do documento com o número e a escala originais. Se a escala do documento for ambígua, omita o fato.
 
         Regra adicional de periodo: para Equity, TotalDebt e Cash, use periodType=PointInTime e a data efetiva do balanco ou da posicao; nunca use Monthly. Para Revenue, NetIncome, EBITDA, ROE, ROIC e NetMargin, use Annual, Quarterly ou Ttm somente quando o periodo estiver explicitamente indicado.
 
