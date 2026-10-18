@@ -4,7 +4,7 @@ SPA React/TypeScript com Vite, Tailwind, React Query e React Router. Consulte o 
 
 ## Executar e validar
 
-Use Node 24, versão utilizada no CI e na imagem Docker.
+Use Node 26.12.0, versão utilizada no CI e na imagem Docker.
 
 ```sh
 npm ci

@@ -91,7 +91,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24.x
+          node-version: 26.12.0
           cache: npm
           cache-dependency-path: frontend/prumo-web/package-lock.json
 
