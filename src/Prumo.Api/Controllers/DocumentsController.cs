@@ -188,16 +188,17 @@ public sealed class DocumentsController : ControllerBase
     [HttpGet("documents/{documentId:guid}/analysis")]
     public async Task<ActionResult<DocumentAnalysisResponse>> GetLatestAnalysis(Guid documentId, [FromQuery] Guid? portfolioId, CancellationToken cancellationToken)
     {
-        var documentExists = await dbContext.Documents.AnyAsync(item => item.Id == documentId, cancellationToken);
-        if (!documentExists)
+        var document = await dbContext.Documents.AsNoTracking().SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
+        if (document is null)
         {
             return NotFound();
         }
 
+        var analysisDocumentId = document.DuplicateOfDocumentId ?? document.Id;
         var analysis = await dbContext.DocumentAnalyses
             .AsNoTracking()
             .Include(item => item.Document!).ThenInclude(item => item!.Asset)
-            .Where(item => item.DocumentId == documentId)
+            .Where(item => item.DocumentId == analysisDocumentId && item.Document!.AssetId == document.AssetId)
             .OrderByDescending(item => item.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -272,7 +273,8 @@ public sealed class DocumentsController : ControllerBase
             document.ProcessingStatus,
             document.IgnoredReason,
             document.DiscoveredAt,
-            document.ProcessedAt);
+            document.ProcessedAt,
+            DuplicateOfDocumentId: document.DuplicateOfDocumentId);
     }
 
     private async Task<List<DocumentResponse>> AttachJobDetailsAsync(IEnumerable<DocumentResponse> documents, CancellationToken cancellationToken)
@@ -339,7 +341,8 @@ public sealed record DocumentResponse(
     string? JobStatus = null,
     int Attempts = 0,
     DateTimeOffset? RetryAt = null,
-    string? LastError = null);
+    string? LastError = null,
+    Guid? DuplicateOfDocumentId = null);
 
 public sealed record ReprocessFailedDocumentsRequest(string? ErrorContains = null);
 public sealed record ReprocessFailedDocumentsResponse(int RequeuedCount);

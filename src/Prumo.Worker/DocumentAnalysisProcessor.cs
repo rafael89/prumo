@@ -9,11 +9,14 @@ using Prumo.Application.PortfolioImports;
 using Prumo.Application.Documents;
 using Prumo.Infrastructure.Persistence;
 using Npgsql;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Prumo.Worker;
 
 public sealed class DocumentAnalysisProcessor
 {
+    internal static readonly TimeSpan BatchDelay = TimeSpan.FromMinutes(3);
     private readonly PrumoDbContext dbContext;
     private readonly IFileStorage fileStorage;
     private readonly IPdfTextExtractor pdfTextExtractor;
@@ -61,20 +64,31 @@ public sealed class DocumentAnalysisProcessor
             .SingleOrDefaultAsync(item => item.Id == job.DocumentId, cancellationToken)
             ?? throw new InvalidOperationException("Documento do job nao encontrado.");
 
-        // Serialize identical content across worker instances without holding a database
+        var latestDownload = await dbContext.ProcessingJobs
+            .Where(item => item.JobType == ProcessingJobType.DownloadDocument
+                && item.Document!.AssetId == document.AssetId && item.Status == ProcessingJobStatus.Completed)
+            .MaxAsync(item => item.CompletedAt, cancellationToken);
+        if (latestDownload.HasValue && latestDownload.Value.Add(BatchDelay) > DateTimeOffset.UtcNow)
+        {
+            job.Defer(latestDownload.Value.Add(BatchDelay));
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        // Serialize each asset across worker instances without holding a database
         // transaction open during the AI request. Disposing this dedicated, unpooled
         // connection releases the session lock even on cancellation or failure.
         NpgsqlConnection? contentLock = null;
         try
         {
-            if (dbContext.Database.IsNpgsql() && !string.IsNullOrWhiteSpace(document.FileHash))
+            if (dbContext.Database.IsNpgsql())
             {
                 var settings = new NpgsqlConnectionStringBuilder(dbContext.Database.GetConnectionString()) { Pooling = false };
                 contentLock = new NpgsqlConnection(settings.ConnectionString);
                 await contentLock.OpenAsync(cancellationToken);
                 await using var command = contentLock.CreateCommand();
                 command.CommandText = "SELECT pg_try_advisory_lock(hashtextextended(@identity, 0))";
-                command.Parameters.AddWithValue("identity", $"document-content:{document.AssetId}:{document.FileHash}");
+                command.Parameters.AddWithValue("identity", $"document-content:{document.AssetId}");
                 if (await command.ExecuteScalarAsync(cancellationToken) is not true)
                 {
                     job.Defer(DateTimeOffset.UtcNow.AddMinutes(1));
@@ -93,27 +107,7 @@ public sealed class DocumentAnalysisProcessor
 
     private async Task ProcessContentAsync(ProcessingJob job, Document document, CancellationToken cancellationToken)
     {
-        // Only a persisted analysis makes another document a safe canonical copy.
-        // Failed or merely downloaded copies must not suppress a valid analysis.
-        if (!string.IsNullOrWhiteSpace(document.FileHash)
-            && !await dbContext.DocumentAnalyses.AnyAsync(item => item.DocumentId == document.Id, cancellationToken))
-        {
-            var canonical = await dbContext.Documents
-                .Where(item => item.Id != document.Id && item.AssetId == document.AssetId
-                    && item.FileHash == document.FileHash
-                    && dbContext.DocumentAnalyses.Any(analysis => analysis.DocumentId == item.Id))
-                .OrderBy(item => item.DiscoveredAt).ThenBy(item => item.Id)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (canonical is not null)
-            {
-                document.MarkIgnored($"Conteúdo idêntico ao documento {canonical.Id}; análise já realizada para este ativo.");
-                job.Complete(DateTimeOffset.UtcNow);
-                await dbContext.SaveChangesAsync(cancellationToken);
-                await ReleasePdfAfterAnalysisAsync(document, cancellationToken);
-                logger.LogInformation("Documento {DocumentId} ignorado por conteúdo idêntico a {CanonicalDocumentId}.", document.Id, canonical.Id);
-                return;
-            }
-        }
+        if (await TryReuseAnalysisAsync(job, document, cancellationToken)) return;
 
         var existingAnalysis = await dbContext.DocumentAnalyses
             .Include(item => item.Document)
@@ -155,6 +149,9 @@ public sealed class DocumentAnalysisProcessor
             logger.LogWarning("Texto rejeitado para o documento {DocumentId}; caracteres={CharacterCount}; printableRatio={PrintableRatio}; motivo={Error}", document.Id, quality.CharacterCount, quality.PrintableCharacterRatio, quality.Error);
             throw new InvalidOperationException(quality.Error ?? "Texto do documento invalido.");
         }
+
+        document.SetTextHash(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(NormalizeEvidence(extraction.Text)))).ToLowerInvariant());
+        if (await TryReuseAnalysisAsync(job, document, cancellationToken)) return;
 
         var context = await BuildDocumentContextAsync(document, cancellationToken);
         logger.LogInformation("Iniciando analise do documento {DocumentId}; providerModel={Model}; promptVersion={PromptVersion}.", document.Id, aiAnalysisService.Model, aiAnalysisService.PromptVersion);
@@ -203,6 +200,26 @@ public sealed class DocumentAnalysisProcessor
 
     private static string NormalizeEvidence(string text)
         => string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    private async Task<bool> TryReuseAnalysisAsync(ProcessingJob job, Document document, CancellationToken cancellationToken)
+    {
+        // Failed copies must not suppress analysis; only reuse a persisted result.
+        if (await dbContext.DocumentAnalyses.AnyAsync(item => item.DocumentId == document.Id, cancellationToken)) return false;
+        var canonical = await dbContext.Documents
+            .Where(item => item.Id != document.Id && item.AssetId == document.AssetId && item.DuplicateOfDocumentId == null
+                && ((document.FileHash != null && item.FileHash == document.FileHash)
+                    || (document.TextHash != null && item.TextHash == document.TextHash))
+                && dbContext.DocumentAnalyses.Any(analysis => analysis.DocumentId == item.Id))
+            .OrderBy(item => item.DiscoveredAt).ThenBy(item => item.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (canonical is null) return false;
+        document.MarkDuplicate(canonical);
+        job.Complete(DateTimeOffset.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await ReleasePdfAfterAnalysisAsync(document, cancellationToken);
+        logger.LogInformation("Documento {DocumentId} reutiliza a análise de {CanonicalDocumentId}.", document.Id, canonical.Id);
+        return true;
+    }
 
     private async Task ReleasePdfAfterAnalysisAsync(Document document, CancellationToken cancellationToken)
     {

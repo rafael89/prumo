@@ -162,10 +162,11 @@ public sealed class DocumentDiscoveryService
 
                 var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl, candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
                 dbContext.Documents.Add(document);
-                if (DocumentClassificationPolicy.IsOperationalIssuanceDocument(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies))
+                var ignoredReason = DocumentClassificationPolicy.GetAutomaticAnalysisIgnoredReason(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
+                if (ignoredReason is not null)
                 {
-                    document.MarkIgnored("Documento operacional de emissão; mantido apenas como histórico e não enviado para análise.");
-                    logger.LogInformation("Documento operacional de emissão mantido apenas como histórico: ticker={Ticker}; tipo={SourceType}; identificador={SourceIdentifier}", candidate.Ticker, candidate.SourceType, candidate.SourceIdentifier);
+                    document.MarkIgnored(ignoredReason);
+                    logger.LogInformation("Documento operacional mantido apenas como histórico: ticker={Ticker}; tipo={SourceType}; identificador={SourceIdentifier}", candidate.Ticker, candidate.SourceType, candidate.SourceIdentifier);
                 }
                 else
                 {

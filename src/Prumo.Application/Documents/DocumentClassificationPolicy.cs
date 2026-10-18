@@ -13,7 +13,7 @@ public static class DocumentClassificationPolicy
 
         if (category is "FATOS RELEVANTES" or "FATO RELEVANTE" || type is "FATO RELEVANTE" or "FATOS RELEVANTES" or "FATO RELEV")
             return DocumentType.RelevantFact;
-        if (type is "COMUNICADO AO MERCADO" or "COMUNICADO")
+        if (category is "COMUNICADO AO MERCADO" or "COMUNICADOS AO MERCADO" || type is "COMUNICADO AO MERCADO" or "COMUNICADO")
             return DocumentType.Communication;
         if (category is "RELATORIOS" && (type is "RELATORIO GERENCIAL" or "RELAT GERENCIAL"))
             return DocumentType.ManagementReport;
@@ -48,6 +48,22 @@ public static class DocumentClassificationPolicy
     public static bool IsShareholderNotice(string? sourceCategory, string? sourceType, string? sourceSpecies)
         => new[] { sourceCategory, sourceType, sourceSpecies }.Select(Normalize)
             .Any(value => value is "AVISO AOS ACIONISTAS" or "AVISOS AOS ACIONISTAS");
+
+    public static string? GetAutomaticAnalysisIgnoredReason(string? sourceCategory, string? sourceType, string? sourceSpecies)
+    {
+        if (Map(sourceCategory, sourceType, sourceSpecies) == DocumentType.RelevantFact) return null;
+        if (IsOperationalIssuanceDocument(sourceCategory, sourceType, sourceSpecies))
+            return "Documento operacional de emissão; mantido apenas como histórico e não enviado para análise.";
+
+        var values = new[] { sourceCategory, sourceType, sourceSpecies }.Select(Normalize);
+        if (values.Any(value => value is "MAPA FINAL DE VOTACAO DETALHADO"
+            or "MAPA FINAL DE VOTACAO SINTETICO"
+            or "MAPA CONSOLIDADO DE VOTO A DISTANCIA"
+            or "BOLETIM DE VOTO A DISTANCIA"))
+            return "Documento operacional de votação; mantido apenas como histórico e não enviado para análise.";
+
+        return null;
+    }
 
     private static string Normalize(string? value)
     {

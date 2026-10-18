@@ -58,6 +58,8 @@ public sealed class Document
     public string? DownloadUrl { get; private set; }
     public string? FilePath { get; private set; }
     public string? FileHash { get; private set; }
+    public string? TextHash { get; private set; }
+    public Guid? DuplicateOfDocumentId { get; private set; }
     public string Fingerprint { get; private set; } = string.Empty;
     public DocumentProcessingStatus ProcessingStatus { get; private set; }
     public string? IgnoredReason { get; private set; }
@@ -72,6 +74,8 @@ public sealed class Document
 
         FilePath = filePath.Trim();
         FileHash = fileHash.Trim().ToLowerInvariant();
+        TextHash = null;
+        DuplicateOfDocumentId = null;
         IgnoredReason = null;
         ProcessingStatus = DocumentProcessingStatus.Downloaded;
     }
@@ -86,6 +90,8 @@ public sealed class Document
     {
         FilePath = null;
         FileHash = null;
+        TextHash = null;
+        DuplicateOfDocumentId = null;
         ProcessedAt = null;
         IgnoredReason = null;
         ProcessingStatus = DocumentProcessingStatus.Discovered;
@@ -105,6 +111,20 @@ public sealed class Document
     {
         IgnoredReason = null;
         ProcessingStatus = DocumentProcessingStatus.Processing;
+    }
+
+    public void SetTextHash(string textHash)
+    {
+        if (string.IsNullOrWhiteSpace(textHash)) throw new ArgumentException("O hash do texto é obrigatório.", nameof(textHash));
+        TextHash = textHash;
+    }
+
+    public void MarkDuplicate(Document canonical)
+    {
+        if (canonical.Id == Id || canonical.AssetId != AssetId || canonical.DuplicateOfDocumentId.HasValue)
+            throw new ArgumentException("O documento original deve ser do mesmo ativo e não pode ser uma cópia.", nameof(canonical));
+        DuplicateOfDocumentId = canonical.Id;
+        MarkIgnored($"Conteúdo idêntico ao documento {canonical.Id}; análise já realizada para este ativo.");
     }
 
     public void MarkProcessed()

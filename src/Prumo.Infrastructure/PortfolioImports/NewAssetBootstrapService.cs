@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Prumo.Application.Abstractions;
+using Prumo.Application.Documents;
 using Prumo.Application.PortfolioImports;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
@@ -27,21 +28,35 @@ public sealed class NewAssetBootstrapService
         logger.LogInformation("CVM bootstrap iniciado para {AssetCount} novo(s) ativo(s)", assets.Count);
         var candidates = await source.FindAsync(assets.Select(a => new DocumentSourceAsset(a.Ticker, a.Cnpj, a.AssetClass)).ToArray(), ct);
         logger.LogInformation("CVM bootstrap descobriu {DocumentCount} candidato(s) para novos ativos", candidates.Count);
-        foreach (var candidate in LatestDocumentSelector.SelectBootstrap(candidates, DateTimeOffset.UtcNow, options.MaterialFactLookbackMonths))
+        var operational = candidates.Where(candidate => DocumentClassificationPolicy.GetAutomaticAnalysisIgnoredReason(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies) is not null).ToList();
+        var selected = LatestDocumentSelector.SelectBootstrap(candidates.Except(operational), DateTimeOffset.UtcNow, options.MaterialFactLookbackMonths);
+        foreach (var candidate in selected.Concat(operational))
         {
             var asset = assets.Single(a => a.Ticker.Equals(candidate.Ticker, StringComparison.OrdinalIgnoreCase));
             var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);
-            var existing = await db.Documents.FirstOrDefaultAsync(d => d.Fingerprint == fingerprint || (d.AssetId == asset.Id && d.SourceName == source.Name && ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && d.SourceIdentifier == candidate.SourceIdentifier) || d.SourceUrl == candidate.SourceUrl)), ct);
+            var existing = db.Documents.Local.FirstOrDefault(d => d.AssetId == asset.Id && d.SourceName == source.Name
+                    && ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && d.SourceIdentifier == candidate.SourceIdentifier) || d.SourceUrl == candidate.SourceUrl))
+                ?? await db.Documents.FirstOrDefaultAsync(d => d.Fingerprint == fingerprint || (d.AssetId == asset.Id && d.SourceName == source.Name && ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && d.SourceIdentifier == candidate.SourceIdentifier) || d.SourceUrl == candidate.SourceUrl)), ct);
             if (existing is not null)
             {
                 existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType, candidate.DownloadUrl);
-                await RequeueIgnoredDocumentAsync(existing, ct);
+                if (DocumentClassificationPolicy.GetAutomaticAnalysisIgnoredReason(existing.SourceCategory, existing.SourceType, existing.SourceSpecies) is null)
+                    await RequeueIgnoredDocumentAsync(existing, ct);
                 continue;
             }
             var document = new Document(asset.Id, candidate.DocumentType, candidate.PublishedAt, source.Name, candidate.SourceIdentifier, candidate.SourceUrl, fingerprint, candidate.DownloadUrl, candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
-            var job = new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow);
-            db.Documents.Add(document); db.ProcessingJobs.Add(job);
-            logger.LogInformation("Portfolio import bootstrap scheduled: AssetId={AssetId}, Ticker={Ticker}, JobId={JobId}", asset.Id, asset.Ticker, job.Id);
+            db.Documents.Add(document);
+            var ignoredReason = DocumentClassificationPolicy.GetAutomaticAnalysisIgnoredReason(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies);
+            if (ignoredReason is not null)
+            {
+                document.MarkIgnored(ignoredReason);
+            }
+            else
+            {
+                var job = new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow);
+                db.ProcessingJobs.Add(job);
+                logger.LogInformation("Portfolio import bootstrap scheduled: AssetId={AssetId}, Ticker={Ticker}, JobId={JobId}", asset.Id, asset.Ticker, job.Id);
+            }
         }
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Bootstrap LatestOnly concluído para {AssetCount} ativo(s)", assets.Count);

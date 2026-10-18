@@ -72,6 +72,38 @@ public sealed class NewAssetBootstrapServiceTests
         Assert.Contains(db.Documents, document => document.DocumentType == DocumentType.RelevantFact);
     }
 
+    [Fact]
+    public async Task Bootstrap_preserves_operational_history_without_queuing_or_requeuing_it()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new PrumoDbContext(options);
+        var asset = new Asset("XPML11", "XP Malls", AssetType.Fii, null, AssetClass.Fii, "12345678000190");
+        var portfolio = new Portfolio("Test");
+        db.AddRange(asset, portfolio);
+        db.PortfolioPositions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1, 0, 100));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var service = new NewAssetBootstrapService(db, new OperationalDocumentsSource(), NullLogger<NewAssetBootstrapService>.Instance);
+
+        await service.DiscoverLatestOnlyAsync([asset.Id], TestContext.Current.CancellationToken);
+        await service.DiscoverLatestOnlyAsync([asset.Id], TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, db.Documents.Count());
+        Assert.Equal(2, db.Documents.Count(document => document.ProcessingStatus == DocumentProcessingStatus.Ignored));
+        var job = Assert.Single(db.ProcessingJobs);
+        Assert.Equal("report", db.Documents.Single(document => document.Id == job.DocumentId).SourceIdentifier);
+    }
+
+    private sealed class OperationalDocumentsSource : IDocumentSource
+    {
+        public string Name => "Fake CVM";
+        public Task<IReadOnlyList<DocumentCandidate>> FindAsync(IReadOnlyCollection<string> tickers, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DocumentCandidate>>([
+                new("XPML11", DocumentType.Other, DateTimeOffset.UtcNow, "map", "https://example.test/map", "https://example.test/map.pdf", "Assembleia", "AGE", "Mapa consolidado de voto a distância"),
+                new("XPML11", DocumentType.Other, DateTimeOffset.UtcNow, "map", "https://example.test/map", "https://example.test/map.pdf", "Assembleia", "AGE", "Mapa consolidado de voto a distância"),
+                new("XPML11", DocumentType.Other, DateTimeOffset.UtcNow, "issuance", "https://example.test/issuance", "https://example.test/issuance.pdf", "Ofertas Públicas", "Anúncio de Início", null),
+                new("XPML11", DocumentType.ManagementReport, DateTimeOffset.UtcNow, "report", "https://example.test/report", "https://example.test/report.pdf")]);
+    }
+
     private sealed class FakeSource : IDocumentSource
     {
         public string Name => "Fake CVM";

@@ -91,7 +91,7 @@ public sealed class DocumentDownloadWorker : BackgroundService
                 cancellationToken);
             if (!analysisExists && !analysisJobActive)
             {
-                dbContext.ProcessingJobs.Add(new ProcessingJob(job.DocumentId, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow));
+                dbContext.ProcessingJobs.Add(new ProcessingJob(job.DocumentId, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow.Add(DocumentAnalysisProcessor.BatchDelay)));
             }
             else if (analysisExists && !analysisJobActive)
             {

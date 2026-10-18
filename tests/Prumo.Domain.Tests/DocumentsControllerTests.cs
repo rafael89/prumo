@@ -11,6 +11,32 @@ namespace Prumo.Domain.Tests;
 public sealed class DocumentsControllerTests
 {
     [Fact]
+    public async Task Duplicate_publication_returns_original_analysis_without_copying_it()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new PrumoDbContext(options);
+        var asset = new Asset("XPLG11", "XP Log", AssetType.Fii, "Logística");
+        var original = new Document(asset.Id, DocumentType.RelevantFact, DateTimeOffset.UtcNow,
+            "CVM", "original", "https://example.test/original", "original");
+        var duplicate = new Document(asset.Id, DocumentType.Other, DateTimeOffset.UtcNow,
+            "CVM", "duplicate", "https://example.test/duplicate", "duplicate");
+        duplicate.MarkDuplicate(original);
+        var analysis = CreateAnalysis(original.Id, "fake-model");
+        db.AddRange(asset, original, duplicate, analysis);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        db.ChangeTracker.Clear();
+        var controller = new DocumentsController(db);
+
+        var result = await controller.GetLatestAnalysis(duplicate.Id, TestContext.Current.CancellationToken);
+        var response = Assert.IsType<DocumentAnalysisResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(analysis.Id, response.Id);
+        Assert.Equal(original.Id, response.DocumentId);
+        Assert.Single(db.DocumentAnalyses);
+        var detail = await controller.GetDocument(duplicate.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(original.Id, Assert.IsType<DocumentResponse>(Assert.IsType<OkObjectResult>(detail.Result).Value).DuplicateOfDocumentId);
+    }
+
+    [Fact]
     public async Task RetornaAnaliseMaisRecenteDoMesmoDocumentoIndependentementeDoModelo()
     {
         var options = new DbContextOptionsBuilder<PrumoDbContext>()

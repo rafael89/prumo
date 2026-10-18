@@ -92,6 +92,28 @@ public sealed class DocumentDiscoveryServiceTests
         Assert.Equal("Documento operacional de emissão; mantido apenas como histórico e não enviado para análise.", document.IgnoredReason);
     }
 
+    [Fact]
+    public async Task Keeps_voting_map_as_history_and_queues_all_material_facts_for_same_asset()
+    {
+        await using var db = CreateDb();
+        var asset = AddPositionedAsset(db, "TAEE11");
+        var source = new FakeDocumentSource(
+            new DocumentCandidate(asset.Ticker, DocumentType.Other, From.AddDays(3), "map", "https://example.test/map", "https://example.test/map.pdf", "Assembleia", "AGE", "Mapa final de votação detalhado"),
+            Candidate(asset, "fact-1", From.AddDays(3), DocumentType.RelevantFact),
+            Candidate(asset, "fact-2", From.AddDays(3), DocumentType.RelevantFact));
+        var service = CreateService(db, source);
+
+        var first = await service.DiscoverAsync(From, To, TestContext.Current.CancellationToken);
+        await service.DiscoverAsync(From, To, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, first.NewDocuments);
+        Assert.Equal(3, db.Documents.Count());
+        var ignored = Assert.Single(db.Documents, document => document.ProcessingStatus == DocumentProcessingStatus.Ignored);
+        Assert.Contains("votação", ignored.IgnoredReason);
+        Assert.Equal(2, db.ProcessingJobs.Count());
+        Assert.DoesNotContain(db.ProcessingJobs, job => job.DocumentId == ignored.Id);
+    }
+
     private static DocumentDiscoveryService CreateService(PrumoDbContext db, FakeDocumentSource source)
     {
         var enrichment = new CvmFiiCnpjEnrichmentService(

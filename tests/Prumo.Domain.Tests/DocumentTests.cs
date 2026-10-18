@@ -42,6 +42,22 @@ public sealed class DocumentTests
         Assert.Equal("abc123", document.FileHash);
     }
 
+    [Fact]
+    public void Duplicate_link_rejects_self_other_assets_and_chains_and_is_cleared_on_new_download()
+    {
+        var original = CreateDocument();
+        var duplicate = new Document(original.AssetId, DocumentType.Other, DateTimeOffset.UtcNow,
+            "CVM", "copy", "https://example.test/copy", "copy");
+        Assert.Throws<ArgumentException>(() => original.MarkDuplicate(original));
+        Assert.Throws<ArgumentException>(() => duplicate.MarkDuplicate(CreateDocument()));
+        duplicate.MarkDuplicate(original);
+        Assert.Throws<ArgumentException>(() => original.MarkDuplicate(duplicate));
+        duplicate.SetTextHash("old-text-hash");
+        duplicate.MarkDownloaded("new.pdf", "new-hash");
+        Assert.Null(duplicate.TextHash);
+        Assert.Null(duplicate.DuplicateOfDocumentId);
+    }
+
     private static Document CreateDocument()
     {
         return new Document(

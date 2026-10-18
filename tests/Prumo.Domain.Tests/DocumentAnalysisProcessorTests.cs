@@ -8,11 +8,151 @@ using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Worker;
+using Npgsql;
 
 namespace Prumo.Domain.Tests;
 
 public sealed class DocumentAnalysisProcessorTests
 {
+    [RelationalFact]
+    public async Task Concurrent_workers_defer_then_reuse_identical_text_with_different_file_hashes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var database = $"prumo_document_dedup_{Guid.NewGuid():N}";
+        var adminSettings = new NpgsqlConnectionStringBuilder("Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=dev123");
+        await using var admin = new NpgsqlConnection(adminSettings.ConnectionString);
+        await admin.OpenAsync(ct);
+        await using (var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", admin)) await create.ExecuteNonQueryAsync(ct);
+        try
+        {
+            var connection = new NpgsqlConnectionStringBuilder(adminSettings.ConnectionString) { Database = database }.ConnectionString;
+            var options = new DbContextOptionsBuilder<PrumoDbContext>().UseNpgsql(connection).Options;
+            await using var first = new PrumoDbContext(options);
+            await first.Database.MigrateAsync(ct);
+            Assert.False(first.Database.HasPendingModelChanges());
+            var seeded = await SeedDocumentScenarioAsync(first);
+            var duplicate = new Document(seeded.Document.AssetId, DocumentType.Other, DateTimeOffset.UtcNow,
+                "CVM", "duplicate", "https://example.test/duplicate", "duplicate");
+            duplicate.MarkDownloaded("duplicate.pdf", "different-file-hash");
+            var job = new ProcessingJob(duplicate.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow);
+            job.Start(DateTimeOffset.UtcNow);
+            first.AddRange(duplicate, job);
+            await first.SaveChangesAsync(ct);
+            await using var second = new PrumoDbContext(options);
+            var secondJob = await second.ProcessingJobs.SingleAsync(item => item.Id == job.Id, ct);
+            var ai = new BlockingAiAnalysisService();
+            var running = CreateProcessor(first, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+                new FakePdfTextExtractor(), ai, deletePdfAfterAnalysis: true).ProcessAsync(seeded.Job, ct);
+            var processor = CreateProcessor(second, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+                new FakePdfTextExtractor(), new ThrowingAiAnalysisService(new Exception("Não deve chamar IA")), deletePdfAfterAnalysis: true);
+            try
+            {
+                await ai.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+                await processor.ProcessAsync(secondJob, ct);
+                Assert.Equal(ProcessingJobStatus.Queued, secondJob.Status);
+                Assert.Equal(0, secondJob.Attempts);
+            }
+            finally
+            {
+                ai.Release.TrySetResult();
+                await running;
+            }
+            secondJob.Start(DateTimeOffset.UtcNow);
+            await processor.ProcessAsync(secondJob, ct);
+            Assert.Equal(ProcessingJobStatus.Completed, secondJob.Status);
+            Assert.Equal(seeded.Document.Id, (await second.Documents.SingleAsync(item => item.Id == duplicate.Id, ct)).DuplicateOfDocumentId);
+            Assert.Single(await second.DocumentAnalyses.ToListAsync(ct));
+            Assert.Equal(1, ai.Calls);
+        }
+        finally
+        {
+            await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", admin);
+            await drop.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+    }
+
+    private sealed class BlockingAiAnalysisService : IAiAnalysisService
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Calls { get; private set; }
+        public string Model => "fake-model";
+        public string PromptVersion => "document-analysis-v1";
+        public async Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return await new FakeAiAnalysisService().AnalyzeAsync(documentText, context, cancellationToken);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Text_comparison_ignores_only_whitespace_even_after_pdf_deletion(bool sameText)
+    {
+        await using var db = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(db);
+        await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+            new FakePdfTextExtractor(), new FakeAiAnalysisService(), deletePdfAfterAnalysis: true)
+            .ProcessAsync(seeded.Job, TestContext.Current.CancellationToken);
+        Assert.NotNull(seeded.Document.TextHash);
+        Assert.Null(seeded.Document.FilePath);
+        db.ChangeTracker.Clear();
+
+        var duplicate = new Document(seeded.Document.AssetId, DocumentType.Other, DateTimeOffset.UtcNow,
+            "CVM", "text-copy", "https://example.test/text-copy", "text-copy");
+        duplicate.MarkDownloaded("different-layout.pdf", "different-file-hash");
+        var job = new ProcessingJob(duplicate.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow);
+        job.Start(DateTimeOffset.UtcNow);
+        db.AddRange(duplicate, job);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var text = sameText ? LongValidText().Replace(" ", " \r\n\t ") : LongValidText().Replace("evento", "outro evento");
+        IAiAnalysisService ai = sameText ? new ThrowingAiAnalysisService(new Exception("Não deve chamar IA")) : new FakeAiAnalysisService();
+        await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(text)),
+            new FakePdfTextExtractor(new PdfTextExtractionResult(true, text, null)), ai, deletePdfAfterAnalysis: true)
+            .ProcessAsync(job, TestContext.Current.CancellationToken);
+
+        Assert.Equal(sameText ? 1 : 2, await db.DocumentAnalyses.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(sameText ? seeded.Document.Id : (Guid?)null, duplicate.DuplicateOfDocumentId);
+        Assert.Equal(ProcessingJobStatus.Completed, job.Status);
+        Assert.Null(duplicate.FilePath);
+    }
+
+    [Theory]
+    [InlineData(true, 0, true)]
+    [InlineData(true, -4, false)]
+    [InlineData(false, 0, false)]
+    public async Task Waits_three_minutes_after_latest_download_only_for_same_asset(bool sameAsset, int minutesAgo, bool deferred)
+    {
+        await using var db = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(db);
+        var assetId = seeded.Document.AssetId;
+        if (!sameAsset)
+        {
+            var otherAsset = new Asset("TEST11", "Outro ativo", AssetType.Fii, "Real Estate");
+            db.Assets.Add(otherAsset);
+            assetId = otherAsset.Id;
+        }
+        var otherDocument = new Document(assetId, DocumentType.Other, DateTimeOffset.UtcNow,
+            "CVM", "downloaded", "https://example.test/downloaded", "downloaded");
+        var completedAt = DateTimeOffset.UtcNow.AddMinutes(minutesAgo);
+        var download = new ProcessingJob(otherDocument.Id, ProcessingJobType.DownloadDocument, completedAt);
+        download.Start(completedAt);
+        download.Complete(completedAt);
+        db.AddRange(otherDocument, download);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
+            new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(seeded.Job, TestContext.Current.CancellationToken);
+
+        Assert.Equal(deferred ? ProcessingJobStatus.Queued : ProcessingJobStatus.Completed, seeded.Job.Status);
+        Assert.Equal(deferred ? 0 : 1, seeded.Job.Attempts);
+        Assert.Equal(deferred ? 0 : 1, await db.DocumentAnalyses.CountAsync(TestContext.Current.CancellationToken));
+        if (deferred) Assert.Equal(completedAt.AddMinutes(3), seeded.Job.AvailableAt);
+    }
+
     [Fact]
     public async Task Mesmo_conteudo_com_quatro_ids_gera_uma_analise_mesmo_apos_remover_pdf()
     {
@@ -68,7 +208,7 @@ public sealed class DocumentAnalysisProcessorTests
         db.AddRange(document, job);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(LongValidText())),
-            new FakePdfTextExtractor(), new FakeAiAnalysisService()).ProcessAsync(job, CancellationToken.None);
+            new FakePdfTextExtractor(new PdfTextExtractionResult(true, LongValidText() + " Informação adicional.", null)), new FakeAiAnalysisService()).ProcessAsync(job, CancellationToken.None);
         Assert.Equal(2, await db.DocumentAnalyses.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(DocumentProcessingStatus.Processed, document.ProcessingStatus);
     }

@@ -503,6 +503,9 @@ namespace Prumo.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<Guid?>("DuplicateOfDocumentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FileHash")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -555,12 +558,20 @@ namespace Prumo.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<string>("TextHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("DuplicateOfDocumentId");
 
                     b.HasIndex("Fingerprint")
                         .IsUnique();
 
                     b.HasIndex("AssetId", "PublishedAt");
+
+                    b.HasIndex("AssetId", "TextHash");
 
                     b.HasIndex("SourceName", "SourceIdentifier");
 
@@ -1673,6 +1684,11 @@ namespace Prumo.Infrastructure.Migrations
                         .HasForeignKey("AssetId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Prumo.Domain.Entities.Document", null)
+                        .WithMany()
+                        .HasForeignKey("DuplicateOfDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Asset");
                 });
