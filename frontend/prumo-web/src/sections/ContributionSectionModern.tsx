@@ -1,7 +1,8 @@
+import { LoadingState } from '../components/LoadingState'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCircleCheck, faCircleInfo, faCopy, faSpinner, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
+import { faCircleCheck, faCircleInfo, faCopy, faTriangleExclamation, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
 import { parseDecimalInput } from '../utils/decimalInput'
 import { getJson, getOptionalJson, sendJson } from '../api/client'
@@ -109,7 +110,8 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
               </button>
             </div>
           </form>
-          {pending && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-amber-700"><FontAwesomeIcon icon={faSpinner} spin /> Análise em andamento: o Prumo está avaliando os ativos e definindo a distribuição...</p>}
+          {latest.isLoading && !guidance && !pending && <LoadingState message="Buscando seu último cenário…" className="mt-4" />}
+          {pending && <LoadingState message="Preparando seu cenário de aporte…" description="O Prumo está avaliando os ativos e definindo a distribuição." className="mt-4" />}
           {failed && <p className="mt-4 text-sm text-rose-700">Não foi possível concluir a análise. Tente novamente.</p>}
         </div>
 
@@ -132,7 +134,7 @@ export function ContributionSectionModern({ portfolioId, positions }: { portfoli
 
         <div className="min-w-0 lg:border-l lg:border-slate-100 lg:pl-7">
           <p className="text-sm font-semibold">{pending ? 'Análise em andamento' : 'Contexto do cenário'}</p>
-          {!completed && !pending ? <p className="mt-4 text-sm leading-6 text-slate-500">Gere um cenário para ver os critérios e o contexto usados pelo Prumo.</p> : pending ? <div className="mt-4 space-y-3"><div className="h-3 animate-pulse rounded bg-slate-200" /><div className="h-3 animate-pulse rounded bg-slate-200" /><div className="h-3 w-3/5 animate-pulse rounded bg-slate-200" /></div>
+          {!completed && !pending ? <p className="mt-4 text-sm leading-6 text-slate-500">Gere um cenário para ver os critérios e o contexto usados pelo Prumo.</p> : pending ? <div className="mt-4 space-y-3"><div className="h-3 motion-safe:animate-pulse rounded bg-slate-200" /><div className="h-3 motion-safe:animate-pulse rounded bg-slate-200" /><div className="h-3 w-3/5 motion-safe:animate-pulse rounded bg-slate-200" /></div>
             : <div className="mt-4 space-y-3 text-sm text-slate-600"><p className={`flex gap-3 font-semibold ${isFallback ? 'text-amber-700' : 'text-emerald-700'}`}><FontAwesomeIcon icon={isFallback ? faTriangleExclamation : faCircleCheck} className="mt-1" /><span>{contextMessage}</span></p><div className="space-y-3">{completed?.reasons.slice(0, 2).map((reason, index) => <div key={`${reason}-${index}`} className="flex gap-3"><FontAwesomeIcon icon={isFallback ? faTriangleExclamation : faCircleCheck} className={`mt-1 ${isFallback ? 'text-amber-500' : 'text-emerald-500'}`} /><span>{reason}</span></div>)}</div>{completed?.avoidedCandidates?.length ? <details className="border-t border-slate-100 pt-3"><summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold uppercase tracking-[.14em] text-slate-500"><FontAwesomeIcon icon={faCircleInfo} />Alternativas consideradas</summary><div className="mt-3 space-y-2 text-xs">{completed.avoidedCandidates.slice(0, 3).map(candidate => <p key={candidate.assetId}><strong>{candidate.ticker}:</strong> {candidate.reason}</p>)}</div></details> : null}</div>}
         </div>
       </div>

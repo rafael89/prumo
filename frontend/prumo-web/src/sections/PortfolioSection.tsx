@@ -1,3 +1,4 @@
+import { LoadingState } from '../components/LoadingState'
 import { useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
@@ -108,7 +109,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                 </div>
               </form>
 
-              {dashboard.isLoading && <p className="mt-6 text-sm text-slate-500">Carregando posi&ccedil;&otilde;es...</p>}
+              {dashboard.isLoading && <LoadingState message="Carregando posições…" className="mt-4" />}
               {dashboard.isError && <p className="mt-6 text-sm text-rose-700">N&atilde;o foi poss&iacute;vel carregar o dashboard desta carteira.</p>}
               {!dashboard.isLoading && dashboard.data?.positions.length === 0 && (
                 <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">

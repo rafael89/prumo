@@ -1,3 +1,4 @@
+import { LoadingState } from '../components/LoadingState'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { DocumentAnalysisContent } from '../components/DocumentAnalysisContent'
@@ -126,7 +127,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
           <select aria-label="Filtrar documentos por tipo" value={documentTypeFilter} onChange={(event) => { setDocumentTypeFilter(event.target.value); setDocumentPage(1) }} className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Todos os tipos</option>{documentTypes.map((label, index) => <option key={label} value={index}>{label}</option>)}</select>
         </div>
         {(processingStatus.data?.failedCount ?? 0) > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs text-rose-900"><span className="font-semibold">{processingStatus.data?.failedCount ?? 0} documento(s) com falha</span><input value={errorFilter} onChange={(event) => setErrorFilter(event.target.value)} placeholder="Filtrar erro (opcional)..." className="min-w-48 flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 outline-none focus:border-rose-400" /><button type="button" onClick={() => reprocessFailed.mutate()} disabled={reprocessFailed.isPending} className="rounded-lg bg-rose-700 px-3 py-2 font-semibold text-white disabled:opacity-50"><FontAwesomeIcon icon={faRotate} className="mr-2" />{reprocessFailed.isPending ? 'Reprocessando...' : 'Reprocessar falhos'}</button>{reprocessFailed.data && <span>{reprocessFailed.data.requeuedCount} job(s) reaberto(s).</span>}</div>}
-        {documents.isLoading && <p className="py-5 text-sm text-slate-500">Carregando documentos...</p>}
+        {documents.isLoading && <LoadingState message="Carregando documentos…" className="my-4" />}
         {!documents.isLoading && documents.data?.items.length === 0 && <p className="py-5 text-sm text-slate-500">Nenhum documento encontrado.</p>}
         <div className="mt-3 divide-y divide-slate-200">
           {documents.data?.items.map((document) => {
@@ -143,7 +144,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
       <section id="document-details" className="scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
         {!selectedDocument && <p className="text-sm text-slate-500">Selecione um documento para ver os detalhes.</p>}
         {selectedDocument && <div className="space-y-6"><div className="border-b border-slate-200 pb-4"><p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Detalhe do documento</p><h2 className="mt-3 text-3xl font-semibold">{selectedDocument.ticker}</h2><p className="mt-2 text-sm text-slate-500">{selectedDocument.assetName} - {selectedDocument.sourceName}</p><div className="mt-4 grid gap-2 text-sm text-slate-600 md:grid-cols-2"><span>Publicado em {formatDate(selectedDocument.publishedAt)}</span><span>Status {processingStatuses[selectedDocument.processingStatus] ?? 'Desconhecido'}</span><span>Processado em {formatDate(selectedDocument.processedAt)}</span><a href={officialDocumentUrl(selectedDocument.sourceUrl)} target="_blank" rel="noreferrer" className="text-amber-700 hover:text-amber-800"><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="mr-2" />Exibir documento oficial</a></div></div>
-          {analysis.isLoading && <p className="text-sm text-slate-500">Carregando an&aacute;lise...</p>}{analysis.isError && <p className="text-sm text-rose-700">N&atilde;o foi poss&iacute;vel carregar a an&aacute;lise deste documento.</p>}{!analysis.isLoading && !analysis.isError && !analysis.data && <div className="rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">Nenhuma an&aacute;lise validada foi encontrada para este documento ainda.</div>}
+          {analysis.isLoading && <LoadingState message="Carregando análise…" className="my-4" />}{analysis.isError && <p className="text-sm text-rose-700">N&atilde;o foi poss&iacute;vel carregar a an&aacute;lise deste documento.</p>}{!analysis.isLoading && !analysis.isError && !analysis.data && <div className="rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">Nenhuma an&aacute;lise validada foi encontrada para este documento ainda.</div>}
           {analysis.data && <DocumentAnalysisContent analysis={analysis.data} />}
         </div>}
       </section>

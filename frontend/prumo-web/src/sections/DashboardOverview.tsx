@@ -1,3 +1,4 @@
+import { LoadingState } from '../components/LoadingState'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
@@ -250,7 +251,7 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
       {markReadFailed && <p role="alert" className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível marcar o documento como lido. Feche e abra a análise para tentar novamente.</p>}
       {analysis.data && <div className="mb-5 grid grid-cols-2 gap-1 border-b border-slate-200 pb-4 pt-4 text-[11px] leading-4 text-slate-600"><span className="min-w-0"><strong>Publicado:</strong> {formatDate(analysis.data.publishedAt)}</span><span className="min-w-0"><strong>Analisado:</strong> {formatDate(analysis.data.createdAt)}</span></div>}
-      {analysis.isLoading && <p className="py-8 text-sm text-slate-500">Carregando análise...</p>}
+      {analysis.isLoading && <LoadingState message="Carregando análise…" className="my-4" />}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
       {!analysis.isLoading && !analysis.isError && !analysis.data && <p className="mt-5 rounded-xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">Nenhuma análise validada foi encontrada para este documento ainda.</p>}
       {analysis.data && <DocumentAnalysisContent analysis={analysis.data} framed={false} />}
@@ -337,7 +338,7 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
       {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={changeMonth} />}
     </div>
-    {forecast.isLoading ? <p className="mt-4 text-sm text-slate-500">Calculando previsão...</p> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
+    {forecast.isLoading ? <LoadingState message="Calculando previsão…" className="mt-4" /> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
       <div className="mt-5 divide-y divide-slate-200 sm:hidden">
         {orderedItems.map(item => <div key={item.assetId} className="min-w-0 py-4 first:pt-0">
           <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -373,10 +374,10 @@ function PortfolioAllocationCard({ data, privacyHidden = false, togglePrivacy }:
 }
 
 export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, portfoliosError = false, retryPortfolios, privacyHidden = false, togglePrivacy }: DashboardOverviewProps) {
-  if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
+  if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><LoadingState message="Carregando sua visão geral…" className="my-4" /></section>
   if (portfoliosError) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-rose-200 bg-rose-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-700">Serviço temporariamente indisponível</p><h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Não conseguimos carregar sua carteira.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">O Prumo está com dificuldade para se conectar ao serviço neste momento. Seus dados não foram apagados. Tente novamente em alguns instantes.</p>{retryPortfolios && <button type="button" onClick={retryPortfolios} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Tentar novamente</button>}</div></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
-  if (dashboard.isLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-white p-6 text-slate-500">Carregando sua visão geral...</p></section>
+  if (dashboard.isLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><LoadingState message="Carregando sua visão geral…" className="my-4" /></section>
   if (dashboard.isError || !dashboard.data) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><p className="rounded-2xl bg-rose-50 p-6 text-rose-800">Não foi possível carregar a visão geral.</p></section>
 
   const data = dashboard.data
