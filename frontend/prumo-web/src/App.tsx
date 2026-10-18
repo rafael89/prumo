@@ -8,6 +8,7 @@ import { faArrowUp, faBell, faCheckDouble, faMoon, faSun } from '@fortawesome/fr
 import { getJson, sendJson, sendVoid } from './api/client'
 import { Pagination } from './components/Pagination'
 import { AppDialog } from './components/AppDialog'
+import { consumeRadarNotifications } from './utils/radarNotifications'
 
 const RadarSection = lazy(() => import('./sections/FeatureSections').then(module => ({ default: module.RadarSection })))
 const ContributionSection = lazy(() => import('./sections/ContributionSectionModern').then(module => ({ default: module.ContributionSectionModern })))
@@ -199,6 +200,7 @@ function App() {
   const [notificationPanelMounted, setNotificationPanelMounted] = useState(false)
   const [notificationToast, setNotificationToast] = useState<RadarNotificationItem | null>(null)
   const [notificationToastVisible, setNotificationToastVisible] = useState(false)
+  const notifiedDocumentsRef = useRef(new Map<string, Set<string>>())
   const [selectedNotification, setSelectedNotification] = useState<RadarNotificationItem | null>(null)
   const notificationPanelRef = useRef<HTMLDivElement>(null)
   const notificationCloseTimerRef = useRef<number | null>(null)
@@ -271,25 +273,25 @@ function App() {
     const items = radarNotifications.data?.attentionNow ?? []
     if (!notificationPortfolioId || !radarNotifications.data) return
     const storageKey = `prumo.radar-notifications.${notificationPortfolioId}`
-    let notified = new Set<string>()
+    const notified = notifiedDocumentsRef.current.get(notificationPortfolioId) ?? new Set<string>()
+    notifiedDocumentsRef.current.set(notificationPortfolioId, notified)
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) ?? '[]')
-      if (Array.isArray(saved)) notified = new Set(saved.filter((value): value is string => typeof value === 'string'))
+      if (Array.isArray(saved)) for (const value of saved) if (typeof value === 'string') notified.add(value)
     } catch {
-      notified = new Set()
+      // Keep the in-memory history when browser storage is unavailable.
     }
     // The assessment is versioned again when the portfolio or its target
     // allocation changes. The document is the user-facing notification unit,
     // so those technical replacements must not produce a new toast.
-    const next = items.find(item => !notified.has(item.documentAnalysisId))
-    if (!next) return
     const showTimeout = window.setTimeout(() => {
-      notified.add(next.documentAnalysisId)
+      const next = consumeRadarNotifications(items, notified)
       try {
         localStorage.setItem(storageKey, JSON.stringify(Array.from(notified).slice(-200)))
       } catch {
-        // The persistent Radar state remains authoritative when storage is unavailable.
+        // The in-memory history still prevents repeated toasts during this session.
       }
+      if (!next) return
       setNotificationToast(next)
       setNotificationToastVisible(true)
     }, 0)
@@ -493,7 +495,7 @@ function App() {
             <button type="button" aria-label={themePreference === 'system' ? 'Personalizar tema' : 'Seguir tema do sistema'} title={themePreference === 'system' ? `Tema do sistema: ${darkMode ? 'dark' : 'claro'}` : 'Seguir tema do sistema'} onClick={() => setThemePreference(current => current === 'system' ? (darkMode ? 'light' : 'dark') : 'system')} className="theme-toggle order-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition hover:border-amber-400 hover:text-amber-700 md:order-3"><FontAwesomeIcon icon={darkMode ? faSun : faMoon} /></button>
           </div>
         </nav>
-        {notificationToast && <div role="status" className={`fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6 ${notificationToastVisible ? 'notification-toast-enter' : 'notification-toast-exit'}`}><div className="flex items-start gap-3"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><div className="min-w-0 flex-1"><p className="text-sm font-bold">Novo item no Radar</p><p className="mt-1 text-sm">{notificationToast.eventSummary || notificationToast.summary}</p><Link to="/radar" onClick={dismissNotificationToast} className="mt-2 inline-block text-xs font-bold underline">Abrir Radar</Link></div><button type="button" aria-label="Fechar notificação" onClick={dismissNotificationToast} className="text-lg leading-none text-amber-800">×</button></div></div>}
+        {notificationToast && <div role="status" className={`fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6 ${notificationToastVisible ? 'notification-toast-enter' : 'notification-toast-exit'}`}><div className="flex items-start gap-3"><button type="button" onClick={() => openNotification(notificationToast)} className="flex min-w-0 flex-1 items-start gap-3 text-left"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold">Novo item no Radar</span><span className="mt-1 block text-sm">{notificationToast.eventSummary || notificationToast.summary}</span><span className="mt-2 inline-block text-xs font-bold underline">Abrir análise do documento</span></span></button><button type="button" aria-label="Fechar notificação" onClick={dismissNotificationToast} className="text-lg leading-none text-amber-800">×</button></div></div>}
         <Suspense fallback={<p role="status" className="mx-auto max-w-6xl p-6 text-slate-500">Carregando tela…</p>}>
         {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
         {route === '/dashboard' && <Navigate to="/" replace />}
