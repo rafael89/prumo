@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { DocumentAnalysisContent } from '../components/DocumentAnalysisContent'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUpRightFromSquare, faCircleInfo, faMagnifyingGlass, faRotate, faSpinner } from '@fortawesome/free-solid-svg-icons'
+import { faArrowUpRightFromSquare, faMagnifyingGlass, faRotate, faSpinner } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl } from '../api/client'
 const apiUrl = apiBaseUrl
@@ -14,9 +15,6 @@ type DocumentAnalysis = { importance: string; classification: string; summary: s
 type DocumentsSectionProps = { portfolioId: string; selectedDocumentId: string | null; setSelectedDocumentId: (id: string | null) => void }
 const processingStatuses = ['Descoberto', 'Baixado', 'Aguardando análise', 'Analisando', 'Processado', 'Erro', 'Ignorado']
 const documentTypes = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
-const importanceLabels: Record<string, string> = { Critical: 'Cr\u00edtico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem\u00e7\u00e3o' }
-const classificationLabels: Record<string, string> = { CorporateAction: 'A\u00e7\u00e3o corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribui\u00e7\u00e3o', CapitalRaise: 'Capta\u00e7\u00e3o', AssetTransaction: 'Transa\u00e7\u00e3o de ativos', Governance: 'Governan\u00e7a', Operational: 'Operacional', Liquidation: 'Liquida\u00e7\u00e3o', Other: 'Outro' }
-const actionLabels: Record<string, string> = { Maintain: 'Manter', IncreasePosition: 'Aumentar posi\u00e7\u00e3o', ReduceExposure: 'Reduzir exposi\u00e7\u00e3o', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem a\u00e7\u00e3o', OpenPosition: 'Abrir posi\u00e7\u00e3o' }
 const documentTypeOptions = ['Fato relevante', 'Comunicado', 'Relatório gerencial', 'Informe mensal', 'Informe trimestral', 'Outro']
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`)
@@ -34,13 +32,6 @@ async function getOptionalJson<T>(path: string): Promise<T | null> {
 function formatDate(value: string | null) {
   if (!value) return '-'
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-}
-
-function analysisTone(importance: string) {
-  if (importance === 'Critical') return 'level-critical'
-  if (importance === 'Relevant') return 'level-medium'
-  if (importance === 'Informative') return 'level-informative'
-  return 'level-low'
 }
 
 function officialDocumentUrl(url: string) {
@@ -153,7 +144,7 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
         {!selectedDocument && <p className="text-sm text-slate-500">Selecione um documento para ver os detalhes.</p>}
         {selectedDocument && <div className="space-y-6"><div className="border-b border-slate-200 pb-4"><p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Detalhe do documento</p><h2 className="mt-3 text-3xl font-semibold">{selectedDocument.ticker}</h2><p className="mt-2 text-sm text-slate-500">{selectedDocument.assetName} - {selectedDocument.sourceName}</p><div className="mt-4 grid gap-2 text-sm text-slate-600 md:grid-cols-2"><span>Publicado em {formatDate(selectedDocument.publishedAt)}</span><span>Status {processingStatuses[selectedDocument.processingStatus] ?? 'Desconhecido'}</span><span>Processado em {formatDate(selectedDocument.processedAt)}</span><a href={officialDocumentUrl(selectedDocument.sourceUrl)} target="_blank" rel="noreferrer" className="text-amber-700 hover:text-amber-800"><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="mr-2" />Exibir documento oficial</a></div></div>
           {analysis.isLoading && <p className="text-sm text-slate-500">Carregando an&aacute;lise...</p>}{analysis.isError && <p className="text-sm text-rose-700">N&atilde;o foi poss&iacute;vel carregar a an&aacute;lise deste documento.</p>}{!analysis.isLoading && !analysis.isError && !analysis.data && <div className="rounded-2xl border border-dashed border-slate-300 bg-stone-50 p-5 text-sm text-slate-600">Nenhuma an&aacute;lise validada foi encontrada para este documento ainda.</div>}
-          {analysis.data && <div className={`level-card rounded-3xl border border-slate-300 bg-white p-5 text-slate-900 ${analysisTone(analysis.data.importance)}`}><div className="grid gap-4 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Importância</p><p className="mt-2 text-2xl font-semibold">{importanceLabels[analysis.data.importance] ?? analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Classificação</p><p className="mt-2 text-lg font-semibold">{classificationLabels[analysis.data.classification] ?? analysis.data.classification}</p></div></div><div className="mt-6 grid gap-5"><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Resumo</p><p className="mt-2 text-sm leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.16em]">Impacto</p><p className="mt-2 text-sm leading-7">{analysis.data.impact}</p></article></div><div className="mt-6 grid gap-4 border-t border-current/10 pt-5 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Ação sugerida</p><p className="mt-2 text-lg font-semibold">{actionLabels[analysis.data.suggestedAction] ?? analysis.data.suggestedAction}</p><p className="mt-1 text-sm opacity-75">{(analysis.data.portfolioAssessment?.requiresAttention ?? analysis.data.requiresAction) ? "Requer atenção" : "Não requer ação imediata"}</p></div><div><div className="flex items-center gap-2"><p className="text-xs font-semibold uppercase tracking-[0.16em]">Confiança</p><span title="Estimativa da IA sobre a confiança na interpretação do documento. O backend valida o valor entre 0% e 100%; não é uma verificação factual independente." aria-label="Sobre a confiança da análise"><FontAwesomeIcon icon={faCircleInfo} className="text-xs opacity-60" /></span></div><p className="mt-2 text-lg font-semibold">{Math.round(analysis.data.confidence * 100)}%</p><p className="mt-1 text-sm opacity-75">Modelo {analysis.data.model} - Prompt {analysis.data.promptVersion}</p></div></div><div className="mt-6"><p className="text-xs font-semibold uppercase tracking-[0.16em]">Ativos afetados</p><div className="mt-3 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map((asset) => <span key={asset} className="rounded-full border border-current/15 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span className="text-sm opacity-75">Nenhum ativo listado.</span>}</div></div></div>}
+          {analysis.data && <DocumentAnalysisContent analysis={analysis.data} />}
         </div>}
       </section>
     </div>

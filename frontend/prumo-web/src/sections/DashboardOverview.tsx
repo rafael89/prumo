@@ -5,6 +5,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl, sendJson } from '../api/client'
+import { analysisTone } from '../utils/documentAnalysis'
+import { DocumentAnalysisContent } from '../components/DocumentAnalysisContent'
 import { MonthSwitcher } from '../components/MonthSwitcher'
 const contributionApiUrl = apiBaseUrl
 
@@ -124,9 +126,6 @@ type DashboardOverviewProps = {
 
 const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros ativos' }
 const priorityLabels = ['Baixa', 'Média', 'Alta', 'Crítica']
-const suggestedActionLabels: Record<string, string> = { Maintain: 'Manter', IncreasePosition: 'Aumentar posição', ReduceExposure: 'Reduzir exposição', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem ação', OpenPosition: 'Abrir posição' }
-const importanceLabels: Record<string, string> = { Critical: 'Crítico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem ação' }
-const classificationLabels: Record<string, string> = { CorporateAction: 'Ação corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribuição', CapitalRaise: 'Captação', AssetTransaction: 'Transação de ativos', Governance: 'Governança', Operational: 'Operacional', Liquidation: 'Liquidação', Other: 'Outro' }
 
 function officialDocumentUrl(url: string) {
   return url.replace('/fnet/publico/downloadDocumento', '/fnet/publico/exibirDocumento')
@@ -223,8 +222,7 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
       const response = await fetch(`${contributionApiUrl}/api/documents/${item.documentId}/analysis?portfolioId=${portfolioId}`)
       if (response.status === 404) return null
       if (!response.ok) throw new Error('Não foi possível carregar a análise deste documento.')
-      const data = await response.json() as RecentDocumentAnalysis
-      return { ...data, importance: importanceLabels[data.importance] ?? data.importance, classification: classificationLabels[data.classification] ?? data.classification, suggestedAction: suggestedActionLabels[data.suggestedAction] ?? data.suggestedAction }
+      return response.json() as Promise<RecentDocumentAnalysis>
     },
     enabled: Boolean(item.documentId),
   })
@@ -244,37 +242,10 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
-  useEffect(() => {
-    if (!analysis.data) return
-    const dialog = document.querySelector('[aria-labelledby="recent-analysis-title"]')
-    const confidenceLabel = Array.from(dialog?.querySelectorAll('p') ?? []).find(element => element.textContent === 'Confiança')
-    const confidenceBlock = confidenceLabel?.parentElement?.parentElement
-    if (confidenceLabel && !confidenceLabel.querySelector('[data-confidence-tooltip]')) {
-      const wrapper = document.createElement('span')
-      wrapper.dataset.confidenceTooltip = 'true'
-      wrapper.className = 'group relative ml-1 inline-flex align-middle'
-      wrapper.tabIndex = 0
-      wrapper.setAttribute('aria-label', 'Sobre a confiança da análise')
-      wrapper.innerHTML = '<span class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-500 text-[10px] font-bold leading-none text-white">?</span><span role="tooltip" class="pointer-events-none invisible absolute bottom-full left-1/2 z-10 mb-2 w-64 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100">A confiança é uma estimativa da IA sobre a interpretação do documento. Não representa uma verificação factual independente.</span>'
-      confidenceLabel.appendChild(wrapper)
-    }
-    const confidenceValue = Array.from(confidenceBlock?.querySelectorAll('p') ?? []).find(element => (element.textContent ?? '').trim().endsWith('%'))
-    if (!confidenceValue || confidenceValue.querySelector('[data-analysis-metadata]')) return
-    const metadata = document.createElement('span')
-    metadata.dataset.analysisMetadata = 'true'
-    metadata.className = 'ml-2 text-xs font-normal text-slate-500'
-    metadata.append(document.createTextNode(`Modelo: ${analysis.data.model || 'Não informado'} · Prompt: ${analysis.data.promptVersion || 'Não informado'}`))
-    confidenceValue.appendChild(metadata)
-  }, [analysis.data])
-
-
   const hasVisibleAction = canManageSituation() && ((!isResolved && Boolean(onResolve)) || (isResolved && Boolean(onReopen)))
-  const documentLevel = item.documentImportance ?? analysis.data?.importance
-  const importanceLevel = documentLevel === 'Critical' || documentLevel === 'Crítico' ? 'level-critical' : documentLevel === 'Relevant' || documentLevel === 'Relevante' ? 'level-medium' : documentLevel === 'Informative' || documentLevel === 'Informativo' ? 'level-informative' : 'level-low'
-  const modalLevel = item.hasRadarAssessment === false ? importanceLevel : ['level-low', 'level-medium', 'level-high', 'level-critical'][item.attentionPriority] ?? 'level-low'
 
   return <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="recent-analysis-title" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <div className={`level-card flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7 ${modalLevel}`}>
+    <div className={`level-card flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7 ${analysisTone(analysis.data?.importance ?? item.documentImportance ?? '')}`}>
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><h2 id="recent-analysis-title" className="text-xl font-semibold text-slate-950">Análise de <span className="text-amber-700">{item.asset}</span></h2>{documentDetails.data?.sourceUrl && <a href={officialDocumentUrl(documentDetails.data.sourceUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-normal text-slate-500 transition hover:text-amber-700"><span>{documentTypeLabel(documentDetails.data)}</span><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="text-[10px]" /></a>}</div></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
       {markReadFailed && <p role="alert" className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível marcar o documento como lido. Feche e abra a análise para tentar novamente.</p>}
@@ -282,7 +253,7 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
       {analysis.isLoading && <p className="py-8 text-sm text-slate-500">Carregando análise...</p>}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
       {!analysis.isLoading && !analysis.isError && !analysis.data && <p className="mt-5 rounded-xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">Nenhuma análise validada foi encontrada para este documento ainda.</p>}
-      {analysis.data && <div className="mt-5 space-y-5 text-sm text-slate-700"><div className="grid gap-4 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Importância</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.importance}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Classificação</p><p className="mt-1 text-lg font-semibold text-slate-950">{analysis.data.classification}</p></div></div><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Resumo</p><p className="mt-2 leading-7">{analysis.data.summary}</p></article><article><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Impacto</p><p className="mt-2 leading-7">{analysis.data.impact}</p></article><div className="grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ação sugerida</p><p className="mt-1 font-semibold text-slate-950">{analysis.data.suggestedAction}{(analysis.data.portfolioAssessment?.requiresAttention ?? analysis.data.requiresAction) ? ' · Requer atenção' : ''}</p></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Confiança</p><p className="mt-1 font-semibold text-slate-950">{Math.round(analysis.data.confidence * 100)}%</p></div></div><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ativos afetados</p><div className="mt-2 flex flex-wrap gap-2">{analysis.data.affectedAssets.length > 0 ? analysis.data.affectedAssets.map(asset => <span key={asset} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold">{asset}</span>) : <span>Nenhum ativo listado.</span>}</div></div></div>}
+      {analysis.data && <DocumentAnalysisContent analysis={analysis.data} framed={false} />}
       </div>
       {hasVisibleAction && <div data-radar-actions="true" className="mt-6 grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white pt-4 sm:flex sm:flex-wrap">
         {canManageSituation() && !isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
