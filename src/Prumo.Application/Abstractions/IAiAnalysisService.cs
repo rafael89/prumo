@@ -26,8 +26,8 @@ public sealed record AiAnalysisPayload(
 
 public sealed record AiFinancialFactPayload(string? Metric, decimal? Value, string? ReferencePeriod, string? PeriodType, string? Currency, string? Unit, string? Evidence, decimal? Confidence);
 
-public sealed record AiInvestmentEventPayload(string? EventType, DateTimeOffset? OccurredAt, string? Summary, IReadOnlyList<string>? Facts, IReadOnlyList<string>? AffectedAssets);
-public sealed record AiInvestmentEventResult(InvestmentEventType EventType, DateTimeOffset? OccurredAt, string Summary, IReadOnlyList<string> Facts, IReadOnlyList<string> AffectedAssets);
+public sealed record AiInvestmentEventPayload(string? EventType, DateTimeOffset? OccurredAt, string? Summary, IReadOnlyList<string>? Facts, IReadOnlyList<string>? AffectedAssets, Prumo.Domain.Entities.RadarEventDetails? RadarDetails = null);
+public sealed record AiInvestmentEventResult(InvestmentEventType EventType, DateTimeOffset? OccurredAt, string Summary, IReadOnlyList<string> Facts, IReadOnlyList<string> AffectedAssets, Prumo.Domain.Entities.RadarEventDetails? RadarDetails = null);
 
 public sealed record PortfolioAnalysisPositionContext(
     string Ticker,

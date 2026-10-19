@@ -18,6 +18,10 @@ public sealed class InvestmentEventConfiguration : IEntityTypeConfiguration<Inve
         b.HasKey(x => x.Id);
         b.Property(x => x.Summary).HasMaxLength(4000).IsRequired();
         b.Property(x => x.Fingerprint).HasMaxLength(128).IsRequired();
+        b.Property(x => x.RadarDetails).HasConversion(
+            details => JsonSerializer.Serialize(details, (JsonSerializerOptions?)null),
+            json => JsonSerializer.Deserialize<RadarEventDetails>(json, (JsonSerializerOptions?)null))
+            .HasColumnType("jsonb");
         b.Property(x => x.Facts)
             .HasConversion(
                 facts => JsonSerializer.Serialize(facts, (JsonSerializerOptions?)null),
@@ -51,7 +55,7 @@ public sealed class InvestmentEventEvidenceConfiguration : IEntityTypeConfigurat
 {
     public void Configure(EntityTypeBuilder<InvestmentEventEvidence> b)
     {
-        b.HasKey(x => x.Id); b.Property(x => x.Reference).HasMaxLength(1000).IsRequired();
+        b.HasKey(x => x.Id); b.Property(x => x.Reference).HasMaxLength(InvestmentEventEvidence.MaxReferenceLength).IsRequired();
         b.HasOne<InvestmentEvent>().WithMany(x => x.Evidence).HasForeignKey(x => x.InvestmentEventId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<DocumentAnalysis>().WithMany().HasForeignKey(x => x.DocumentAnalysisId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Document>().WithMany().HasForeignKey(x => x.DocumentId).OnDelete(DeleteBehavior.Restrict);

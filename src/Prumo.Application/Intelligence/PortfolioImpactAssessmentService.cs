@@ -1,5 +1,6 @@
 using Prumo.Application.Abstractions;
 using Prumo.Domain.Enums;
+using Prumo.Application.Radar;
 
 namespace Prumo.Application.Intelligence;
 
@@ -23,14 +24,20 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         var largestExposure = context.RelevantPositions.Count == 0 ? 0 : context.RelevantPositions.Max(x => x.PortfolioWeight);
         var hasExposure = context.RelevantPositions.Count > 0 && totalExposure > 0;
         var analysis = context.InvestmentEvent.DocumentAnalysis;
-        var hasAttentionEvidence = (analysis?.AttentionBasis is "CHANGE" or "DEADLINE" or "DECISION")
-            && !string.IsNullOrWhiteSpace(analysis.AttentionReason)
-            && !string.IsNullOrWhiteSpace(analysis.AttentionEvidence);
+        var details = context.InvestmentEvent.RadarDetails;
+        var importance = RadarEventPolicy.Importance(context.InvestmentEvent, context.AnalysisImportance);
+        var basis = details is null ? analysis?.AttentionBasis : details.AttentionBasis;
+        var attentionReason = details is null ? analysis?.AttentionReason : details.AttentionReason;
+        var attentionEvidence = details is null ? analysis?.AttentionEvidence : details.AttentionEvidence;
+        var hasAttentionEvidence = (basis is "CHANGE" or "DEADLINE" or "DECISION")
+            && !string.IsNullOrWhiteSpace(attentionReason)
+            && !string.IsNullOrWhiteSpace(attentionEvidence)
+            && details?.Novelty != "Repeat";
         var usesMaterialEventThreshold = context.InvestmentEvent.EventType is InvestmentEventType.CorporateAction;
-        var isInformational = context.AnalysisImportance == AnalysisImportance.Informative
+        var isInformational = details is not null ? importance is AnalysisImportance.Informative or AnalysisImportance.NoAction : context.AnalysisImportance == AnalysisImportance.Informative
             && context.RequiresAction == false
             && context.SuggestedAction == SuggestedAction.NoAction;
-        var explicitlyNoAction = context.RequiresAction == false
+        var explicitlyNoAction = details is not null ? isInformational : context.RequiresAction == false
             && context.SuggestedAction is SuggestedAction.Maintain or SuggestedAction.NoAction;
 
         var capitalImpact = isInformational ? CapitalDecisionImpact.None : context.InvestmentEvent.EventType switch
@@ -45,7 +52,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         // document's general suggestion is to maintain the position.
         var action = capitalImpact is CapitalDecisionImpact.Caution or CapitalDecisionImpact.Block ? ActionRequirement.Review
             : isInformational || explicitlyNoAction ? ActionRequirement.None
-            : context.RequiresAction == true && hasExposure ? ActionRequirement.Review
+            : (details is null ? context.RequiresAction == true : hasAttentionEvidence) && hasExposure ? ActionRequirement.Review
             : context.InvestmentEvent.EventType is InvestmentEventType.Liquidation or InvestmentEventType.CapitalRaise
             ? hasExposure && largestExposure >= HighExposureThreshold ? ActionRequirement.Review : ActionRequirement.Monitor
             : largestExposure >= HighExposureThreshold ? ActionRequirement.Review
@@ -60,7 +67,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         }
 
         var attentionExposureThreshold = usesMaterialEventThreshold ? HighExposureThreshold : MediumExposureThreshold;
-        var attention = isInformational ? AttentionPriority.Low
+        var attention = isInformational || details?.Novelty == "Repeat" ? AttentionPriority.Low
             : largestExposure >= CriticalExposureThreshold ? AttentionPriority.Critical
             : largestExposure >= HighExposureThreshold ? AttentionPriority.High
             : largestExposure > attentionExposureThreshold || action is ActionRequirement.Review or ActionRequirement.Act || capitalImpact >= CapitalDecisionImpact.Caution
@@ -69,8 +76,9 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
 
         var confidence = context.RelevantPositions.Count == 0 ? IntelligenceConfidence.Low
             : context.PortfolioHealth is null ? IntelligenceConfidence.Medium : IntelligenceConfidence.High;
-        var reason = hasAttentionEvidence
-            ? $"Motivo da revisão: {analysis!.AttentionReason} Evidência no documento: {analysis.AttentionEvidence}"
+        var reason = details?.Novelty == "Repeat" ? "Continuidade de acontecimento já conhecido, sem mudança econômica comprovada; sem novo alerta forte."
+            : hasAttentionEvidence
+            ? $"Motivo da revisão: {attentionReason} Evidência no documento: {attentionEvidence}"
             : "Sem mudança material, prazo ou decisão comprovados nesta análise. A novidade do risco não foi estabelecida; não há urgência demonstrada.";
         var exposureText = hasExposure
             ? $"{reason} Exposição aos ativos afetados: {totalExposure:0.##}%. Esse peso não representa uma estimativa de perda."

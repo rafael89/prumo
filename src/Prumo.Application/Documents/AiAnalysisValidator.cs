@@ -23,13 +23,16 @@ public sealed class AiAnalysisValidator
         if (summary.Length == 0) throw new InvalidOperationException("Summary ausente.");
         if (impact.Length == 0) throw new InvalidOperationException("Impact ausente.");
 
-        var events = (payload.Events ?? Array.Empty<AiInvestmentEventPayload>()).Select(eventPayload =>
+        var events = (payload.Events ?? Array.Empty<AiInvestmentEventPayload>())
+            .Where(e => e is not null && !string.IsNullOrWhiteSpace(e.Summary) && Enum.TryParse<InvestmentEventType>(e.EventType, true, out var type) && Enum.IsDefined(type))
+            .Select(eventPayload =>
         {
             if (string.IsNullOrWhiteSpace(eventPayload.EventType) || !Enum.TryParse(eventPayload.EventType, true, out InvestmentEventType eventType)) throw new InvalidOperationException("EventType inválido ou ausente.");
             if (string.IsNullOrWhiteSpace(eventPayload.Summary)) throw new InvalidOperationException("Resumo do evento ausente.");
-            return new AiInvestmentEventResult(eventType, eventPayload.OccurredAt?.ToUniversalTime(), eventPayload.Summary.Trim(), (eventPayload.Facts ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToArray(), (eventPayload.AffectedAssets ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray());
+            return new AiInvestmentEventResult(eventType, eventPayload.OccurredAt?.ToUniversalTime(), eventPayload.Summary!.Trim(), (eventPayload.Facts ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct().ToArray(), (eventPayload.AffectedAssets ?? Array.Empty<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray(), eventPayload.RadarDetails);
         }).ToArray();
         var normalizedFinancialFacts = (payload.FinancialFacts ?? Array.Empty<AiFinancialFactPayload>())
+            .Where(fact => fact is not null)
             .Select(fact => (Payload: fact, Result: DocumentFinancialFactNormalizer.NormalizeWithReason(fact)))
             .ToArray();
         var financialFacts = normalizedFinancialFacts.Where(x => x.Result.IsAccepted).Select(x => x.Result.Fact!).GroupBy(x => new { x.Metric, x.ReferencePeriod, x.PeriodType }).Select(x => x.OrderByDescending(f => f.Confidence).First()).ToArray();

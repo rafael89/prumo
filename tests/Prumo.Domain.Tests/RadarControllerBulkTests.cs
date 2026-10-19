@@ -12,6 +12,28 @@ namespace Prumo.Domain.Tests;
 public sealed class RadarControllerBulkTests
 {
     [Fact]
+    public async Task Resolve_all_uses_event_relevance_and_keeps_informative_events_and_other_portfolios_unchanged()
+    {
+        await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var portfolioId = Guid.NewGuid();
+        var repeat = AddAssessment(db, portfolioId, AnalysisImportance.Informative, ActionRequirement.Monitor,
+            new(Importance: "Relevant", Novelty: "Repeat"));
+        var routine = AddAssessment(db, portfolioId, AnalysisImportance.Relevant, ActionRequirement.None,
+            new(Importance: "Informative"));
+        var otherPortfolio = AddAssessment(db, Guid.NewGuid(), AnalysisImportance.Informative, ActionRequirement.Monitor,
+            new(Importance: "Relevant", Novelty: "Repeat"));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new RadarController(db).ResolveAll(portfolioId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, Assert.IsType<RadarBulkUpdateResponse>(Assert.IsType<OkObjectResult>(result.Result).Value).UpdatedCount);
+        Assert.Equal(AssessmentStatus.Closed, repeat.Status);
+        Assert.Equal(AssessmentStatus.Detected, routine.Status);
+        Assert.Equal(AssessmentStatus.Detected, otherPortfolio.Status);
+    }
+
+    [Fact]
     public async Task Resolve_all_closes_action_only_radar_item_but_not_informative_document()
     {
         var options = new DbContextOptionsBuilder<PrumoDbContext>()
@@ -91,13 +113,14 @@ public sealed class RadarControllerBulkTests
         return assessment;
     }
 
-    private static PortfolioAssessment AddAssessment(PrumoDbContext db, Guid portfolioId, AnalysisImportance importance, ActionRequirement action)
+    private static PortfolioAssessment AddAssessment(PrumoDbContext db, Guid portfolioId, AnalysisImportance importance, ActionRequirement action, RadarEventDetails? details = null)
     {
         var analysis = new DocumentAnalysis(Guid.NewGuid(), Guid.NewGuid(), "test", "test-v1", importance,
             AnalysisClassification.Other, action != ActionRequirement.None, SuggestedAction.Monitor,
             "Resumo", "Impacto", "Impacto", ["TEST"], 1, "{}");
         var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.AssetTransaction,
             DateTimeOffset.UtcNow, "Evento", []);
+        if (details is not null) investmentEvent.SetRadarDetails(details);
         var assessment = new PortfolioAssessment(portfolioId, investmentEvent.Id, AttentionPriority.High, action,
             CapitalDecisionImpact.None, AssessmentStatus.Detected, AssessmentUserState.Unread,
             "Resumo", "Motivo", "Comportamento", IntelligenceConfidence.High, null);

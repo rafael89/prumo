@@ -116,9 +116,10 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
-            .Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed
+            .Where(x => x.PortfolioId == portfolioId
                 && (x.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical
-                    || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant)
+                    || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant
+                    || x.InvestmentEvent.RadarDetails != null)
                 && x.InvestmentEvent.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
         assessments = (await current.EnsureFreshAsync(portfolio, targets, assessments, ct)).ToList();
 

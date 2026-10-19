@@ -7,7 +7,7 @@ public static class DocumentAnalysisJsonSchemas
     private static readonly string[] SuggestedActionValues = ["MAINTAIN", "INCREASE_POSITION", "REDUCE_EXPOSURE", "EVALUATE_SALE", "MONITOR", "NO_ACTION", "OPEN_POSITION"];
     private static readonly string[] EventTypeValues = ["FINANCIAL_RESULT", "DISTRIBUTION", "CAPITAL_RAISE", "CORPORATE_ACTION", "ASSET_TRANSACTION", "GOVERNANCE", "OPERATIONAL", "LIQUIDATION", "OTHER"];
     private static readonly string[] RootRequired = ["importance", "classification", "requiresAction", "suggestedAction", "summary", "impact", "affectedAssets", "confidence", "events", "financialFacts", "attentionBasis", "attentionReason", "attentionEvidence"];
-    private static readonly string[] EventRequired = ["eventType", "occurredAt", "summary", "facts", "affectedAssets"];
+    private static readonly string[] EventRequired = ["eventType", "occurredAt", "summary", "facts", "affectedAssets", "radarDetails"];
 
     public static object CreateForGemini() => Create(strict: false, includeDateTimeFormat: true);
 
@@ -27,7 +27,8 @@ public static class DocumentAnalysisJsonSchemas
                 ["occurredAt"] = occurredAt,
                 ["summary"] = StringSchema(),
                 ["facts"] = StringArraySchema(),
-                ["affectedAssets"] = StringArraySchema()
+                ["affectedAssets"] = StringArraySchema(),
+                ["radarDetails"] = RadarDetailsSchema(strict)
             },
             ["required"] = EventRequired
         };
@@ -53,6 +54,19 @@ public static class DocumentAnalysisJsonSchemas
                 ["financialFacts"] = FinancialFactsSchema()
             },
             ["required"] = RootRequired
+        };
+        if (strict) schema["additionalProperties"] = false;
+        return schema;
+    }
+
+    private static Dictionary<string, object> RadarDetailsSchema(bool strict)
+    {
+        string[] fields = ["operationId", "stage", "deadline", "amount", "outstandingDebt", "restriction", "audience", "contractTerms", "evidence", "importance", "impactDirection", "applicability", "attentionBasis", "attentionReason", "attentionEvidence", "consequenceEvidence", "urgencyEvidence", "noveltyCandidate"];
+        var schema = new Dictionary<string, object>
+        {
+            ["type"] = new[] { "object", "null" },
+            ["properties"] = fields.ToDictionary(field => field, _ => (object)new Dictionary<string, object> { ["type"] = new[] { "string", "null" } }),
+            ["required"] = strict ? fields : Array.Empty<string>()
         };
         if (strict) schema["additionalProperties"] = false;
         return schema;

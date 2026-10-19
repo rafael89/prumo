@@ -9,11 +9,123 @@ using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
 using Prumo.Worker;
 using Npgsql;
+using Microsoft.AspNetCore.Mvc;
+using Prumo.Api.Controllers;
+using Prumo.Application.Abstractions;
 
 namespace Prumo.Domain.Tests;
 
 public sealed class DocumentAnalysisProcessorTests
 {
+    [RelationalFact]
+    public async Task Radar11_round_trip_keeps_operations_separate_and_preserves_closed_repeats()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var database = $"prumo_radar11_{Guid.NewGuid():N}";
+        var adminSettings = new NpgsqlConnectionStringBuilder("Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=dev123");
+        await using var admin = new NpgsqlConnection(adminSettings.ConnectionString);
+        await admin.OpenAsync(ct);
+        await using (var create = new NpgsqlCommand($"CREATE DATABASE \"{database}\"", admin)) await create.ExecuteNonQueryAsync(ct);
+        try
+        {
+            var connection = new NpgsqlConnectionStringBuilder(adminSettings.ConnectionString) { Database = database }.ConnectionString;
+            var options = new DbContextOptionsBuilder<PrumoDbContext>().UseNpgsql(connection).Options;
+            await using var db = new PrumoDbContext(options);
+            await db.Database.MigrateAsync(ct);
+            var seeded = await SeedDocumentScenarioAsync(db);
+            var portfolioId = await db.Portfolios.Select(p => p.Id).SingleAsync(ct);
+            async Task Analyze(Document document, ProcessingJob job, string stage, bool includeIssuance, string header, AnalysisImportance importance = AnalysisImportance.Relevant)
+            {
+                var evidence = $"contrato 55/2026; {stage}; {new string('x', 1100)}";
+                const string issuanceEvidence = "8ª emissão; encerrada";
+                var text = $"{LongValidText()} {header} {evidence}. {issuanceEvidence}.";
+                var events = new List<AiInvestmentEventResult>
+                {
+                    new(InvestmentEventType.AssetTransaction, null, $"Aquisição {stage}", [evidence], ["XPIN11"],
+                        new(OperationId: "contrato 55/2026", Stage: stage, Evidence: evidence, Importance: importance.ToString(), AttentionBasis: "CHANGE", AttentionReason: "Situação da aquisição", AttentionEvidence: evidence))
+                };
+                if (includeIssuance) events.Add(new(InvestmentEventType.CapitalRaise, null, "Emissão encerrada", [issuanceEvidence], ["XPIN11"],
+                    new(OperationId: "8ª emissão", Stage: "encerrada", Evidence: issuanceEvidence, Importance: "Relevant", AttentionBasis: "CHANGE", AttentionReason: "Captação encerrada", AttentionEvidence: issuanceEvidence)));
+                var ai = new Radar11AiService(new(importance, AnalysisClassification.AssetTransaction, true, SuggestedAction.Monitor,
+                    "Aquisição e emissão", "Impacto das operações", "Calculado separadamente", ["XPIN11"], 0.9m, "{}", events));
+                await CreateProcessor(db, new FakeFileStorage(PdfTestData.CreatePdfStream(text)), new FakePdfTextExtractor(new(true, text, null)), ai).ProcessAsync(job, ct);
+            }
+            async Task<(Document Document, ProcessingJob Job)> NextDocument(string id)
+            {
+                var document = new Document(seeded.Position.AssetId, DocumentType.Communication, DateTimeOffset.UtcNow, "CVM", id, $"https://example.test/{id}", id);
+                document.MarkDownloaded($"{id}.pdf", id);
+                var job = new ProcessingJob(document.Id, ProcessingJobType.AnalyzeDocument, DateTimeOffset.UtcNow);
+                job.Start(DateTimeOffset.UtcNow);
+                db.AddRange(document, job);
+                await db.SaveChangesAsync(ct);
+                return (document, job);
+            }
+            async Task<RadarResponse> ReadRadar()
+            {
+                db.ChangeTracker.Clear();
+                var response = await new RadarController(db).Get(portfolioId, null, null, null, ct: ct);
+                return Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(response.Result).Value);
+            }
+
+            await Analyze(seeded.Document, seeded.Job, "contratada", true, "Documento inicial");
+            var initial = await ReadRadar();
+            Assert.Equal(2, initial.TotalItems);
+            Assert.Equal(2, initial.RequiresAttention);
+            var storedAcquisition = await db.InvestmentEvents.Include(e => e.Evidence).SingleAsync(e => e.EventType == InvestmentEventType.AssetTransaction, ct);
+            var storedEvidence = Assert.Single(storedAcquisition.Evidence).Reference;
+            Assert.Equal(1000, storedEvidence.Length);
+            Assert.True(storedAcquisition.RadarDetails!.Evidence!.Length > storedEvidence.Length);
+            Assert.StartsWith(storedEvidence, storedAcquisition.RadarDetails.Evidence);
+            var acquisition = initial.AttentionNow.Single(i => i.EventType == InvestmentEventType.AssetTransaction);
+            await new RadarController(db).SetStatus(acquisition.AssessmentId, portfolioId, new("Closed"), ct);
+            Assert.Equal(1, (await ReadRadar()).RequiresAttention);
+
+            var repeated = await NextDocument("apresentacao");
+            await Analyze(repeated.Document, repeated.Job, "contratada", false, "Apresentação posterior");
+            var afterRepeat = await ReadRadar();
+            Assert.Equal(2, afterRepeat.TotalItems);
+            Assert.Equal(1, afterRepeat.RequiresAttention);
+            var repeat = Assert.Single(afterRepeat.RecentUpdates);
+            Assert.Equal("Repeat", repeat.Novelty);
+            Assert.Equal(AssessmentStatus.Closed, repeat.Status);
+
+            var completed = await NextDocument("conclusao");
+            await Analyze(completed.Document, completed.Job, "concluída", false, "Conclusão da operação");
+            var afterUpdate = await ReadRadar();
+            Assert.Equal(2, afterUpdate.TotalItems);
+            Assert.Equal(2, afterUpdate.RequiresAttention);
+            Assert.Equal("Update", afterUpdate.AttentionNow.Single(i => i.EventType == InvestmentEventType.AssetTransaction).Novelty);
+            Assert.Equal(4, await db.InvestmentEvents.CountAsync(ct));
+            Assert.All(await db.InvestmentEvents.ToListAsync(ct), e => Assert.Equal("Unknown", e.RadarDetails!.Materiality));
+
+            var informativeRepeat = await NextDocument("apresentacao-informativa");
+            await Analyze(informativeRepeat.Document, informativeRepeat.Job, "concluída", false, "Apresentação informativa", AnalysisImportance.Informative);
+            var beforeResolveAll = await ReadRadar();
+            var continuity = Assert.Single(beforeResolveAll.RecentUpdates);
+            Assert.Equal("Repeat", continuity.Novelty);
+            Assert.Equal("Relevant", continuity.DocumentImportance);
+            Assert.NotEqual(AssessmentStatus.Closed, continuity.Status);
+            Assert.Equal(AnalysisImportance.Informative, (await db.DocumentAnalyses.SingleAsync(a => a.DocumentId == informativeRepeat.Document.Id, ct)).Importance);
+            await new RadarController(db).ResolveAll(portfolioId, ct);
+            var afterResolveAll = await ReadRadar();
+            Assert.Equal(2, afterResolveAll.TotalItems);
+            Assert.Empty(afterResolveAll.AttentionNow);
+            Assert.All(afterResolveAll.RecentUpdates, item => Assert.Equal(AssessmentStatus.Closed, item.Status));
+        }
+        finally
+        {
+            await using var drop = new NpgsqlCommand($"DROP DATABASE \"{database}\" WITH (FORCE)", admin);
+            await drop.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private sealed class Radar11AiService(AiAnalysisResult result) : IAiAnalysisService
+    {
+        public string Model => "test-model";
+        public string PromptVersion => DocumentAnalysisPrompt.GlobalVersion;
+        public Task<AiAnalysisResult> AnalyzeAsync(string documentText, PortfolioAnalysisContext context, CancellationToken cancellationToken = default) => Task.FromResult(result);
+    }
+
     [RelationalFact]
     public async Task Concurrent_workers_defer_then_reuse_identical_text_with_different_file_hashes()
     {
@@ -249,7 +361,8 @@ public sealed class DocumentAnalysisProcessorTests
         Assert.Equal(ProcessingJobStatus.Completed, seeded.Job.Status);
         Assert.Equal("fake-model", analysis.Model);
         Assert.Equal("document-analysis-v1", analysis.PromptVersion);
-        Assert.Equal(AnalysisImportance.Critical, analysis.Importance);
+        Assert.Equal(AnalysisImportance.Relevant, analysis.Importance);
+        Assert.False(analysis.RequiresAction);
         Assert.Equal(AnalysisClassification.Liquidation, analysis.Classification);
         Assert.Equal(210m, position.Quantity);
         Assert.Equal(30.17m, position.AveragePrice);
@@ -317,7 +430,7 @@ public sealed class DocumentAnalysisProcessorTests
     }
 
     [Fact]
-    public async Task Analise_existente_para_mesmo_job_eh_idempotente()
+    public async Task Analise_existente_nao_e_reprocessada_apos_mudanca_de_prompt()
     {
         await using var dbContext = CreateDbContext();
         var seeded = await SeedDocumentScenarioAsync(dbContext);
@@ -325,7 +438,7 @@ public sealed class DocumentAnalysisProcessorTests
             seeded.Job.Id,
             seeded.Document.Id,
             "fake-model",
-            "document-analysis-v1",
+            "document-analysis-v0",
             AnalysisImportance.Relevant,
             AnalysisClassification.CorporateAction,
             true,
@@ -343,6 +456,8 @@ public sealed class DocumentAnalysisProcessorTests
         await processor.ProcessAsync(seeded.Job, CancellationToken.None);
 
         Assert.Equal(1, await dbContext.DocumentAnalyses.CountAsync(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Empty(await dbContext.InvestmentEvents.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("document-analysis-v0", (await dbContext.DocumentAnalyses.SingleAsync(TestContext.Current.CancellationToken)).PromptVersion);
         Assert.Equal(ProcessingJobStatus.Completed, seeded.Job.Status);
     }
 

@@ -28,6 +28,8 @@ public sealed class InvestmentEvent
     public string Fingerprint { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; private set; }
     public DocumentAnalysis? DocumentAnalysis { get; private set; }
+    public RadarEventDetails? RadarDetails { get; private set; }
+    public void SetRadarDetails(RadarEventDetails details) => RadarDetails = details;
     public List<Asset> AffectedAssets { get; private set; } = new();
     public List<InvestmentEventEvidence> Evidence { get; private set; } = new();
 

@@ -113,8 +113,6 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddHostedService<CvmFiiMonthlyIngestionWorker>();
         services.AddHostedService<DocumentStorageRepairWorker>();
         services.AddHostedService<StorageMaintenanceWorker>();
-        services.AddHostedService<RadarRepairWorker>();
-        services.AddHostedService<HistoricalMaterialityReconciliationWorker>();
         services.AddHostedService<DocumentDownloadWorker>();
         services.AddHostedService<DocumentAnalysisWorker>();
         services.AddHostedService<ContributionGuidanceWorker>();

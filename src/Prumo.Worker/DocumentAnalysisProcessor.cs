@@ -11,6 +11,7 @@ using Prumo.Infrastructure.Persistence;
 using Npgsql;
 using System.Security.Cryptography;
 using System.Text;
+using Prumo.Application.Radar;
 
 namespace Prumo.Worker;
 
@@ -112,10 +113,11 @@ public sealed class DocumentAnalysisProcessor
         var existingAnalysis = await dbContext.DocumentAnalyses
             .Include(item => item.Document)
             .ThenInclude(item => item!.Asset)
-            .FirstOrDefaultAsync(item => item.DocumentId == document.Id && aiAnalysisService.AcceptedModels.Contains(item.Model) && item.PromptVersion == aiAnalysisService.PromptVersion, cancellationToken);
+            .FirstOrDefaultAsync(item => item.DocumentId == document.Id, cancellationToken);
         if (existingAnalysis is not null)
         {
-            await EnsureExistingAnalysisFeedsRadarAsync(existingAnalysis, cancellationToken);
+            if (existingAnalysis.PromptVersion == DocumentAnalysisPrompt.GlobalVersion)
+                await EnsureExistingAnalysisFeedsRadarAsync(existingAnalysis, cancellationToken);
             document.MarkProcessed();
             job.Complete(DateTimeOffset.UtcNow);
             await SaveChangesHandlingConcurrentAssessmentsAsync(cancellationToken);
@@ -157,10 +159,27 @@ public sealed class DocumentAnalysisProcessor
         logger.LogInformation("Iniciando analise do documento {DocumentId}; providerModel={Model}; promptVersion={PromptVersion}.", document.Id, aiAnalysisService.Model, aiAnalysisService.PromptVersion);
 
         var result = await aiAnalysisService.AnalyzeAsync(extraction.Text, context, cancellationToken);
+        var eventResults = (result.Events ?? Array.Empty<AiInvestmentEventResult>()).Select(e =>
+        {
+            var details = e.RadarDetails;
+            if (details is null && result.Events?.Count == 1)
+                details = new RadarEventDetails(AttentionBasis: result.AttentionBasis, AttentionReason: result.AttentionReason, AttentionEvidence: result.AttentionEvidence);
+            var validated = RadarEventPolicy.Validate(details, extraction.Text, result.Importance);
+            var normalization = DocumentMaterialityNormalization.Normalize(Enum.Parse<AnalysisImportance>(validated.Importance!),
+                Enum.Parse<AnalysisClassification>(e.EventType.ToString()), false, SuggestedAction.NoAction, e.Summary, "",
+                new[] { new MaterialityEventFacts(e.Summary, e.Facts) });
+            validated = validated with { Importance = normalization.Importance.ToString() };
+            return e with { RadarDetails = validated,
+                Facts = e.Facts.Where(fact => RadarEventPolicy.IsLiteral(extraction.Text, fact)).ToArray() };
+        }).ToArray();
+        var globalImportance = eventResults.Length > 0
+            ? eventResults.Select(e => Enum.Parse<AnalysisImportance>(e.RadarDetails!.Importance!)).Min()
+            : result.Importance == AnalysisImportance.Critical ? AnalysisImportance.Relevant : result.Importance;
+        result = result with { Events = eventResults, Importance = globalImportance };
         // A claimed change must cite the actual source, not a generated explanation.
-        if (result.AttentionBasis is "CHANGE" or "DEADLINE" or "DECISION"
-            && (string.IsNullOrWhiteSpace(result.AttentionEvidence)
-                || !NormalizeEvidence(extraction.Text).Contains(NormalizeEvidence(result.AttentionEvidence), StringComparison.OrdinalIgnoreCase)))
+        if (result.AttentionBasis is not ("CHANGE" or "DEADLINE" or "DECISION")
+            || string.IsNullOrWhiteSpace(result.AttentionReason)
+            || !RadarEventPolicy.IsLiteral(extraction.Text, result.AttentionEvidence))
             result = result with { AttentionBasis = "UNKNOWN", AttentionEvidence = null, RequiresAction = false, SuggestedAction = SuggestedAction.Monitor };
         var analysis = new DocumentAnalysis(
             job.Id,
@@ -316,7 +335,7 @@ public sealed class DocumentAnalysisProcessor
                 item.OccurredAt,
                 item.Summary,
                 item.Facts,
-                item.AffectedAssets.Select(asset => asset.Ticker).ToArray())).ToArray();
+                item.AffectedAssets.Select(asset => asset.Ticker).ToArray(), item.RadarDetails)).ToArray();
             await PersistEventsAndAssessmentsAsync(analysis, replay, cancellationToken);
             return;
         }
@@ -348,6 +367,14 @@ public sealed class DocumentAnalysisProcessor
         // Keep the tracked instances so the many-to-many event relation does not
         // attach a second Asset object with the same key.
         var knownAssets = await dbContext.Assets.ToListAsync(cancellationToken);
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-180);
+        var documentAssetId = await dbContext.Documents.Where(d => d.Id == analysis.DocumentId).Select(d => d.AssetId).SingleAsync(cancellationToken);
+        var recentEvents = await dbContext.InvestmentEvents.Include(e => e.AffectedAssets)
+            .Where(e => e.CreatedAt >= cutoff && e.DocumentAnalysisId != analysis.Id && e.AffectedAssets.Any(a => a.Id == documentAssetId))
+            .OrderByDescending(e => e.CreatedAt).Take(500).ToListAsync(cancellationToken);
+        var ambiguousOperations = results.Where(r => r.RadarDetails?.OperationId is not null)
+            .GroupBy(r => $"{r.EventType}|{r.RadarDetails!.OperationId!.ToUpperInvariant()}")
+            .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
         foreach (var result in results)
         {
             var eventTickers = DocumentEventAssetResolver.MergeExplicitTickers(result.AffectedAssets, result.Summary, result.Facts, knownAssets);
@@ -358,7 +385,15 @@ public sealed class DocumentAnalysisProcessor
                 investmentEvent = new InvestmentEvent(analysis.Id, result.EventType, result.OccurredAt, result.Summary, result.Facts);
                 var assets = knownAssets.Where(x => eventTickers.Contains(x.Ticker, StringComparer.OrdinalIgnoreCase));
                 investmentEvent.AffectedAssets.AddRange(assets);
-                investmentEvent.Evidence.Add(new InvestmentEventEvidence(investmentEvent.Id, analysis.Id, analysis.DocumentId, "Análise estruturada do documento"));
+                if (analysis.PromptVersion == DocumentAnalysisPrompt.GlobalVersion)
+                {
+                    var details = result.RadarDetails ?? new RadarEventDetails(Importance: analysis.Importance.ToString());
+                    if (!ambiguousOperations.Contains($"{result.EventType}|{details.OperationId?.ToUpperInvariant()}")
+                        && result.Facts.All(f => RadarEventPolicy.IsLiteral(details.Evidence ?? "", f)))
+                        details = RadarEventPolicy.Classify(details, result.EventType, investmentEvent.AffectedAssets.Select(a => a.Id), recentEvents);
+                    investmentEvent.SetRadarDetails(details);
+                }
+                investmentEvent.Evidence.Add(new InvestmentEventEvidence(investmentEvent.Id, analysis.Id, analysis.DocumentId, investmentEvent.RadarDetails?.Evidence ?? "Análise estruturada do documento"));
                 dbContext.InvestmentEvents.Add(investmentEvent);
             }
             else
@@ -379,12 +414,14 @@ public sealed class DocumentAnalysisProcessor
                     .Where(x => assetIds.Contains(x.AssetId) && x.Quantity > 0)
                     .Select(x => new RelevantPositionContext(x.AssetId, x.Asset?.Ticker ?? string.Empty, x.Asset?.AssetClass ?? AssetClass.Other, x.CurrentValue ?? 0, x.PortfolioWeight))
                     .ToList();
-                var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health, analysis.Importance, analysis.RequiresAction, analysis.SuggestedAction));
+                var output = portfolioImpactAssessmentService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(investmentEvent, portfolio, relevantPositions, health, RadarEventPolicy.Importance(investmentEvent, analysis.Importance), analysis.RequiresAction, analysis.SuggestedAction));
                 var assessmentVersion = portfolioImpactAssessmentService.Version;
                 var portfolioSnapshotKey = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
                 if (await dbContext.PortfolioAssessments.AnyAsync(x => x.PortfolioId == portfolio.Id && x.InvestmentEventId == investmentEvent.Id && x.PortfolioSnapshotKey == portfolioSnapshotKey && x.TargetAllocationKey == targetKey && x.AssessmentVersion == assessmentVersion, cancellationToken)) continue;
                 logger.LogInformation("PortfolioAssessment reevaluation requested PortfolioId={PortfolioId} AssessmentVersion={AssessmentVersion} PortfolioSnapshotKey={PortfolioSnapshotKey} InvestmentEventId={InvestmentEventId} InvestmentEventVersion={InvestmentEventVersion}", portfolio.Id, assessmentVersion, portfolioSnapshotKey, investmentEvent.Id, investmentEvent.Version);
-                dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, AssessmentStatus.Detected, AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, portfolioImpactAssessmentService.Version, portfolioSnapshotKey, investmentEvent.Version));
+                var previous = investmentEvent.RadarDetails is { Novelty: "Repeat", PreviousEventId: not null } repeat
+                    ? await dbContext.PortfolioAssessments.Where(a => a.PortfolioId == portfolio.Id && a.InvestmentEventId == repeat.PreviousEventId).OrderByDescending(a => a.GeneratedAt).FirstOrDefaultAsync(cancellationToken) : null;
+                dbContext.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, investmentEvent.Id, output.AttentionPriority, output.ActionRequirement, output.CapitalDecisionImpact, previous?.Status ?? AssessmentStatus.Detected, previous?.UserState ?? AssessmentUserState.Unread, output.Summary, output.WhyItMatters, output.SuggestedBehavior, output.Confidence, targetKey, portfolioImpactAssessmentService.Version, portfolioSnapshotKey, investmentEvent.Version));
             }
         }
     }

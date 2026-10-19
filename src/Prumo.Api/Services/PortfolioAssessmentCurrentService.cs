@@ -4,6 +4,7 @@ using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Prumo.Application.Radar;
 
 namespace Prumo.Api.Services;
 
@@ -32,6 +33,7 @@ public sealed class PortfolioAssessmentCurrentService
         IReadOnlyList<PortfolioAssessment> assessments,
         CancellationToken ct)
     {
+        assessments = RadarEventPolicy.Latest(assessments);
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
         var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
         var current = new List<PortfolioAssessment>();
@@ -41,7 +43,7 @@ public sealed class PortfolioAssessmentCurrentService
         // situation status and the notification state across recalculations.
         var stateByDocument = assessments
             .Where(x => x.InvestmentEvent is not null)
-            .GroupBy(x => x.InvestmentEvent!.DocumentAnalysisId)
+            .GroupBy(x => RadarEventPolicy.CardId(x.InvestmentEvent!))
             .ToDictionary(
                 group => group.Key,
                 group => new DocumentRadarState(
@@ -64,7 +66,7 @@ public sealed class PortfolioAssessmentCurrentService
             {
                 var affectedAssetIds = assessment.InvestmentEvent?.AffectedAssets.Select(x => x.Id).ToHashSet() ?? new HashSet<Guid>();
                 var hasAffectedPosition = portfolio.Positions.Any(x => affectedAssetIds.Contains(x.AssetId));
-                if (assessment.InvestmentEvent?.EventType == InvestmentEventType.Liquidation && hasAffectedPosition)
+                if (assessment.InvestmentEvent?.RadarDetails is null && assessment.InvestmentEvent?.EventType == InvestmentEventType.Liquidation && hasAffectedPosition)
                     assessment.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
                 current.Add(assessment);
                 keys.Add(key);
@@ -86,7 +88,7 @@ public sealed class PortfolioAssessmentCurrentService
             var health = targetKey is null ? null : new PortfolioHealthCalculator().Calculate(portfolio, targets);
             var analysis = assessment.InvestmentEvent.DocumentAnalysis;
             var output = impactService.AssessPortfolioImpact(new PortfolioImpactAssessmentContext(assessment.InvestmentEvent, portfolio, relevant, health, analysis?.Importance, analysis?.RequiresAction, analysis?.SuggestedAction));
-            var previousState = stateByDocument.GetValueOrDefault(assessment.InvestmentEvent.DocumentAnalysisId);
+            var previousState = stateByDocument.GetValueOrDefault(RadarEventPolicy.CardId(assessment.InvestmentEvent));
             var replacement = new PortfolioAssessment(
                 portfolio.Id,
                 assessment.InvestmentEventId,
