@@ -101,14 +101,14 @@ public sealed class DocumentAnalysisProcessorTests
             var informativeRepeat = await NextDocument("apresentacao-informativa");
             await Analyze(informativeRepeat.Document, informativeRepeat.Job, "concluída", false, "Apresentação informativa", AnalysisImportance.Informative);
             var beforeResolveAll = await ReadRadar();
-            var continuity = Assert.Single(beforeResolveAll.RecentUpdates);
-            Assert.Equal("Repeat", continuity.Novelty);
-            Assert.Equal("Relevant", continuity.DocumentImportance);
-            Assert.NotEqual(AssessmentStatus.Closed, continuity.Status);
+            Assert.Empty(beforeResolveAll.RecentUpdates);
+            Assert.Single(beforeResolveAll.AttentionNow);
+            Assert.Equal(1, beforeResolveAll.TotalItems);
+            Assert.DoesNotContain(beforeResolveAll.AttentionNow, item => item.EventType == InvestmentEventType.AssetTransaction);
             Assert.Equal(AnalysisImportance.Informative, (await db.DocumentAnalyses.SingleAsync(a => a.DocumentId == informativeRepeat.Document.Id, ct)).Importance);
             await new RadarController(db).ResolveAll(portfolioId, ct);
             var afterResolveAll = await ReadRadar();
-            Assert.Equal(2, afterResolveAll.TotalItems);
+            Assert.Equal(1, afterResolveAll.TotalItems);
             Assert.Empty(afterResolveAll.AttentionNow);
             Assert.All(afterResolveAll.RecentUpdates, item => Assert.Equal(AssessmentStatus.Closed, item.Status));
         }

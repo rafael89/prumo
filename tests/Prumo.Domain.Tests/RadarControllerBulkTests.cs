@@ -12,11 +12,12 @@ namespace Prumo.Domain.Tests;
 public sealed class RadarControllerBulkTests
 {
     [Fact]
-    public async Task Resolve_all_uses_event_relevance_and_keeps_informative_events_and_other_portfolios_unchanged()
+    public async Task Resolve_all_keeps_monitoring_informative_events_and_other_portfolios_unchanged()
     {
         await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var portfolioId = Guid.NewGuid();
+        var attention = AddAssessment(db, portfolioId, AnalysisImportance.Relevant, ActionRequirement.Review);
         var repeat = AddAssessment(db, portfolioId, AnalysisImportance.Informative, ActionRequirement.Monitor,
             new(Importance: "Relevant", Novelty: "Repeat"));
         var routine = AddAssessment(db, portfolioId, AnalysisImportance.Relevant, ActionRequirement.None,
@@ -28,7 +29,8 @@ public sealed class RadarControllerBulkTests
         var result = await new RadarController(db).ResolveAll(portfolioId, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, Assert.IsType<RadarBulkUpdateResponse>(Assert.IsType<OkObjectResult>(result.Result).Value).UpdatedCount);
-        Assert.Equal(AssessmentStatus.Closed, repeat.Status);
+        Assert.Equal(AssessmentStatus.Closed, attention.Status);
+        Assert.Equal(AssessmentStatus.Detected, repeat.Status);
         Assert.Equal(AssessmentStatus.Detected, routine.Status);
         Assert.Equal(AssessmentStatus.Detected, otherPortfolio.Status);
     }
@@ -83,6 +85,7 @@ public sealed class RadarControllerBulkTests
         db.AddRange(portfolio, asset);
         var attention = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Active);
         var resolved = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Closed);
+        var monitoring = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Monitor, AssessmentStatus.Active);
         var other = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.None, AssessmentStatus.Active);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
@@ -95,6 +98,10 @@ public sealed class RadarControllerBulkTests
         Assert.Contains(attention.Id, listed);
         Assert.Contains(resolved.Id, listed);
         Assert.DoesNotContain(other.Id, listed);
+        Assert.DoesNotContain(monitoring.Id, listed);
+        Assert.Single(response.AttentionNow);
+        Assert.Single(response.RecentUpdates);
+        Assert.Equal(1, response.RequiresAttention);
     }
 
     private static PortfolioAssessment AddDocumentAssessment(PrumoDbContext db, Portfolio portfolio, Asset asset, ActionRequirement action, AssessmentStatus status)
