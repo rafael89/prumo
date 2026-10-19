@@ -26,7 +26,7 @@ O Vite serve a aplicação na porta 5273 e encaminha `/api` para `localhost:5200
 - `utils/contributionAnalysis.ts`: mensagens sobre origem e limitações da orientação.
 - `utils/contributionExecution.ts`: contrato da confirmação de quantidade/preço realizados.
 
-Rotas: `/`, `/portfolio`, `/radar`, `/contributions`, `/documents`, `/documents/:id`, `/history` e `/about`. `/dashboard` redireciona para `/`.
+Rotas: `/`, `/portfolio`, `/radar`, `/contributions`, `/documents`, `/documents/:id` e `/history`. Os endereços antigos `/dashboard` e `/about` redirecionam para `/`.
 
 ## Testes
 

@@ -17,7 +17,7 @@ public sealed record InvestorPolicy(
     bool PreferExistingPositionsWhenEquivalent)
 {
     public static InvestorPolicy Current { get; } = new(
-        "rafael-long-term-income", "v1", "long_term_income", "10y_plus",
+        "long-term-income", "v1", "long_term_income", "10y_plus",
         "contributions_only", false, "gradual", true);
 }
 

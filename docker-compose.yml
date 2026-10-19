@@ -74,6 +74,8 @@ services:
     build:
       context: ./frontend/prumo-web
       dockerfile: Dockerfile
+      args:
+        PRUMO_VERSION: ${PRUMO_VERSION:-dev}
     ports:
       - "5273:80"
     depends_on:

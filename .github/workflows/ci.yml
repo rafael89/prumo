@@ -45,6 +45,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -133,15 +135,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Build application images
         shell: bash
         run: |
           set -Eeuo pipefail
           source_label="org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY"
+          version="$(git tag --merged HEAD | sed 's/^v//' | sort -Vr | awk '/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/ && !found {print; found=1}')"
           docker build --target api --label "$source_label" -t prumo-api:ci .
           docker build --target worker --label "$source_label" -t prumo-worker:ci .
-          docker build --label "$source_label" -t prumo-frontend:ci ./frontend/prumo-web
+          docker build --label "$source_label" --build-arg "PRUMO_VERSION=${version:-dev}" -t prumo-frontend:ci ./frontend/prumo-web
 
       - name: Smoke test application containers
         shell: bash

@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+ARG PRUMO_VERSION=dev
+ENV PRUMO_VERSION=$PRUMO_VERSION
 RUN npm run build
 
 FROM nginx:1.30.6-alpine

@@ -1,276 +1,184 @@
+<p align="center">
+  <img src="frontend/prumo-web/public/prumo_logo.png" alt="Prumo" width="240">
+</p>
+
 # Prumo
 
-[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![React 19.3.1](https://img.shields.io/badge/React-19.3.1-61DAFB?logo=react&logoColor=20232A)](https://react.dev/)
-[![TypeScript 7.0.2](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite 8.3.4](https://img.shields.io/badge/Vite-8.3.4-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
-[![Tailwind CSS 4.3.3](https://img.shields.io/badge/Tailwind_CSS-4.3.3-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![CI](https://github.com/rafael89/prumo/actions/workflows/ci.yml/badge.svg)](https://github.com/rafael89/prumo/actions/workflows/ci.yml)
+[![Versão](https://img.shields.io/github/v/tag/rafael89/prumo?filter=v*&label=vers%C3%A3o&sort=semver)](https://github.com/rafael89/prumo/tags)
 [![Docker Compose](https://img.shields.io/badge/Docker_Compose-ready-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
-Aplicação self-hosted para acompanhar eventos relevantes dos ativos de uma carteira de investimentos brasileira e apoiar decisões de alocação com contexto da própria carteira.
+O Prumo é uma aplicação self-hosted para acompanhar sua carteira de investimentos brasileira. Ele reúne posições, documentos da CVM/FNet e análises com IA para ajudar a entender eventos relevantes e planejar novos aportes.
 
-O Prumo combina importação de carteira da B3, descoberta e análise de documentos da CVM/FNet, avaliação do impacto por carteira, Radar e orientação de aportes sob demanda.
+- [Instalação rápida](#instalação-rápida)
+- [Configuração](#configuração)
+- [Desenvolvimento](#desenvolvimento)
+
+## Objetivo
+
+Dar contexto às decisões sobre a carteira sem exigir o acompanhamento manual de cada documento publicado. Importe suas posições, defina as alocações desejadas e use o Radar para revisar o que merece atenção.
 
 ## Funcionalidades
 
-- Carteiras e posições com cadastro, edição, exclusão e visualização paginada.
 - Importação do Relatório Consolidado Mensal da B3 em XLSX, com prévia antes da confirmação.
-- Descoberta, download, extração, validação e análise de documentos da CVM/FNet.
-- Análise global do evento e avaliação do impacto em cada carteira.
-- Visão geral com saúde da carteira, Radar e atualizações recentes.
-- Radar com prioridades, filtros, estados por carteira, paginação e resolução de situações.
-- Tela própria de Aportes (`/contributions`) para gerar orientação, acompanhar a análise da IA e registrar aportes realizados.
-- Motor de aportes que compara necessidades de alocação, diversificação, concentração, aportes recentes, qualidade financeira e valuation relativo quando há dados suficientes.
-- Simulação de cenários concentrados ou distribuídos, com fallback determinístico quando um provider de IA está indisponível.
-- Histórico da carteira com compras, eventos, documentos e mudanças de avaliação.
-- Configuração de alocações-alvo por classe de ativo.
-- Privacy mode para ocultar valores financeiros durante a sessão.
-- Providers de IA `Fake`, `Gemini`, `OpenAI` e HTTP customizado.
+- Cadastro e acompanhamento de carteiras, posições e alocações-alvo.
+- Descoberta e análise de documentos da CVM/FNet, com avaliação do impacto na sua carteira.
+- Radar de eventos relevantes, organizado por prioridade.
+- Orientação de aportes com cenários de alocação e registro das compras realizadas.
+- Histórico de posições, eventos e análises.
+- Tema claro e escuro e modo de privacidade para ocultar valores.
+- Integração com Gemini, OpenAI e provedores HTTP de IA.
 
-## Stack
+## Instalação rápida
 
-### Backend
+Você precisa de [Git](https://git-scm.com/) e [Docker com Compose](https://docs.docker.com/compose/install/).
 
-- .NET 10.0 com ASP.NET Core Web API.
-- Worker Service .NET 10.0 para descoberta, processamento e análise assíncrona.
-- Entity Framework Core 10.0.13.
-- PostgreSQL 16 com Npgsql Entity Framework Core 10.0.3.
-- Swagger/OpenAPI com Swashbuckle 10.3.0.
+1. Clone o repositório e copie o arquivo de configuração:
 
-### Frontend
+   ```sh
+   git clone https://github.com/rafael89/prumo.git
+   cd prumo
+   cp .env.example .env
+   ```
 
-- React 19.3.1.
-- TypeScript 7.0.2.
-- Vite 8.3.4.
-- Tailwind CSS 4.3.3.
-- TanStack React Query 5.104.4.
-- React Router 8.4.0.
+   No PowerShell, use `Copy-Item .env.example .env` para copiar o arquivo.
 
-### Operação
+2. Edite o `.env`: altere `POSTGRES_PASSWORD` e preencha `AI_API_KEY` com a chave do provedor escolhido. O exemplo usa Gemini.
 
-- Docker e Docker Compose.
-- Serviços Compose: `postgres`, `api`, `worker` e `frontend`.
-- PostgreSQL e API publicados apenas em `localhost` por padrão; o frontend é publicado na porta `5273` do host.
+3. Construa e inicie os serviços:
 
-## Organização da aplicação
+   ```sh
+   docker compose up -d --build
+   ```
 
-```text
-B3 XLSX -> prévia -> confirmação -> carteira atualizada
-CVM/FNet -> descoberta -> download -> extração/validação -> análise IA
-Documento -> DocumentAnalysis global -> InvestmentEvent
-                                -> PortfolioAssessment por carteira -> Radar/Aportes
+4. Acesse [http://localhost:5273](http://localhost:5273), crie uma carteira e importe suas posições ou cadastre os ativos manualmente.
+
+O Compose inicia o frontend, a API, o worker e o PostgreSQL. As migrações do banco são aplicadas automaticamente. Dados e documentos ficam em volumes Docker.
+
+Para atualizar uma instalação feita a partir do código:
+
+```sh
+git pull --ff-only
+docker compose up -d --build
 ```
 
-O backend é a fonte de verdade para os cálculos financeiros e as decisões de produto. Na orientação de aportes, ele calcula candidatos, restrições e cenários válidos. A IA pode ajudar a selecionar e explicar uma alternativa, mas não cria ativos, valores ou regras. Se um provider falhar, o Prumo utiliza o fallback determinístico seguro.
+## Configuração
 
-O frontend é organizado por fluxos:
+As opções mais comuns estão no [.env.example](.env.example):
 
-```text
-/                 Visão geral da carteira
-/portfolio        Carteira, posições e alocações-alvo
-/radar            Eventos que exigem atenção
-/contributions    Orientação e registro de aportes
-/documents        Documentos e análises
-/history          Histórico da carteira e dos ativos
-/about            Sobre o Prumo
-```
+| Variável | Uso |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Senha do banco de dados. Altere antes de iniciar. |
+| `AI_PROVIDER` | Provedor de IA: `Gemini`, `OpenAI` ou `Http`. |
+| `AI_API_KEY` | Chave do provedor. `GEMINI_API_KEY` também é aceita como alternativa. |
+| `AI_MODEL` | Modelo usado nas análises. |
+| `AI_FALLBACK_MODEL` | Modelo alternativo, quando aplicável ao provedor. |
+| `DISCORD_WEBHOOK_URL` | Webhook opcional para notificações de logs. |
 
-A orientação de aportes fica concentrada na tela `/contributions`; a visão geral não exibe mais o card de aportes.
+Ao trocar de provedor, ajuste também os modelos. O provedor `Http` exige `AI__Endpoint` no ambiente do worker. A integração OpenAI atende à análise documental; nesse caso, a orientação de aportes usa o motor de regras.
 
-### Princípio de produto
+O Prumo foi pensado para uso pessoal em rede privada e ainda não possui autenticação de usuários. Para acesso remoto, proteja o frontend com VPN ou um proxy com autenticação e HTTPS. Não exponha o banco nem a API diretamente à internet.
 
-O Prumo segue um modelo de produto orientado à autonomia. Uma capacidade do backend não se torna automaticamente uma funcionalidade permanente voltada ao usuário. As responsabilidades normais devem permanecer limitadas a importar ou atualizar a carteira, definir alocações-alvo por classe de ativo, informar um valor para aporte e revisar ou confirmar a orientação do Prumo. O restante deve ser automatizado, derivado, contextual, acessível por drill-down ou acionado apenas em exceções, sempre que for seguro.
+## Desenvolvimento
 
-## Executar localmente
+O Prumo usa .NET 10, React, TypeScript, Vite, Tailwind CSS e PostgreSQL 16. O processamento de documentos e as análises assíncronas são executados por um worker separado da API.
 
-### Pré-requisitos
+### Ambiente local
 
-- .NET SDK 10.0.
-- Node.js 26.12.0 e npm.
-- PostgreSQL 16 local ou Docker Desktop com Docker Compose.
+Instale o .NET SDK definido em [global.json](global.json), Node.js 26.12.0 e Docker com Compose.
 
-### Banco com Docker Compose
+Na raiz do repositório, copie `.env.example` para `.env`, configure a senha do banco e inicie o PostgreSQL:
 
-Na raiz do repositório:
-
-```powershell
+```sh
 docker compose up -d postgres
-```
-
-Os defaults locais são:
-
-```text
-Database: prumo
-User:     postgres
-Password: dev123
-Host:     localhost
-Port:     5432
-```
-
-Ao copiar [.env.example](.env.example), altere `POSTGRES_PASSWORD` antes de iniciar os serviços. Também é possível alterar esses valores com `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD` quando necessário.
-
-### API e worker
-
-```powershell
 dotnet restore Prumo.sln
+```
+
+Para executar API e worker fora do Compose, configure `ConnectionStrings:Postgres` em ambos os projetos com as mesmas credenciais do `.env`. O .NET não carrega esse arquivo automaticamente. Você pode usar variáveis de ambiente (`ConnectionStrings__Postgres`) ou `dotnet user-secrets`.
+
+As configurações de desenvolvimento usam `D:\storage\documents` para armazenamento. Ajuste `Storage:RootPath` nos dois projetos se precisar de outro caminho.
+
+Aplique as migrações com a ferramenta `dotnet-ef` compatível com EF Core 10:
+
+```sh
 dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
+```
+
+Em terminais separados, execute:
+
+```sh
 dotnet run --project src/Prumo.Api
+```
+
+```sh
 dotnet run --project src/Prumo.Worker
 ```
 
-### Frontend
-
-```powershell
-Set-Location frontend/prumo-web
-npm install
+```sh
+cd frontend/prumo-web
+npm ci
 npm run dev
 ```
 
-Durante o desenvolvimento, o Vite encaminha `/api` para `http://localhost:5200`. A porta pode ser ajustada em [vite.config.ts](frontend/prumo-web/vite.config.ts).
+O frontend fica em [http://localhost:5273](http://localhost:5273) e encaminha `/api` para [http://localhost:5200](http://localhost:5200). O Swagger está disponível em [http://localhost:5200/swagger](http://localhost:5200/swagger) no ambiente Development.
 
-### Executar tudo com Compose
+### IA e notificações
 
-```powershell
-docker compose up --build
-```
+Configure credenciais com variáveis de ambiente ou user-secrets, sem editar arquivos versionados. Exemplo para o worker:
 
-O frontend fica disponível em `http://localhost:5273` e a API em `http://localhost:5200`.
-Ao usar o Compose completo, a API aplica automaticamente as migrations antes de ficar saudável e o Worker aguarda essa etapa.
-
-Com a API em execução, `/health` e `/health/ready` verificam a conexão com PostgreSQL; `/health/live` verifica se a aplicação responde. A documentação OpenAPI/Swagger fica em `http://localhost:5200/swagger` apenas em Development.
-
-O worker não abre uma porta HTTP adicional. Seu estado operacional fica no processo e nos logs padrão do container; o Compose acompanha se o processo permanece em execução. Os contadores internos do worker existem para diagnóstico e testes, mas não iniciam exporter ou serviço de métricas. API e worker também mantêm os logs de arquivo existentes nos volumes `api-logs` e `worker-logs`, com retenção de sete dias; arquivos mais antigos são removidos na próxima gravação de cada serviço.
-
-## IA e configuração
-
-As configurações principais do worker ficam em [src/Prumo.Worker/appsettings.json](src/Prumo.Worker/appsettings.json):
-
-- `AI:Provider`
-- `AI:Endpoint`
-- `AI:ApiKey`
-- `AI:Model`
-- `AI:FallbackModel`
-- `AI:TimeoutSeconds`
-- `AI:RateLimit`
-- `Jobs:*`
-- `TextQuality:*`
-- `Storage:RootPath`
-- `Discord:WebhookUrl` (opcional, para notificações de logs)
-
-Providers de análise documental:
-
-- `Fake`: determinístico, indicado para desenvolvimento e testes.
-- `Gemini`: Gemini Developer API via `generateContent` com Structured Output.
-- `OpenAI`: Responses API com JSON Schema estrito.
-- `Http`: provider HTTP customizado, com endpoint e modelo configurados.
-
-O worker valida provider, modelo, credenciais exigidas, endpoint HTTP e timeout na inicialização. `Fake` é permitido apenas fora de Production. Valores desconhecidos de provider são rejeitados.
-
-Para aportes, o Prumo reutiliza o provider e os modelos configurados em `AI`. Gemini e Http usam IA; Fake, OpenAI e outros providers usam o motor determinístico de aportes:
-
-| Provider configurado em `AI` | Aportes |
-| --- | --- |
-| Gemini | Gemini |
-| Http | Http |
-| OpenAI | Motor determinístico |
-| Fake | Motor determinístico |
-
-OpenAI está integrado à análise documental; nesse caso, os aportes usam o motor determinístico. `AI:Model` e `AI:FallbackModel` são compartilhados pelas análises documentais e pelos aportes quando o provider configurado é Gemini ou Http.
-
-A tela de aportes distingue uso do motor de regras, troca para modelo alternativo de IA e indisponibilidade da revisão adicional. O motivo é preservado junto da orientação.
-
-Para usar o Gemini localmente sem versionar a chave:
-
-```powershell
+```sh
 dotnet user-secrets set "AI:Provider" "Gemini" --project src/Prumo.Worker
 dotnet user-secrets set "AI:ApiKey" "<sua-chave>" --project src/Prumo.Worker
-dotnet user-secrets set "AI:Model" "gemini-3.5-flash-lite" --project src/Prumo.Worker
 ```
 
-Para OpenAI, configure `AI__Provider=OpenAI`, `AI__ApiKey` e `AI__Model`. No Compose, use `AI_PROVIDER`, `AI_API_KEY` (ou o alias legado `GEMINI_API_KEY`), `AI_MODEL` e `AI_FALLBACK_MODEL`. `DISCORD_WEBHOOK_URL` controla as notificações opcionais. Nunca versione chaves de providers.
+`AI:Model` e `AI:FallbackModel` definem os modelos. Para OpenAI, configure um modelo compatível com Responses API e saída estruturada. O provedor `Http` exige `AI:Endpoint`. O provedor `Fake` é permitido apenas fora de Production, para desenvolvimento e testes.
 
-## Documentos e análise
+Na análise documental, os provedores disponíveis são `Gemini`, `OpenAI`, `Http` e `Fake`. A orientação de aportes usa IA com `Gemini` e `Http`; com `OpenAI` e `Fake`, usa o motor determinístico.
 
-O fluxo assíncrono é executado pelo worker:
+Para notificações opcionais, configure `Discord:WebhookUrl` na API e no worker. No Compose, `DISCORD_WEBHOOK_URL` é repassada aos dois serviços. Sem um webhook configurado, as notificações ficam inativas.
 
-```text
-DocumentDiscoveryWorker
-  -> DownloadDocument
-  -> DocumentDownloadWorker
-  -> AnalyzeDocument
-  -> DocumentAnalysisWorker
-  -> extração e validação de texto
-  -> IAiAnalysisService
-  -> validação e persistência de DocumentAnalysis
-```
+### Testes
 
-O contexto da análise documental é global e contém dados do ativo e do documento. O impacto específico sobre cada carteira é calculado separadamente em `PortfolioAssessment`, considerando posições, metas e políticas versionadas.
+Na raiz do repositório:
 
-O endpoint `GET /api/documents/{id}/analysis` retorna a análise validada mais recente; `RawResponse` não é exposto por padrão.
-
-## Migrations
-
-O schema do banco fica em [src/Prumo.Infrastructure/Migrations](src/Prumo.Infrastructure/Migrations). As migrations são aplicadas pelo Entity Framework Core.
-
-```powershell
-dotnet ef database update --project src/Prumo.Infrastructure --startup-project src/Prumo.Api
-```
-
-O estado atual do modelo é representado, no momento, por:
-
-```text
-InitialCreate
-CandidatesJsonUseText
-CvmFiiMonthlyStructuredIngestion
-PartialContributionExecutions
-DocumentIgnoredReason
-```
-
-As migrations novas devem ser append-only. Como o Prumo ainda não está em produção, a baseline pode ser regenerada junto com um reset local do banco quando houver alterações estruturais.
-
-## Validação
-
-```powershell
+```sh
 dotnet build Prumo.sln
 dotnet test Prumo.sln
+```
 
-Set-Location frontend/prumo-web
-npm run build
+Os testes relacionais exigem PostgreSQL e `PRUMO_RUN_RELATIONAL_TESTS=1`. Sem essa opção, são ignorados. Eles usam bancos temporários; confira a configuração local antes de ativá-los.
+
+No diretório `frontend/prumo-web`:
+
+```sh
+npm ci
 npm run lint
 npm test
+npm run build
 ```
 
-Os testes .NET usam xUnit v3 com Microsoft Testing Platform, selecionado em [global.json](global.json). Para gerar cobertura Cobertura, execute `dotnet test Prumo.sln -- --coverlet --coverlet-output-format cobertura`.
+No Windows, use `npm.cmd` se o PowerShell bloquear `npm.ps1`.
 
-Sem `PRUMO_RUN_RELATIONAL_TESTS=1`, os testes PostgreSQL aparecem como ignorados, com o motivo explícito. Para executá-los localmente, com PostgreSQL disponível na configuração de desenvolvimento esperada pelos testes, defina `PRUMO_RUN_RELATIONAL_TESTS=1` no `.env` da raiz ou na variável de ambiente do processo. A variável de ambiente tem precedência sobre o `.env`:
+### Versões
 
-```powershell
-$env:PRUMO_RUN_RELATIONAL_TESTS = '1'
-dotnet test Prumo.sln
-Remove-Item Env:PRUMO_RUN_RELATIONAL_TESTS
-```
+O build do frontend identifica a maior tag estável (`vMAJOR.MINOR.PATCH`) alcançável a partir do commit compilado. Sem tags, exibe `desenvolvimento`. O CI busca o histórico e passa a versão à imagem pelo argumento de build `PRUMO_VERSION`.
 
-Esses testes usam bancos temporários próprios e cobrem migrations, concorrência, importação, publicação de orientação pelo worker e confirmações parciais. O CI os ativa com PostgreSQL 16 e executa também os testes frontend com Node 26.12.0, alinhado ao Dockerfile. No Windows, se a política do PowerShell bloquear `npm.ps1`, use `npm.cmd`.
+Em builds locais com Compose, defina `PRUMO_VERSION` no ambiente ou no `.env` com a tag correspondente ao código compilado; sem isso, a imagem exibe `desenvolvimento`. Builds versionados consultam as tags públicas do GitHub ao abrir a aplicação e a cada hora para indicar atualizações disponíveis.
 
-O E2E com serviços externos, como CVM/FNet e providers de IA, depende da configuração correspondente no ambiente. Os testes frontend atuais validam contratos HTTP e regras de apresentação; não substituem testes de navegador.
+### Estrutura
 
-## Reset local do banco
+| Diretório | Responsabilidade |
+| --- | --- |
+| `src/Prumo.Api` | API HTTP e operações sobre carteiras. |
+| `src/Prumo.Worker` | Descoberta, processamento e análise de documentos. |
+| `src/Prumo.Application` | Casos de uso e regras da aplicação. |
+| `src/Prumo.Domain` | Entidades do domínio. |
+| `src/Prumo.Infrastructure` | Persistência, migrações e integrações. |
+| `frontend/prumo-web` | Interface web. |
+| `tests` | Testes do backend. |
 
-Para simular uma instalação limpa em Development:
+Para detalhes do frontend, consulte seu [README](frontend/prumo-web/README.md).
 
-```powershell
-.\scripts\reset-local-database.ps1
-```
+## Licença
 
-O script valida a connection string, bloqueia hosts remotos, exige a confirmação literal `RESET`, reseta o schema `public`, reaplica as migrations e verifica se o banco está vazio. Nenhum seed, carteira ou usuário é criado.
-
-## Segurança e deployment
-
-O Compose atual foi desenhado para uso self-hosted em rede privada. PostgreSQL e API ficam vinculados ao localhost; o frontend é publicado na porta `5273` do host. Em uma instalação exposta, use um reverse proxy externo para terminar o TLS. Autenticação multiusuário ainda não faz parte do modelo atual; não exponha a API diretamente à Internet.
-
-Os valores `prumo` e `dev123` são apenas defaults locais de desenvolvimento. Em ambientes reais, forneça credenciais e chaves por variáveis de ambiente ou secrets.
-
-O workflow de CI executa os testes de backend e frontend, constrói as imagens de `api`, `worker` e `frontend` e sobe os quatro serviços com Docker Compose para um teste rápido. Em pushes para `main`, publica essas mesmas imagens no GitHub Container Registry (GHCR). O runner `self-hosted`, `linux`, `prumo-deploy` baixa as imagens por digest e executa `docker compose up -d --no-build`, seguido da verificação de saúde. Após um deploy saudável, remove imagens não utilizadas e cache de build da VM; os volumes de dados não entram nessa limpeza. Pull requests passam pelos testes das imagens, mas não publicam nem fazem deploy.
-
-Para o deploy, configure a variável do repositório `PRUMO_DEPLOY_PATH` com o caminho do checkout no servidor. Esse runner precisa de Docker Compose, `git`, `curl` e acesso ao GHCR; o workflow usa `GITHUB_TOKEN` para publicar e baixar os pacotes ligados ao repositório. Mantenha as variáveis e credenciais da aplicação no `.env` do checkout, fora do Git. O Compose continua aceitando `docker compose up --build` para desenvolvimento local, usando imagens locais por padrão.
+Este projeto está disponível sob a [licença MIT](LICENSE).

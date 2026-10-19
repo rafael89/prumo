@@ -10,12 +10,12 @@ import { getJson, sendJson, sendVoid } from './api/client'
 import { Pagination } from './components/Pagination'
 import { AppDialog } from './components/AppDialog'
 import { consumeRadarNotifications } from './utils/radarNotifications'
+import { AppFooter } from './components/AppFooter'
 
 const RadarSection = lazy(() => import('./sections/FeatureSections').then(module => ({ default: module.RadarSection })))
 const ContributionSection = lazy(() => import('./sections/ContributionSectionModern').then(module => ({ default: module.ContributionSectionModern })))
 const PortfolioSection = lazy(() => import('./sections/PortfolioSection').then(module => ({ default: module.PortfolioSection })))
 const DocumentsSection = lazy(() => import('./sections/DocumentsSection').then(module => ({ default: module.DocumentsSection })))
-const AboutSection = lazy(() => import('./sections/AboutSection').then(module => ({ default: module.AboutSection })))
 const HistorySection = lazy(() => import('./sections/HistorySection').then(module => ({ default: module.HistorySection })))
 const DashboardOverview = lazy(() => import('./sections/DashboardOverview').then(module => ({ default: module.DashboardOverview })))
 const RecentAnalysisModal = lazy(() => import('./sections/DashboardOverview').then(module => ({ default: module.RecentAnalysisModal })))
@@ -499,9 +499,8 @@ function App() {
         {notificationToast && <div role="status" className={`fixed right-4 top-4 z-50 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-lg sm:right-6 sm:top-6 ${notificationToastVisible ? 'notification-toast-enter' : 'notification-toast-exit'}`}><div className="flex items-start gap-3"><button type="button" onClick={() => openNotification(notificationToast)} className="flex min-w-0 flex-1 items-start gap-3 text-left"><FontAwesomeIcon icon={faBell} className="mt-1 text-amber-700" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold">Novo item no Radar</span><span className="mt-1 block text-sm">{notificationToast.eventSummary || notificationToast.summary}</span><span className="mt-2 inline-block text-xs font-bold underline">Abrir análise do documento</span></span></button><button type="button" aria-label="Fechar notificação" onClick={dismissNotificationToast} className="text-lg leading-none text-amber-800">×</button></div></div>}
         <Suspense fallback={<LoadingState message="Carregando tela…" className="mx-auto max-w-6xl p-6" />}>
         {selectedNotificationAssessment && <RecentAnalysisModal item={selectedNotificationAssessment} portfolioId={activePortfolio?.id ?? ''} isResolved={selectedNotificationAssessment.status === 3 || selectedNotificationAssessment.status === 'Closed'} onClose={() => setSelectedNotification(null)} onResolve={() => resolveNotification.mutate(selectedNotificationAssessment.assessmentId)} actionPending={resolveNotification.isPending} />}
-        {route === '/dashboard' && <Navigate to="/" replace />}
+        {(route === '/dashboard' || route === '/about') && <Navigate to="/" replace />}
         {route === '/' && <DashboardOverview key={activePortfolio?.id ?? 'empty'} dashboard={dashboard} activePortfolio={activePortfolio} portfoliosLoading={portfolios.isLoading} portfoliosError={portfolios.isError} retryPortfolios={() => void portfolios.refetch()} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} />}
-        {route === '/about' && <AboutSection />}
         {route === '/history' && activePortfolio && <><HistorySection portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} assetId={new URLSearchParams(location.search).get('assetId')} page={historyPage} before={historyCursors[historyPage]} onPageInfo={handleHistoryPageInfo} />{!new URLSearchParams(location.search).get('assetId') && <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6"><Pagination page={historyPage} totalPages={historyTotalPages} onPageChange={nextPage => { if (nextPage === 1 || historyCursors[nextPage] !== undefined) setHistoryPage(nextPage) }} /></div>}</>}
         {route === '/contributions' && activePortfolio && <ContributionSection key={activePortfolio.id} portfolioId={activePortfolio.id} positions={dashboard.data?.positions ?? []} />}
         {(route === '/contributions' || route === '/documents' || route.startsWith('/documents/') || route === '/radar' || route === '/history') && !portfolios.isLoading && !portfolios.isError && !activePortfolio && <EmptyPortfolioRoute />}
@@ -530,12 +529,7 @@ function App() {
         />}
         {route === '/radar' && activePortfolio && <div className="mx-auto grid w-full max-w-358 gap-8 px-6 pb-24 pt-3"><RadarSection portfolioId={activePortfolio.id} /></div>}
         {(route === '/documents' || route.startsWith('/documents/')) && activePortfolio && <div className="mx-auto w-full max-w-358 px-6 pb-24 pt-3"><DocumentsSection key={activePortfolio.id} portfolioId={activePortfolio.id} selectedDocumentId={selectedDocumentId} setSelectedDocumentId={setSelectedDocumentId} /></div>}
-        <footer className="app-footer mt-auto h-14 border-t border-slate-200 bg-white/70 px-6 py-0">
-          <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-3 text-sm text-slate-500">
-            <p>prumo<span className="text-amber-600">.</span></p>
-            <Link to="/about" aria-current={route === '/about' ? 'page' : undefined} className="font-semibold text-slate-700 transition hover:text-amber-700">Sobre</Link>
-          </div>
-        </footer>
+        <AppFooter />
         {showBackToTop && <button type="button" aria-label="Voltar ao topo" title="Voltar ao topo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-16 right-5 z-30 h-11 w-11 rounded-full bg-slate-900 text-sm font-semibold text-white shadow-lg transition hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 sm:bottom-5"><FontAwesomeIcon icon={faArrowUp} /></button>}
         </Suspense>
       </main>

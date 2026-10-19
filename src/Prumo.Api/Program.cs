@@ -59,7 +59,6 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<DiscordLogNotifica
 builder.Logging.Services.AddSingleton<ILoggerProvider>(sp => new DiscordLogLoggerProvider(sp.GetRequiredService<IDiscordLogNotifier>(), sp.GetRequiredService<IOptions<DiscordOptions>>(), "API"));
 builder.Services.Configure<CvmFnetOptions>(builder.Configuration.GetSection("Documents"));
 builder.Services.Configure<DocumentBootstrapOptions>(builder.Configuration.GetSection("DocumentBootstrap"));
-builder.Services.Configure<DocumentRetentionOptions>(builder.Configuration.GetSection("DocumentRetention"));
 builder.Services.AddHttpClient<CvmFnetDocumentSource>();
 builder.Services.AddSingleton<IPortfolioImporter, B3XlsxPortfolioImporter>();
 builder.Services.AddScoped<NewAssetBootstrapService>();
