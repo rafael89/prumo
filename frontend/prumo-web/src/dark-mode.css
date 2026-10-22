@@ -33,15 +33,6 @@
 [data-theme='dark'] .text-amber-800 { color: #fde68a; }
 [data-theme='dark'] .text-amber-950 { color: #fef3c7; }
 [data-theme='dark'] .text-amber-700 { color: #fbbf24; }
-[data-theme='dark'] .radar-analysis-header {
-  background-color: #252b36;
-  border-color: rgb(251 191 36 / 22%);
-}
-[data-theme='dark'] .radar-analysis-badge {
-  background-color: rgb(251 191 36 / 10%);
-  border-color: rgb(251 191 36 / 28%);
-  color: #fde68a;
-}
 [data-theme='dark'] .bg-rose-50 { background-color: #450a0a; }
 [data-theme='dark'] .bg-rose-100 { background-color: #881337; }
 [data-theme='dark'] .text-rose-950,
