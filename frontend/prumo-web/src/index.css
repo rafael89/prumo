@@ -11,6 +11,26 @@ button, input, select { font: inherit; }
 button:not(:disabled), a, [role="button"] { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 a { font-family: inherit; }
+.dividend-forecast nav button { width: 1.75rem; height: 1.75rem; border-radius: 0.5rem; font-size: 0.75rem; }
+.dividend-forecast nav { gap: 0.5rem; margin-right: 0.75rem; }
+.dividend-forecast nav > span { min-width: 0; }
+@media (min-width: 1024px) {
+  .dividend-forecast-scroll { container-type: size; }
+  /* Distribui a altura restante entre seis ativos, abaixo do cabeçalho. */
+  .dividend-forecast tbody tr { height: calc((100cqh - 31px) / 6); }
+}
+.dividend-forecast-scroll { scrollbar-width: thin; scrollbar-color: #94a3b855 transparent; }
+.dividend-forecast-scroll:hover, .dividend-forecast-scroll:focus-visible { scrollbar-color: #94a3b899 transparent; }
+.dividend-forecast-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.dividend-forecast-scroll::-webkit-scrollbar-track { background: transparent; }
+.dividend-forecast-scroll::-webkit-scrollbar-thumb { background: #94a3b855; border-radius: 999px; }
+.dividend-forecast-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b899; }
+.dividend-forecast-scroll::-webkit-scrollbar-button { display: none; }
+@supports selector(::-webkit-scrollbar) {
+  .dividend-forecast-scroll,
+  .dividend-forecast-scroll:hover,
+  .dividend-forecast-scroll:focus-visible { scrollbar-width: auto; scrollbar-color: auto; }
+}
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #d97706; outline-offset: 2px; }
 
 /* Compacta o widget de carteira para acompanhar a densidade da referência visual. */
