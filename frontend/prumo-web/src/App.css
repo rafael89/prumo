@@ -101,25 +101,80 @@
 }
 .nav-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .nav-scroll::-webkit-scrollbar { display: none; }
+
+/* Keep secondary information readable against the portfolio's dark surface. */
+.portfolio-overview-header [class*="text-[#8ca9cd]"],
+.portfolio-overview-header [class*="text-[#a9bfdf]"] { color: #c0d0e5; }
+
+[data-theme='light'] .bg-stone-50,
+[data-theme='light'] .bg-stone-50\/95 { background-color: #f6f8fb; }
+[data-theme='light'] .text-slate-400 { color: #64748b; }
+[data-theme='light'] .border-slate-200 { border-color: #dbe3ed; }
+
 @media (max-width: 639px) {
-  /* Keep the import status from taking the controls' row. */
-  nav > div:first-child {
-    position: relative;
+  .app-header > nav { padding-inline: .5rem; }
+  .app-header .nav-scroll {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    column-gap: .5rem;
-    row-gap: 1rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    min-height: 4rem;
+    gap: .25rem;
+    overflow: visible;
+    padding: 0;
   }
-  nav > div:first-child > a:first-child { grid-column: 1; grid-row: 1; }
-  nav > div:first-child > .nav-scroll { grid-column: 1 / -1; grid-row: 3; }
-  nav > div:first-child > .import-status {
-    position: absolute;
-    top: 0;
-    right: 0;
-    max-width: calc(100% - 8rem);
+  .app-header .nav-scroll a {
+    min-width: 0;
+    min-height: 3.5rem;
+    flex-direction: column;
+    justify-content: center;
+    gap: .375rem;
+    padding: .5rem 0;
+    font-size: .625rem;
+    line-height: 1rem;
   }
-  nav > div:first-child > .radar-notification-control { grid-column: 2; grid-row: 1; justify-self: end; }
-  nav > div:first-child > .theme-toggle { grid-column: 3; grid-row: 1; justify-self: end; }
+  .app-header .nav-scroll a svg { font-size: 1rem; }
+  main > section,
+  main > .contribution-modern,
+  main > div:has(> #radar) { padding-inline: 1rem; }
+  .dashboard-overview > header { margin-bottom: 1.25rem; }
+  .dashboard-overview h1,
+  #radar h2.text-4xl { font-size: 1.75rem; line-height: 2.125rem; }
+  .dashboard-overview > .grid { gap: 1rem; }
+  .dashboard-overview article,
+  .portfolio-layout .portfolio-list,
+  .portfolio-layout .portfolio-positions,
+  .contribution-modern > div { border-radius: 1.25rem; }
+  .dashboard-overview .portfolio-overview-header { padding: 1.25rem; }
+  .dashboard-overview .portfolio-overview-header > div:last-child {
+    grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+    align-items: start;
+    gap: .75rem;
+  }
+  .dashboard-overview .portfolio-overview-header > div:last-child > div:last-child {
+    border-top: 0;
+    border-left: 1px solid #64748b;
+    padding: 0 0 0 .75rem;
+  }
+  .dashboard-overview .portfolio-overview-header > div:last-child p:first-child { font-size: .75rem; line-height: 1.25rem; }
+  .dashboard-overview > .grid > article:first-child > .portfolio-overview-header > div:last-child p:last-child { font-size: clamp(1.125rem, 5vw, 1.5rem); line-height: 1.75rem; white-space: nowrap; }
+  .dashboard-overview > .grid > article:first-child > div { padding: 1rem 1.25rem; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+  .dashboard-overview > .grid > article:first-child > div > div:nth-child(2) { grid-column: 1; grid-row: 2; justify-content: flex-start; }
+  .dashboard-overview > .grid > article:first-child > div > div:nth-child(3) { margin-top: 0; }
+  .dividend-forecast { padding: 1.25rem; }
+  .dividend-forecast > div:first-child { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .75rem; }
+  .dividend-forecast nav { flex-shrink: 0; margin-right: 0; gap: .25rem; }
+  .dividend-forecast nav > span { font-size: .75rem; }
+  .dividend-forecast footer { margin-top: .75rem; padding-top: .75rem; }
+  #radar .level-card { height: auto; min-height: 18rem; padding: 1.25rem; border-radius: 1.25rem; }
+  .contribution-modern h1 { font-size: 1.5rem; line-height: 2rem; }
+  .portfolio-layout input,
+  .portfolio-layout select,
+  .contribution-modern input,
+  #radar input,
+  #radar select { min-height: 2.75rem; }
+}
+@media (max-width: 639px) {
+  .app-header-top { gap: .5rem; }
+  .app-header-top > .import-status { order: 1; width: 100%; padding-bottom: .75rem; }
   [data-radar-actions] { margin-top: .5rem; }
   [data-radar-actions] button { min-width: 0; gap: .375rem; padding-left: .5rem; padding-right: .5rem; font-size: .75rem; justify-content: center; }
   [data-radar-actions="bulk"] button:last-child { border: 1px solid #a7f3d0; background-color: #ecfdf5; color: #047857; }

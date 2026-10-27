@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faEye, faEyeSlash, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl, sendJson } from '../api/client'
 import { analysisTone } from '../utils/documentAnalysis'
@@ -122,7 +122,6 @@ type DashboardOverviewProps = {
   portfoliosError?: boolean
   retryPortfolios?: () => void
   privacyHidden?: boolean
-  togglePrivacy?: () => void
 }
 
 const assetClassLabels: Record<number, string> = { 0: 'Ações', 1: 'FIIs', 2: 'Renda fixa', 3: 'ETF', 4: 'Outros ativos' }
@@ -310,6 +309,7 @@ function DividendPaymentDate({ value }: { value: string }) {
 
 function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: string; privacyHidden: boolean }) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
+  const [allDividendsVisible, setAllDividendsVisible] = useState(false)
   const forecast = useQuery({
     queryKey: ['dividend-forecast', portfolioId, selectedMonth],
     queryFn: async () => {
@@ -332,33 +332,34 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
       {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={setSelectedMonth} />}
     </div>
-    <div role="region" aria-label="Lista de rendimentos" tabIndex={0} className="dividend-forecast-scroll max-h-80 min-h-0 overflow-auto overscroll-contain pr-2 lg:max-h-none lg:flex-1">
+    <div role="region" aria-label="Lista de rendimentos" tabIndex={0} className="dividend-forecast-scroll min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain lg:pr-2">
     {forecast.isLoading ? <LoadingState message="Calculando previsão…" className="mt-4" /> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
       <div className="mt-5 divide-y divide-slate-200 sm:hidden">
-        {orderedItems.map(item => <div key={item.assetId} className="min-w-0 py-4 first:pt-0">
+        {orderedItems.map((item, index) => <div key={item.assetId} className={`min-w-0 py-3 first:pt-0 ${index >= 3 && !allDividendsVisible ? 'hidden' : ''}`}>
           <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <strong className="text-sm text-slate-900">{item.ticker}</strong>
             <strong className="text-right text-sm text-slate-900">{currency(item.estimatedMonthlyAmount!)}</strong>
           </div>
-          <p className="mt-2 text-sm text-slate-700">Pagamento: <DividendPaymentDate value={item.paymentDate!} /></p>
+          <p className="mt-1 text-xs text-slate-600"><DividendPaymentDate value={item.paymentDate!} /></p>
           {item.documentUrl && <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer" className="mt-1 flex min-w-0 items-center gap-1 text-xs font-semibold text-sky-700 hover:underline" aria-label={`${item.source || 'Documento'} de ${item.ticker} (abre em nova aba)`}><span className="truncate">{item.source || 'Documento'}</span></a>}
         </div>)}
       </div>
       <div className="hidden sm:block"><table className="w-full table-fixed border-collapse text-[13px] leading-[18px]"><colgroup><col style={{ width: '17%' }} /><col style={{ width: '25%' }} /><col style={{ width: '38%' }} /><col style={{ width: '20%' }} /></colgroup><thead className="sticky top-0 z-10 bg-white"><tr className="border-b border-slate-200 text-left text-[11px] leading-4 font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-1.5 pr-3 pt-2">Ativo</th><th scope="col" className="whitespace-nowrap pb-1.5 pr-3 pt-2">Pagamento</th><th scope="col" className="pb-1.5 pr-3 pt-2">Documento</th><th scope="col" className="pb-1.5 pt-2 text-right">Valor</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-px pr-3"><strong className="text-slate-900">{item.ticker}</strong></td><td className="whitespace-nowrap py-px pr-3 text-slate-700"><DividendPaymentDate value={item.paymentDate!} /></td><td className="py-px pr-3">{item.documentUrl ? <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer" title={item.source} aria-label={`${item.source || 'Documento'} de ${item.ticker} (abre em nova aba)`} className="flex min-w-0 items-center gap-1 font-semibold text-sky-700 hover:underline"><span className="truncate">{item.source || 'Documento'}</span></a> : <span className="text-slate-500">—</span>}</td><td className="whitespace-nowrap py-px text-right font-semibold text-slate-900">{currency(item.estimatedMonthlyAmount!)}</td></tr>)}</tbody></table></div>
     </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum pagamento com valor e data informados neste mês.</p>}
     </div>
+    {orderedItems.length > 3 && <button type="button" aria-expanded={allDividendsVisible} onClick={() => setAllDividendsVisible(current => !current)} className="mt-2 min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-400 sm:hidden">{allDividendsVisible ? 'Mostrar menos' : `Ver todos os ${orderedItems.length} rendimentos`}</button>}
     <footer className="mt-1 flex shrink-0 items-baseline justify-between gap-3 border-t border-slate-200 pt-1 text-slate-950"><strong className="text-sm">Total</strong><strong className="text-lg">{forecast.isLoading || forecast.isError ? '—' : total}</strong></footer>
   </article>
   </div>
 }
 
-function PortfolioAllocationCard({ data, privacyHidden = false, togglePrivacy }: { data: Dashboard; privacyHidden?: boolean; togglePrivacy?: () => void }) {
+function PortfolioAllocationCard({ data, privacyHidden = false }: { data: Dashboard; privacyHidden?: boolean }) {
   const deviations = data.portfolioHealthSummary?.allocationDeviations ?? []
   const money = privacyHidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.totalValue)
 
   return <article className="order-1 min-w-0 self-start overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
     <header className="portfolio-overview-header px-5 py-4 text-white sm:px-6 sm:py-5">
-      <div className="flex items-center justify-between gap-4"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-400">Carteira</p><div className="flex items-center gap-3"><span className="hidden text-xs text-[#a9bfdf] sm:inline">{data.portfolioOverview?.lastPortfolioUpdate ? `Carteira atualizada em ${formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}` : ''}</span>{togglePrivacy && <button type="button" aria-label={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} title={privacyHidden ? 'Exibir valores' : 'Ocultar valores'} onClick={togglePrivacy} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-600 text-slate-200 transition hover:bg-white/10"><FontAwesomeIcon icon={privacyHidden ? faEyeSlash : faEye} /></button>}</div></div>
+      <div className="flex items-center justify-between gap-4"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-400">Carteira</p><div className="flex items-center gap-3"><span className="hidden text-xs text-[#a9bfdf] sm:inline">{data.portfolioOverview?.lastPortfolioUpdate ? `Carteira atualizada em ${formatDateTime(data.portfolioOverview.lastPortfolioUpdate)}` : ''}</span></div></div>
       <div className="mt-7 grid gap-5 sm:grid-cols-[3fr_1.1fr]"><div><p className="text-sm text-[#8ca9cd]">Patrimônio da carteira</p><p className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{money}</p></div><div className="border-t border-slate-700 pt-4 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0"><p className="text-sm text-[#8ca9cd]">Ativos na carteira</p><p className="mt-2 text-3xl font-bold sm:text-4xl">{privacyHidden ? '••••' : data.positionCount}</p></div></div>
     </header>
     <div className="px-5 py-6 sm:px-6"><div className="flex items-center justify-between gap-4"><h2 className="text-xs font-bold uppercase tracking-[0.2em] text-orange-700">Alocação por classe</h2></div>
@@ -367,7 +368,7 @@ function PortfolioAllocationCard({ data, privacyHidden = false, togglePrivacy }:
   </article>
 }
 
-export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, portfoliosError = false, retryPortfolios, privacyHidden = false, togglePrivacy }: DashboardOverviewProps) {
+export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, portfoliosError = false, retryPortfolios, privacyHidden = false }: DashboardOverviewProps) {
   if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><LoadingState message="Carregando sua visão geral…" className="my-4" /></section>
   if (portfoliosError) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-rose-200 bg-rose-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-700">Serviço temporariamente indisponível</p><h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Não conseguimos carregar sua carteira.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">O Prumo está com dificuldade para se conectar ao serviço neste momento. Seus dados não foram apagados. Tente novamente em alguns instantes.</p>{retryPortfolios && <button type="button" onClick={retryPortfolios} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Tentar novamente</button>}</div></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
@@ -377,12 +378,12 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
   const data = dashboard.data
   if (data.positionCount === 0) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Importar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
 
-  return <section className="dashboard-overview mx-auto w-full basis-full max-w-358 px-6 pb-12 pt-3">
+  return <section className="dashboard-overview mx-auto w-full basis-full max-w-358 px-6 pb-12 pt-6">
     <header className="mb-7 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div><h1 className="text-3xl font-semibold tracking-tight text-slate-950">Visão geral</h1></div>
     </header>
     <div className="grid w-full min-w-0 items-start gap-4 lg:grid-cols-2">
-      <PortfolioAllocationCard data={data} privacyHidden={privacyHidden} togglePrivacy={togglePrivacy} />
+      <PortfolioAllocationCard data={data} privacyHidden={privacyHidden} />
       <DividendForecastWidget key={activePortfolio.id} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
       <div className="order-2 min-w-0 lg:col-span-2"><RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} /></div>
       <div className="order-3 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
