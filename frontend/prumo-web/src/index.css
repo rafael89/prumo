@@ -11,9 +11,6 @@ button, input, select { font: inherit; }
 button:not(:disabled), a, [role="button"] { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 a { font-family: inherit; }
-.dividend-forecast nav button { width: 1.75rem; height: 1.75rem; border-radius: 0.5rem; font-size: 0.75rem; }
-.dividend-forecast nav { gap: 0.5rem; margin-right: 0.75rem; }
-.dividend-forecast nav > span { min-width: 0; }
 @media (min-width: 1024px) {
   .dividend-forecast-scroll { container-type: size; }
   /* Distribui a altura restante entre seis ativos, abaixo do cabeçalho. */

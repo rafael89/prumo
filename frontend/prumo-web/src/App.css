@@ -162,7 +162,6 @@
   .dividend-forecast { padding: 1.25rem; }
   .dividend-forecast > div:first-child { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .75rem; }
   .dividend-forecast nav { flex-shrink: 0; margin-right: 0; gap: .25rem; }
-  .dividend-forecast nav > span { font-size: .75rem; }
   .dividend-forecast footer { margin-top: .75rem; padding-top: .75rem; }
   #radar .level-card { height: auto; min-height: 18rem; padding: 1.25rem; border-radius: 1.25rem; }
   .contribution-modern h1 { font-size: 1.5rem; line-height: 2rem; }
