@@ -114,6 +114,92 @@ public sealed class PortfolioImportAcceptanceTests
     }
 
 
+    [RelationalFact]
+    public async Task Completed_import_does_not_recreate_a_removed_position()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.ImportAsync();
+        fixture.Db.ChangeTracker.Clear();
+        fixture.Db.PortfolioPositions.Remove(await fixture.Db.PortfolioPositions.SingleAsync());
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.Equal("AlreadyImported", (await fixture.ImportAsync()).Status);
+        Assert.Empty(await fixture.Db.PortfolioPositions.ToListAsync());
+        Assert.Single(await fixture.Db.PortfolioTransactions.ToListAsync());
+    }
+
+    [RelationalFact]
+    public async Task Imported_position_has_full_weight_and_can_be_deleted_in_the_same_context()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.ImportAsync();
+        var position = await fixture.Db.PortfolioPositions.SingleAsync();
+        Assert.Equal(100, position.PortfolioWeight);
+        Assert.Single((await fixture.Db.Portfolios.Include(x => x.Positions).SingleAsync()).Positions);
+        fixture.Db.PortfolioPositions.Remove(position);
+        await fixture.Db.SaveChangesAsync();
+        Assert.Empty(await fixture.Db.PortfolioPositions.AsNoTracking().ToListAsync());
+    }
+
+    [RelationalFact]
+    public async Task Duplicate_preview_cannot_overwrite_a_purchase_after_the_first_confirmation()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var first = await fixture.PreviewAsync();
+        var duplicate = await fixture.PreviewAsync();
+        Assert.Equal(first, duplicate);
+        await fixture.ConfirmAsync(first);
+        fixture.Db.ChangeTracker.Clear();
+        var asset = await fixture.Db.Assets.SingleAsync();
+        Assert.IsType<OkObjectResult>((await new PortfolioTransactionsController(fixture.Db)
+            .Confirm(fixture.PortfolioId, new(null, [new(asset.Id, 5, 32)]), default)).Result);
+        fixture.Db.ChangeTracker.Clear();
+
+        Assert.Equal("AlreadyImported", (await fixture.ConfirmAsync(duplicate)).Status);
+        fixture.Db.ChangeTracker.Clear();
+        Assert.Equal(15, (await fixture.Db.PortfolioPositions.SingleAsync()).Quantity);
+        Assert.Equal(2, await fixture.Db.PortfolioTransactions.CountAsync());
+    }
+
+    [RelationalFact]
+    public async Task Concurrent_reconciliations_merge_without_overlapping_groups()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.ImportAsync();
+        var asset = await fixture.Db.Assets.SingleAsync();
+        var imported = await fixture.Db.PortfolioTransactions.SingleAsync();
+        PortfolioTransaction Manual()
+        {
+            var transaction = new PortfolioTransaction(fixture.PortfolioId, PortfolioTransactionType.Buy, imported.OccurredAt, null, 320, source: FinancialSource.Manual);
+            transaction.Items.Add(new(transaction.Id, asset.Id, 10, 32));
+            return transaction;
+        }
+        var first = Manual();
+        var second = Manual();
+        fixture.Db.AddRange(first, second);
+        await fixture.Db.SaveChangesAsync();
+        var connection = fixture.Db.Database.GetConnectionString();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task Resolve(Guid id)
+        {
+            await gate.Task;
+            await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>().UseNpgsql(connection).Options);
+            await new TransactionReconciliationService(db).Resolve(fixture.PortfolioId,
+                new([imported.Id, id], TransactionReconciliationStatus.ConfirmedSameEconomicTransaction), TestContext.Current.CancellationToken);
+        }
+        var one = Resolve(first.Id);
+        var two = Resolve(second.Id);
+        gate.SetResult();
+        await Task.WhenAll(one, two);
+
+        fixture.Db.ChangeTracker.Clear();
+        var service = new TransactionReconciliationService(fixture.Db);
+        var canonical = Assert.Single(await service.Canonical(fixture.PortfolioId, TestContext.Current.CancellationToken));
+        Assert.Equal(3, canonical.SourceRecordIds.Count);
+        Assert.Single(await service.List(fixture.PortfolioId, TestContext.Current.CancellationToken));
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string adminConnection;
@@ -144,10 +230,21 @@ public sealed class PortfolioImportAcceptanceTests
 
         public async Task<ImportConfirmationDto> ImportAsync()
         {
-            var controller = new PortfolioImportsController(Db, new[] { new FakeImporter() }, new NewAssetBootstrapService(Db, source, NullLogger<NewAssetBootstrapService>.Instance), new TransactionReconciliationService(Db), NullLogger<PortfolioImportsController>.Instance, new DevelopmentEnvironment());
-            var preview = await controller.Preview(portfolio.Id, file, default);
+            return await ConfirmAsync(await PreviewAsync());
+        }
+
+        private PortfolioImportsController Controller() => new(Db, new[] { new FakeImporter() }, new NewAssetBootstrapService(Db, source, NullLogger<NewAssetBootstrapService>.Instance), new TransactionReconciliationService(Db), NullLogger<PortfolioImportsController>.Instance, new DevelopmentEnvironment());
+
+        public async Task<Guid> PreviewAsync()
+        {
+            var preview = await Controller().Preview(portfolio.Id, file, default);
             var previewBody = Assert.IsType<ImportPreviewDto>(Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.ObjectResult>(preview.Result).Value);
-            var result = await controller.Confirm(portfolio.Id, previewBody.ImportSessionId, default);
+            return previewBody.ImportSessionId;
+        }
+
+        public async Task<ImportConfirmationDto> ConfirmAsync(Guid sessionId)
+        {
+            var result = await Controller().Confirm(portfolio.Id, sessionId, default);
             return Assert.IsType<ImportConfirmationDto>(Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.ObjectResult>(result.Result).Value);
         }
 

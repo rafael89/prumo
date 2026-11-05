@@ -68,6 +68,44 @@ public sealed class TransactionReconciliationTests
         Assert.Equal(3, (await service.Canonical(portfolio.Id, TestContext.Current.CancellationToken)).Count);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Auto_reconciliation_does_not_depend_on_insertion_order(int importedIndex)
+    {
+        await using var db = CreateDb();
+        var portfolio = new Portfolio("Ambiguous");
+        var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null);
+        db.AddRange(portfolio, asset);
+        for (var i = 0; i < 3; i++)
+            AddTransaction(db, portfolio, asset, i == importedIndex ? FinancialSource.B3Import : FinancialSource.Manual,
+                new(2026, 8, 1, 0, 0, 0, TimeSpan.Zero));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var service = new TransactionReconciliationService(db);
+
+        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, TestContext.Current.CancellationToken));
+        Assert.Empty(await service.List(portfolio.Id, TestContext.Current.CancellationToken));
+        Assert.Equal(3, (await service.Canonical(portfolio.Id, TestContext.Current.CancellationToken)).Count);
+    }
+
+    [Fact]
+    public async Task Period_start_matching_a_trade_date_is_not_an_exact_match()
+    {
+        await using var db = CreateDb();
+        var portfolio = new Portfolio("Approximate date");
+        var asset = new Asset("PETR4", "Petrobras", AssetType.Stock, null);
+        db.AddRange(portfolio, asset);
+        var date = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        AddTransaction(db, portfolio, asset, FinancialSource.Manual, date);
+        AddTransaction(db, portfolio, asset, FinancialSource.B3Import, date, datePrecision: FinancialDatePrecision.PeriodStart);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var service = new TransactionReconciliationService(db);
+
+        Assert.Equal(0, await service.AutoResolveDeterministic(portfolio.Id, TestContext.Current.CancellationToken));
+        Assert.Single(await service.Candidates(portfolio.Id, TestContext.Current.CancellationToken));
+    }
+
     private static PortfolioTransaction AddTransaction(PrumoDbContext db, Portfolio portfolio, Asset asset, FinancialSource source, DateTimeOffset date, PortfolioTransactionType type = PortfolioTransactionType.Buy, FinancialDatePrecision datePrecision = FinancialDatePrecision.Exact)
     {
         var transaction = new PortfolioTransaction(portfolio.Id, type, date, null, 3200, source: source, datePrecision: datePrecision); transaction.Items.Add(new PortfolioTransactionItem(transaction.Id, asset.Id, 100, 32)); db.PortfolioTransactions.Add(transaction); return transaction;

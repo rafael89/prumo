@@ -40,14 +40,19 @@ public sealed class PortfolioImportsController : ControllerBase
         stream.Position = 0;
         var normalized = await importer.ParseAsync(stream, ct);
         var hash = Convert.ToHexString(SHA256.HashData(await ReadAllAsync(file, ct))).ToLowerInvariant();
-        var completedImport = await db.PortfolioImportSessions.SingleOrDefaultAsync(s => s.PortfolioId == portfolioId && s.Source == PortfolioImportSource.B3File && s.FileHash == hash && s.Status == PortfolioImportStatus.Completed, ct);
-        if (completedImport is not null)
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (db.Database.IsRelational())
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", ct);
+        var existingImport = await db.PortfolioImportSessions.SingleOrDefaultAsync(s => s.PortfolioId == portfolioId && s.Source == PortfolioImportSource.B3File && s.FileHash == hash, ct);
+        if (existingImport is not null)
         {
-            var completedNormalized = JsonSerializer.Deserialize<NormalizedPortfolioImport>(completedImport.NormalizedJson);
-            if (completedNormalized is not null) return Ok(await BuildPreview(completedImport, completedNormalized, portfolioId, ct));
+            var existingNormalized = JsonSerializer.Deserialize<NormalizedPortfolioImport>(existingImport.NormalizedJson);
+            if (existingNormalized is null) return Conflict("A sessão de importação está inválida.");
+            return Ok(await BuildPreview(existingImport, existingNormalized, portfolioId, ct));
         }
         var session = new PortfolioImportSession(portfolioId, PortfolioImportSource.B3File, Path.GetFileName(file.FileName), hash, JsonSerializer.Serialize(normalized), normalized.ReferenceDate);
         db.PortfolioImportSessions.Add(session); await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return Ok(await BuildPreview(session, normalized, portfolioId, ct));
     }
 
@@ -59,19 +64,13 @@ public sealed class PortfolioImportsController : ControllerBase
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", ct);
         var session = await db.PortfolioImportSessions.SingleOrDefaultAsync(s => s.Id == importSessionId && s.PortfolioId == portfolioId, ct);
         if (session is null) return NotFound();
-        var normalized = JsonSerializer.Deserialize<NormalizedPortfolioImport>(session.NormalizedJson);
-        if (normalized is null || normalized.Errors.Count > 0) return Conflict("O preview não pode ser confirmado.");
+        // Completion is permanent: a retry must never restore a removed position
+        // or overwrite purchases made after this snapshot was imported.
         if (session.Status == PortfolioImportStatus.Completed)
-        {
-            var importedTickers = normalized.Items.Select(x => x.Ticker).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var currentTickers = await db.PortfolioPositions.Include(x => x.Asset)
-                .Where(x => x.PortfolioId == portfolioId)
-                .Select(x => x.Asset!.Ticker)
-                .ToListAsync(ct);
-            if (!importedTickers.Except(currentTickers, StringComparer.OrdinalIgnoreCase).Any())
-                return Ok(new ImportConfirmationDto("AlreadyImported", 0, 0, 0));
-        }
-        if (session.Status != PortfolioImportStatus.Previewed && session.Status != PortfolioImportStatus.Completed)
+            return Ok(new ImportConfirmationDto("AlreadyImported", 0, 0, 0));
+        var normalized = JsonSerializer.Deserialize<NormalizedPortfolioImport>(session.NormalizedJson);
+        if (normalized is null || normalized.Errors.Count > 0 || normalized.Items.Count == 0) return Conflict("O preview não pode ser confirmado.");
+        if (session.Status != PortfolioImportStatus.Previewed)
             return Conflict("A sessão de importação não está disponível para confirmação.");
         var portfolio = await db.Portfolios.Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, ct);
         var createdAssets = 0; var addedToPortfolio = 0; var updated = 0; var cnpjsRecorded = 0; var addedAssetIds = new List<Guid>();
@@ -81,7 +80,7 @@ public sealed class PortfolioImportsController : ControllerBase
             if (asset is null) { asset = new Asset(item.Ticker, item.AssetName, item.AssetType, null, item.AssetClass, item.Cnpj); db.Assets.Add(asset); createdAssets++; if (!string.IsNullOrWhiteSpace(asset.Cnpj)) cnpjsRecorded++; }
             else if (!string.IsNullOrWhiteSpace(item.Cnpj) && string.IsNullOrWhiteSpace(asset.Cnpj)) { asset.SetCnpj(item.Cnpj); cnpjsRecorded++; }
             var position = portfolio.Positions.SingleOrDefault(p => p.AssetId == asset.Id);
-            if (position is null) { position = new PortfolioPosition(portfolio.Id, asset.Id, item.Quantity, item.AveragePrice ?? 0, item.CurrentPrice); db.PortfolioPositions.Add(position); portfolio.Positions.Add(position); addedToPortfolio++; addedAssetIds.Add(asset.Id); }
+            if (position is null) { position = new PortfolioPosition(portfolio.Id, asset.Id, item.Quantity, item.AveragePrice ?? 0, item.CurrentPrice); portfolio.Positions.Add(position); db.PortfolioPositions.Add(position); addedToPortfolio++; addedAssetIds.Add(asset.Id); }
             else { position.Update(item.Quantity, item.AveragePrice ?? position.AveragePrice, item.CurrentPrice ?? position.CurrentPrice); updated++; }
         }
         PortfolioCalculator.RecalculateWeights(portfolio.Positions);
@@ -146,7 +145,7 @@ public sealed class PortfolioImportsController : ControllerBase
         var existing = await db.PortfolioPositions.Include(p => p.Asset).Where(p => p.PortfolioId == portfolioId).ToListAsync(ct);
         var newItems = normalized.Items.Where(i => existing.All(p => p.Asset?.Ticker != i.Ticker)).Select(i => i.Ticker).ToList();
         var updated = normalized.Items.Where(i => existing.Any(p => p.Asset?.Ticker == i.Ticker)).Select(i => i.Ticker).ToList();
-        return new(session.Id, normalized.Source, normalized.ReferenceDate, newItems, updated, [], normalized.Warnings, normalized.Errors, normalized.Errors.Count == 0 && normalized.Items.Count > 0);
+        return new(session.Id, normalized.Source, normalized.ReferenceDate, newItems, updated, [], normalized.Warnings, normalized.Errors, session.Status == PortfolioImportStatus.Previewed && normalized.Errors.Count == 0 && normalized.Items.Count > 0);
     }
     private static async Task<byte[]> ReadAllAsync(IFormFile file, CancellationToken ct) { await using var stream = file.OpenReadStream(); using var memory = new MemoryStream(); await stream.CopyToAsync(memory, ct); return memory.ToArray(); }
 }

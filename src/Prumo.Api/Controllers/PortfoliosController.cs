@@ -286,8 +286,8 @@ public sealed class PortfoliosController : ControllerBase
         }
 
         var position = new PortfolioPosition(portfolio.Id, asset.Id, request.Quantity, request.AveragePrice, request.CurrentPrice);
-        dbContext.PortfolioPositions.Add(position);
         portfolio.Positions.Add(position);
+        dbContext.PortfolioPositions.Add(position);
         if (request.RegisterPurchase)
         {
             if (request.Quantity <= 0 || request.AveragePrice <= 0)

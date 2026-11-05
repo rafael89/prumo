@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
@@ -37,11 +38,15 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
 
     public async Task<int> AutoResolveDeterministic(Guid portfolioId, CancellationToken ct)
     {
+        await using var transaction = await LockPortfolioAsync(portfolioId, ct);
         var candidates = await Candidates(portfolioId, ct);
-        var exact = candidates.Where(x => x.MatchStrength == "Exact")
-            .GroupBy(x => x.TransactionAId).Where(x => x.Count() == 1)
-            .SelectMany(x => x).GroupBy(x => x.TransactionBId).Where(x => x.Count() == 1)
-            .Select(x => x.Single()).ToList();
+        // A transaction may occur on either side of a candidate. Count all
+        // alternatives before filtering, including approximate matches.
+        var candidateCounts = candidates.SelectMany(x => new[] { x.TransactionAId, x.TransactionBId })
+            .GroupBy(x => x).ToDictionary(x => x.Key, x => x.Count());
+        var exact = candidates.Where(x => x.MatchStrength == "Exact"
+            && candidateCounts[x.TransactionAId] == 1 && candidateCounts[x.TransactionBId] == 1).ToList();
+        var created = 0;
         foreach (var candidate in exact)
         {
             var ids = new[] { candidate.TransactionAId, candidate.TransactionBId };
@@ -51,14 +56,18 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
             group.Members.Add(new TransactionReconciliationMember(group.Id, candidate.TransactionAId));
             group.Members.Add(new TransactionReconciliationMember(group.Id, candidate.TransactionBId));
             db.TransactionReconciliations.Add(group);
+            created++;
         }
-        if (exact.Count > 0) await db.SaveChangesAsync(ct);
-        return exact.Count;
+        if (created > 0) await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return created;
     }
 
     public async Task<ReconciliationDto> Resolve(Guid portfolioId, ReconciliationRequest request, CancellationToken ct)
     {
+        if (!Enum.IsDefined(request.Status)) throw new ArgumentException("Status de conciliação inválido.");
         if (request.TransactionIds is null || request.TransactionIds.Distinct().Count() < 2) throw new ArgumentException("Informe ao menos duas transações diferentes.");
+        await using var transaction = await LockPortfolioAsync(portfolioId, ct);
         var ids = request.TransactionIds.Distinct().ToHashSet();
         var transactions = await LoadTransactions(portfolioId, ct);
         var selected = transactions.Where(x => ids.Contains(x.Id)).ToList();
@@ -74,9 +83,13 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
             if (distinctConflict) throw new InvalidOperationException("Existe uma resolução distinta conflitante.");
             var target = sameGroups.FirstOrDefault();
             if (target is null) { target = new TransactionReconciliation(portfolioId, request.Status, request.Notes); db.TransactionReconciliations.Add(target); }
-            else { target.Update(request.Status, request.Notes); db.TransactionReconciliationMembers.RemoveRange(sameGroups.SelectMany(x => x.Members)); db.TransactionReconciliations.RemoveRange(sameGroups.Skip(1)); }
-            foreach (var id in ids) target.Members.Add(new TransactionReconciliationMember(target.Id, id));
+            else { target.Update(request.Status, request.Notes); db.TransactionReconciliations.RemoveRange(sameGroups.Skip(1)); }
+            var newMembers = ids.Except(target.Members.Select(x => x.PortfolioTransactionId))
+                .Select(id => new TransactionReconciliationMember(target.Id, id)).ToList();
+            target.Members.AddRange(newMembers);
+            db.TransactionReconciliationMembers.AddRange(newMembers);
             await db.SaveChangesAsync(ct);
+            if (transaction is not null) await transaction.CommitAsync(ct);
             return (await List(portfolioId, ct)).Single(x => x.Id == target.Id);
         }
         if (selected.Count != 2) throw new ArgumentException("Operações distintas devem conter exatamente duas transações.");
@@ -85,13 +98,36 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
         var existingDistinct = await db.TransactionReconciliations.Include(x => x.Members).SingleOrDefaultAsync(x => x.PortfolioId == portfolioId && x.Status == TransactionReconciliationStatus.ConfirmedDistinct && x.Members.Count == 2 && x.Members.All(m => ids.Contains(m.PortfolioTransactionId)), ct);
         if (existingDistinct is null) { existingDistinct = new TransactionReconciliation(portfolioId, request.Status, request.Notes); db.TransactionReconciliations.Add(existingDistinct); foreach (var id in ids) existingDistinct.Members.Add(new TransactionReconciliationMember(existingDistinct.Id, id)); }
         else existingDistinct.Update(request.Status, request.Notes);
-        await db.SaveChangesAsync(ct); return (await List(portfolioId, ct)).Single(x => x.Id == existingDistinct.Id);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return (await List(portfolioId, ct)).Single(x => x.Id == existingDistinct.Id);
     }
 
     public async Task<bool> Delete(Guid portfolioId, Guid reconciliationId, CancellationToken ct)
     {
+        await using var transaction = await LockPortfolioAsync(portfolioId, ct);
         var item = await db.TransactionReconciliations.SingleOrDefaultAsync(x => x.Id == reconciliationId && x.PortfolioId == portfolioId, ct);
-        if (item is null) return false; db.TransactionReconciliations.Remove(item); await db.SaveChangesAsync(ct); return true;
+        if (item is null) return false;
+        db.TransactionReconciliations.Remove(item);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return true;
+    }
+
+    private async Task<IDbContextTransaction?> LockPortfolioAsync(Guid portfolioId, CancellationToken ct)
+    {
+        if (!db.Database.IsRelational()) return null;
+        var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Portfolios\" WHERE \"Id\" = {portfolioId} FOR UPDATE", ct);
+            return transaction;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<CanonicalTransactionDto>> Canonical(Guid portfolioId, CancellationToken ct)
@@ -121,7 +157,8 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
         var priceDifference = Math.Abs(a.UnitPrice - b.UnitPrice); var tolerance = Math.Max(MinimumPriceTolerance, Math.Max(a.UnitPrice, b.UnitPrice) * PriceToleranceRate);
         if (priceDifference > tolerance || !DatesCompatible(left, right)) return null;
         var exactDate = left.OccurredAt.Date == right.OccurredAt.Date;
-        var strength = exactDate && priceDifference == 0 ? "Exact" : exactDate ? "Strong" : "Possible";
+        var preciseDates = left.DatePrecision == FinancialDatePrecision.Exact && right.DatePrecision == FinancialDatePrecision.Exact;
+        var strength = exactDate && preciseDates && priceDifference == 0 ? "Exact" : exactDate ? "Strong" : "Possible";
         var reasons = new List<string> { "SameAsset", "SameOperationType", "QuantityMatch", priceDifference == 0 ? "PriceMatch" : $"PriceDifference:{priceDifference:0.####}", exactDate ? "DateMatch" : "DatesCompatible", $"SourcePair:{left.Source}/{right.Source}" };
         return new(left.Id, right.Id, strength, reasons, Summary(left), Summary(right));
     }

@@ -22,11 +22,13 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         while (!stoppingToken.IsCancellationRequested)
         {
             Guid? claimedJobId = null;
+            var claimedAttempt = 0;
             try
             {
                 using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<PrumoDbContext>(); var job = await ClaimNextAsync(db, stoppingToken);
                 if (job is null) { metrics.SetBacklog("ContributionGuidance", 0); await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); continue; }
                 claimedJobId = job.Id;
+                claimedAttempt = job.Attempts;
                 var stopwatch = Stopwatch.StartNew();
                 var backlog = await db.ContributionGuidanceJobs.CountAsync(x => x.Status == ContributionGuidanceJobStatus.Queued, stoppingToken);
                 metrics.SetBacklog("ContributionGuidance", backlog);
@@ -208,10 +210,10 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                     }
                     AppendProjectedPortfolioReason(guidance, workItem);
                     var publication = ContributionGuidancePublication.From(guidance);
-                    var published = await PublishAsync(job.Id, publication, stoppingToken);
+                    var published = await PublishAsync(job.Id, claimedAttempt, publication, stoppingToken);
                     if (!published)
                     {
-                        logger.LogWarning("Resultado do job de guidance {JobId} descartado porque o job não está mais em processamento", job.Id);
+                        logger.LogWarning("Resultado do job de guidance {JobId} descartado porque a tentativa não possui mais o lease", job.Id);
                         continue;
                     }
                     metrics.RecordCompleted("ContributionGuidance", stopwatch.Elapsed);
@@ -220,7 +222,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 catch (Exception ex)
                 {
                     metrics.RecordFailed("ContributionGuidance", stopwatch.Elapsed);
-                    await RecoverClaimedJobAsync(job.Id, ex.Message, stoppingToken);
+                    await RecoverClaimedJobAsync(job.Id, claimedAttempt, ex.Message, stoppingToken);
                     logger.LogError(ex, "Falha no job de guidance {JobId} após {DurationMs} ms; backlog={Backlog}; nenhuma alocação foi publicada", job.Id, stopwatch.Elapsed.TotalMilliseconds, backlog);
                 }
             }
@@ -232,7 +234,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             {
                 if (claimedJobId.HasValue)
                 {
-                    await RecoverClaimedJobAsync(claimedJobId.Value, ex.Message, stoppingToken);
+                    await RecoverClaimedJobAsync(claimedJobId.Value, claimedAttempt, ex.Message, stoppingToken);
                 }
                 logger.LogError(ex, "Erro inesperado no polling de jobs de guidance; nova tentativa em {RetryDelay}", TimeSpan.FromSeconds(10));
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
@@ -452,49 +454,60 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
             numericConfidence)).ToArray();
     }
 
-    private static async Task<ContributionGuidanceJob?> ClaimNextAsync(PrumoDbContext db, CancellationToken ct)
+    internal static async Task<ContributionGuidanceJob?> ClaimNextAsync(PrumoDbContext db, CancellationToken ct, DateTimeOffset? now = null)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var staleAt = DateTimeOffset.UtcNow.Subtract(Lease);
-        var staleJobs = await db.ContributionGuidanceJobs
-            .Where(job => job.Status == ContributionGuidanceJobStatus.Processing && job.StartedAt <= staleAt)
-            .ToListAsync(ct);
-        foreach (var staleJob in staleJobs) staleJob.RequeueExpired();
-        if (staleJobs.Count > 0) await db.SaveChangesAsync(ct);
+        var staleAt = (now ?? DateTimeOffset.UtcNow).Subtract(Lease);
         var queued = (int)ContributionGuidanceJobStatus.Queued;
-        var job = await db.ContributionGuidanceJobs
+        var processing = (int)ContributionGuidanceJobStatus.Processing;
+        while (true)
+        {
+            var job = await db.ContributionGuidanceJobs
             .FromSqlInterpolated($"""
                 SELECT *
                 FROM "ContributionGuidanceJobs"
                 WHERE "Status" = {queued}
+                   OR ("Status" = {processing} AND "StartedAt" <= {staleAt})
                 ORDER BY "CreatedAt"
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
                 """)
             .SingleOrDefaultAsync(ct);
 
-        if (job is null)
-        {
-            await transaction.CommitAsync(ct);
-            return null;
-        }
+            if (job is null)
+            {
+                await transaction.CommitAsync(ct);
+                return null;
+            }
 
-        job.Start();
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return job;
+            if (job.Attempts >= MaxAttempts)
+            {
+                job.Fail("Limite de tentativas excedido após expiração do lease.");
+                await db.SaveChangesAsync(ct);
+                continue;
+            }
+
+            job.Start();
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return job;
+        }
     }
 
-    private async Task RecoverClaimedJobAsync(Guid jobId, string error, CancellationToken ct)
+    internal async Task RecoverClaimedJobAsync(Guid jobId, int attempt, string error, CancellationToken ct)
     {
         try
         {
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<PrumoDbContext>();
-            var job = await db.ContributionGuidanceJobs.SingleOrDefaultAsync(x => x.Id == jobId, ct);
-            if (job?.Status != ContributionGuidanceJobStatus.Processing) return;
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var job = await db.ContributionGuidanceJobs
+                .FromSqlInterpolated($"SELECT * FROM \"ContributionGuidanceJobs\" WHERE \"Id\" = {jobId} FOR UPDATE")
+                .SingleOrDefaultAsync(ct);
+            if (job?.Status != ContributionGuidanceJobStatus.Processing || job.Attempts != attempt) return;
             job.RetryOrFail(error, MaxAttempts);
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
         catch (Exception recoveryException)
         {
@@ -502,7 +515,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         }
     }
 
-    private async Task<bool> PublishAsync(Guid jobId, ContributionGuidancePublication publication, CancellationToken ct)
+    internal async Task<bool> PublishAsync(Guid jobId, int attempt, ContributionGuidancePublication publication, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PrumoDbContext>();
@@ -510,7 +523,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         var job = await db.ContributionGuidanceJobs
             .FromSqlInterpolated($"SELECT * FROM \"ContributionGuidanceJobs\" WHERE \"Id\" = {jobId} FOR UPDATE")
             .SingleAsync(ct);
-        if (job.Status != ContributionGuidanceJobStatus.Processing)
+        if (job.Status != ContributionGuidanceJobStatus.Processing || job.Attempts != attempt)
         {
             await transaction.CommitAsync(ct);
             return false;
@@ -549,7 +562,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
         return true;
     }
 
-    private sealed record ContributionGuidancePublication(
+    internal sealed record ContributionGuidancePublication(
         string Provider,
         string Model,
         string Availability,
@@ -567,7 +580,7 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                 x.Origin, x.AssetId, x.CandidateKey, x.Provider, x.Ticker, x.Name, x.AssetClass, x.AssetType, x.Exchange, x.Currency, x.Sector, x.SourceReference, x.Amount, x.Reason, x.Confidence, x.EvidenceJson)).ToArray());
     }
 
-    private sealed record ContributionGuidanceAllocationPublication(
+    internal sealed record ContributionGuidanceAllocationPublication(
         string Origin,
         Guid? AssetId,
         string? CandidateKey,
