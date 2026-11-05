@@ -308,6 +308,7 @@ function DividendPaymentDate({ value }: { value: string }) {
 }
 
 function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: string; privacyHidden: boolean }) {
+  const initialVisibleCount = 5
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
   const [allDividendsVisible, setAllDividendsVisible] = useState(false)
   const forecast = useQuery({
@@ -327,7 +328,7 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
   const referenceMonth = selectedMonth ?? forecast.data?.referenceMonth
   const total = currency(forecast.data?.estimatedMonthlyAmount ?? 0)
   return <div className="relative order-1 min-w-0 lg:self-stretch">
-    <article className="dividend-forecast flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:absolute lg:inset-0">
+    <article className="dividend-forecast flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:absolute lg:inset-0 lg:py-2">
     <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
       {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={setSelectedMonth} />}
@@ -335,7 +336,7 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
     <div role="region" aria-label="Lista de rendimentos" tabIndex={0} className="dividend-forecast-scroll min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain lg:pr-2">
     {forecast.isLoading ? <LoadingState message="Calculando previsão…" className="mt-4" /> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
       <div className="mt-5 divide-y divide-slate-200 sm:hidden">
-        {orderedItems.map((item, index) => <div key={item.assetId} className={`grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 ${index >= 3 && !allDividendsVisible ? 'hidden' : ''}`}>
+        {orderedItems.map((item, index) => <div key={item.assetId} className={`grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 ${index >= initialVisibleCount && !allDividendsVisible ? 'hidden' : ''}`}>
           {item.documentUrl ? <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer" className="min-w-0 truncate text-sm font-bold text-slate-900 hover:underline" aria-label={`${item.source || 'Documento'} de ${item.ticker} (abre em nova aba)`}>{item.ticker}</a> : <strong className="min-w-0 truncate text-sm text-slate-900">{item.ticker}</strong>}
           <span className="text-xs text-slate-600"><DividendPaymentDate value={item.paymentDate!} /></span>
           <strong className="whitespace-nowrap text-right text-sm text-slate-900">{currency(item.estimatedMonthlyAmount!)}</strong>
@@ -344,7 +345,7 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
       <div className="hidden sm:block"><table className="w-full table-fixed border-collapse text-[13px] leading-[18px]"><colgroup><col style={{ width: '17%' }} /><col style={{ width: '25%' }} /><col style={{ width: '38%' }} /><col style={{ width: '20%' }} /></colgroup><thead className="sticky top-0 z-10 bg-white"><tr className="border-b border-slate-200 text-left text-[11px] leading-4 font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-1.5 pr-3 pt-2">Ativo</th><th scope="col" className="whitespace-nowrap pb-1.5 pr-3 pt-2">Pagamento</th><th scope="col" className="pb-1.5 pr-3 pt-2">Documento</th><th scope="col" className="pb-1.5 pt-2 text-right">Valor</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.assetId} className="border-b border-slate-100"><td className="py-px pr-3"><strong className="text-slate-900">{item.ticker}</strong></td><td className="whitespace-nowrap py-px pr-3 text-slate-700"><DividendPaymentDate value={item.paymentDate!} /></td><td className="py-px pr-3">{item.documentUrl ? <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer" title={item.source} aria-label={`${item.source || 'Documento'} de ${item.ticker} (abre em nova aba)`} className="flex min-w-0 items-center gap-1 font-semibold text-sky-700 hover:underline"><span className="truncate">{item.source || 'Documento'}</span></a> : <span className="text-slate-500">—</span>}</td><td className="whitespace-nowrap py-px text-right font-semibold text-slate-900">{currency(item.estimatedMonthlyAmount!)}</td></tr>)}</tbody></table></div>
     </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum pagamento com valor e data informados neste mês.</p>}
     </div>
-    {orderedItems.length > 3 && <button type="button" aria-expanded={allDividendsVisible} onClick={() => setAllDividendsVisible(current => !current)} className="mt-2 min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-400 sm:hidden">{allDividendsVisible ? 'Mostrar menos' : `Ver todos os ${orderedItems.length} rendimentos`}</button>}
+    {orderedItems.length > initialVisibleCount && <button type="button" aria-expanded={allDividendsVisible} onClick={() => setAllDividendsVisible(current => !current)} className="mt-2 min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-400 sm:hidden">{allDividendsVisible ? 'Mostrar menos' : `Ver todos os ${orderedItems.length} rendimentos`}</button>}
     <footer className="mt-1 flex shrink-0 items-baseline justify-between gap-3 border-t border-slate-200 pt-1 text-slate-950"><strong className="text-sm">Total</strong><strong className="text-lg">{forecast.isLoading || forecast.isError ? '—' : total}</strong></footer>
   </article>
   </div>
