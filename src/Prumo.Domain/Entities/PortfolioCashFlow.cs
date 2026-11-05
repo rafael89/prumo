@@ -9,7 +9,10 @@ public sealed class PortfolioCashFlow
     public PortfolioCashFlow(Guid portfolioId, PortfolioCashFlowType type, decimal amount, DateTimeOffset occurredAt, FinancialSource source, Guid? assetId = null, string? description = null, FinancialDatePrecision datePrecision = FinancialDatePrecision.Exact)
     {
         if (portfolioId == Guid.Empty) throw new ArgumentException("A carteira é obrigatória.", nameof(portfolioId));
-        if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+        if (decimal.Round(amount, 2) <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+        if (!Enum.IsDefined(type)) throw new ArgumentOutOfRangeException(nameof(type));
+        if (!Enum.IsDefined(datePrecision)) throw new ArgumentOutOfRangeException(nameof(datePrecision));
+        if (description?.Trim().Length > 300) throw new ArgumentException("A descrição deve ter até 300 caracteres.", nameof(description));
         if (type == PortfolioCashFlowType.Income && (assetId is null || assetId == Guid.Empty)) throw new ArgumentException("O ativo informado é obrigatório.", nameof(assetId));
         Id = Guid.NewGuid(); PortfolioId = portfolioId; Type = type; Amount = decimal.Round(amount, 2); OccurredAt = occurredAt.ToUniversalTime(); Source = source; AssetId = assetId; Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(); DatePrecision = datePrecision; CreatedAt = DateTimeOffset.UtcNow;
     }

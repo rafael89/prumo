@@ -73,6 +73,7 @@ type UpdatePositionRequest = {
   averagePrice: number
   currentPrice: number | null
   registerPurchase?: boolean
+  purchaseUnitPrice?: number
 }
 type PurchaseConfirmation =
   | { kind: 'create'; request: CreatePositionRequest; ticker: string }
@@ -473,7 +474,7 @@ function App() {
     if (purchaseConfirmation.kind === 'create') {
       createPosition.mutate({ ...purchaseConfirmation.request, averagePrice: registerPurchase ? unitPrice! : 0, registerPurchase })
     } else {
-      updatePosition.mutate({ positionId: purchaseConfirmation.positionId, request: { ...purchaseConfirmation.request, averagePrice: registerPurchase ? unitPrice! : purchaseConfirmation.request.averagePrice, registerPurchase } })
+      updatePosition.mutate({ positionId: purchaseConfirmation.positionId, request: { ...purchaseConfirmation.request, purchaseUnitPrice: registerPurchase ? unitPrice! : undefined, registerPurchase } })
     }
     setPurchaseConfirmation(null)
   }

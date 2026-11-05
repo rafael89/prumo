@@ -84,7 +84,7 @@ public sealed class FinancialLedgerController(PrumoDbContext db) : ControllerBas
         var flows = await db.PortfolioCashFlows.AsNoTracking().Include(x => x.Asset).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var assets = await db.Assets.AsNoTracking().ToDictionaryAsync(x => x.Id, ct);
         var items = buysAndSells.SelectMany(t => t.Items.Select(i => new LedgerItemDto(t.OccurredAt, t.Type.ToString(), assets.GetValueOrDefault(i.AssetId)?.Ticker, i.Quantity, i.UnitPrice, i.Quantity * i.UnitPrice, t.Source.ToString(), t.DatePrecision.ToString())))
-            .Concat(flows.Select(f => new LedgerItemDto(f.OccurredAt, f.Type.ToString(), f.Asset?.Ticker, null, null, f.Amount, f.Source.ToString(), "Exact")))
+            .Concat(flows.Select(f => new LedgerItemDto(f.OccurredAt, f.Type.ToString(), f.Asset?.Ticker, null, null, f.Amount, f.Source.ToString(), f.DatePrecision.ToString())))
             .OrderByDescending(x => x.OccurredAt).ToList();
         return Ok(items);
     }
@@ -103,8 +103,10 @@ public sealed class FinancialLedgerController(PrumoDbContext db) : ControllerBas
     [HttpPost("cash-flows")]
     public async Task<ActionResult<object>> CashFlow(Guid portfolioId, CashFlowRequest request, CancellationToken ct)
     {
-        if (request.Amount <= 0 || !Enum.IsDefined(request.Type)) return BadRequest("Tipo e valor são obrigatórios.");
+        if (decimal.Round(request.Amount, 2) <= 0 || !Enum.IsDefined(request.Type) || !Enum.IsDefined(request.DatePrecision)) return BadRequest("Tipo, precisão da data e valor devem ser válidos.");
+        if (request.Description?.Trim().Length > 300) return BadRequest("A descrição deve ter até 300 caracteres.");
         if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return NotFound();
+        if (request.AssetId.HasValue && !await db.Assets.AnyAsync(x => x.Id == request.AssetId.Value, ct)) return BadRequest("Ativo não encontrado.");
         if (request.Type == PortfolioCashFlowType.Income && (!request.AssetId.HasValue || !await db.Assets.AnyAsync(x => x.Id == request.AssetId.Value, ct))) return BadRequest("Rendimento exige um ativo válido.");
         var flow = new PortfolioCashFlow(portfolioId, request.Type, request.Amount, request.OccurredAt, FinancialSource.Manual, request.AssetId, request.Description, request.DatePrecision);
         db.PortfolioCashFlows.Add(flow); await db.SaveChangesAsync(ct);

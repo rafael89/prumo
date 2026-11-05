@@ -337,21 +337,25 @@ public sealed class PortfoliosController : ControllerBase
         try
         {
             var addedQuantity = request.Quantity - position.Quantity;
-            if (request.RegisterPurchase && addedQuantity > 0 && request.AveragePrice <= 0)
+            var purchaseUnitPrice = request.PurchaseUnitPrice ?? request.AveragePrice;
+            if (request.RegisterPurchase && (addedQuantity <= 0 || purchaseUnitPrice <= 0))
             {
-                return BadRequest("Para registrar a compra, informe um preço médio positivo.");
+                return BadRequest("Para registrar a compra, aumente a quantidade e informe um preço unitário positivo.");
             }
 
-            position.Update(request.Quantity, request.AveragePrice, request.CurrentPrice);
-            if (request.RegisterPurchase && addedQuantity > 0)
+            if (request.RegisterPurchase)
             {
+                // The execution price belongs to the added units, not the whole position.
+                position.ApplyBuy(addedQuantity, purchaseUnitPrice);
+                position.Update(position.Quantity, position.AveragePrice, request.CurrentPrice);
                 dbContext.PortfolioTransactions.Add(CreateManualBuy(
                     portfolio!.Id,
                     position.AssetId,
                     addedQuantity,
-                    request.AveragePrice,
+                    purchaseUnitPrice,
                     request.OccurredAt));
             }
+            else position.Update(request.Quantity, request.AveragePrice, request.CurrentPrice);
             Recalculate(portfolio!);
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -453,7 +457,7 @@ public sealed class PortfoliosController : ControllerBase
 public sealed record CreatePortfolioRequest(string Name);
 public sealed record RenamePortfolioRequest(string Name);
 public sealed record PositionRequest(string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, AssetClass? AssetClass = null, bool RegisterPurchase = false, DateTimeOffset? OccurredAt = null);
-public sealed record PositionUpdateRequest(decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, bool RegisterPurchase = false, DateTimeOffset? OccurredAt = null);
+public sealed record PositionUpdateRequest(decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, bool RegisterPurchase = false, DateTimeOffset? OccurredAt = null, decimal? PurchaseUnitPrice = null);
 public sealed record PortfolioSummaryResponse(Guid Id, string Name, decimal TotalValue, int PositionCount);
 public sealed record PortfolioDetailResponse(Guid Id, string Name, decimal TotalValue, IReadOnlyList<PositionResponse> Positions);
 public enum DashboardState { Ready, FirstUse, Processing, StrategyNotConfigured }

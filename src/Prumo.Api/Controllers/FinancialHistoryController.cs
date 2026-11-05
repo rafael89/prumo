@@ -37,8 +37,8 @@ public sealed class FinancialHistoryController(HistoricalAnchorService anchors, 
     [HttpPut("historical-anchors/{anchorId:guid}")]
     public async Task<ActionResult<HistoricalAnchorDto>> UpdateAnchor(Guid portfolioId, Guid anchorId, HistoricalAnchorRequest request, CancellationToken ct)
     {
-        var result = await anchors.Update(portfolioId, anchorId, request, ct);
-        return result is null ? NotFound() : Ok(result);
+        return await Execute(async () => (await anchors.Update(portfolioId, anchorId, request, ct))
+            ?? throw new KeyNotFoundException("Âncora histórica não encontrada."));
     }
 
     [HttpDelete("historical-anchors/{anchorId:guid}")]
