@@ -79,8 +79,6 @@ Ao trocar de provedor, ajuste também os modelos. O provedor `Http` exige `AI__E
 
 O Prumo foi pensado para uso pessoal em rede privada e ainda não possui autenticação de usuários. Para acesso remoto, proteja o frontend com VPN ou um proxy com autenticação e HTTPS. Não exponha o banco nem a API diretamente à internet.
 
-O frontend do Compose escuta apenas em `127.0.0.1` por padrão. Para acesso pela rede privada, configure `PRUMO_BIND_ADDRESS` com o IP da interface protegida; essa configuração também controla o acesso à API encaminhado pelo frontend.
-
 ## Desenvolvimento
 
 O Prumo usa .NET 10, React, TypeScript, Vite, Tailwind CSS e PostgreSQL 16. O processamento de documentos e as análises assíncronas são executados por um worker separado da API.
