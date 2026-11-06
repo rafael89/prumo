@@ -16,6 +16,7 @@ public sealed class WorkerFileLoggerProviderTests
             logger.LogInformation("Informational message");
             logger.LogWarning("Warning message");
             logger.LogError(new InvalidOperationException("Provider failed"), "Error message");
+            provider.Dispose(); // Drain accepted log entries before inspecting the file.
             var file = Assert.Single(Directory.GetFiles(directory, "worker-*.txt"));
             var contents = File.ReadAllText(file);
             Assert.DoesNotContain("Informational message", contents);

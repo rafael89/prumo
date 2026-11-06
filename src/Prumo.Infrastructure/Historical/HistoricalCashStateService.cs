@@ -32,15 +32,19 @@ public sealed class HistoricalCashStateService(PrumoDbContext db, CoverageServic
         var anchor = await db.PortfolioCashAnchors.SingleOrDefaultAsync(x => x.PortfolioId == portfolioId && x.Id == id, ct); if (anchor is null) return false; db.PortfolioCashAnchors.Remove(anchor); await db.SaveChangesAsync(ct); return true;
     }
 
-    public async Task<HistoricalCashStateDto?> Get(Guid portfolioId, DateOnly asOf, CancellationToken ct, Guid? anchorId = null)
+    public Task<HistoricalCashStateDto?> Get(Guid portfolioId, DateOnly asOf, CancellationToken ct, Guid? anchorId = null)
+        => Get(portfolioId, asOf, ct, anchorId, null);
+
+    internal async Task<HistoricalCashStateDto?> Get(Guid portfolioId, DateOnly asOf, CancellationToken ct, Guid? anchorId, HistoricalReadData? data)
     {
-        if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return null;
+        if (data is not null ? !data.Exists : !await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return null;
         var anchorQuery = db.PortfolioCashAnchors.AsNoTracking().Where(x => x.PortfolioId == portfolioId && x.AnchorDate <= asOf);
         if (anchorId.HasValue) anchorQuery = anchorQuery.Where(x => x.Id == anchorId.Value);
-        var anchor = await anchorQuery.OrderByDescending(x => x.AnchorDate).FirstOrDefaultAsync(ct);
+        var anchor = data is null ? await anchorQuery.OrderByDescending(x => x.AnchorDate).FirstOrDefaultAsync(ct)
+            : data.CashAnchors.Where(x => x.AnchorDate <= asOf && (!anchorId.HasValue || x.Id == anchorId)).OrderByDescending(x => x.AnchorDate).FirstOrDefault();
         if (anchor is null) return new(portfolioId, asOf, null, null, "Unavailable", null, ["NoCashAnchor"], [], [], []);
-        var transactions = (await reconciliation.Canonical(portfolioId, ct)).Where(x => DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) > anchor.AnchorDate && DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) <= asOf).ToList();
-        var flows = await db.PortfolioCashFlows.AsNoTracking().Where(x => x.PortfolioId == portfolioId && DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) > anchor.AnchorDate && DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) <= asOf).OrderBy(x => x.OccurredAt).ThenBy(x => x.Id).ToListAsync(ct);
+        var transactions = (data?.Transactions ?? await reconciliation.Canonical(portfolioId, ct)).Where(x => DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) > anchor.AnchorDate && DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) <= asOf).ToList();
+        var flows = data is not null ? data.CashFlows.Where(x => DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) > anchor.AnchorDate && DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) <= asOf).ToList() : await db.PortfolioCashFlows.AsNoTracking().Where(x => x.PortfolioId == portfolioId && DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) > anchor.AnchorDate && DateOnly.FromDateTime(x.OccurredAt.UtcDateTime) <= asOf).OrderBy(x => x.OccurredAt).ThenBy(x => x.Id).ToListAsync(ct);
         var balance = anchor.Balance; var warnings = new HashSet<string>(); var transactionIds = new List<Guid>(); var flowIds = new List<Guid>();
         if (anchor.DatePrecision != FinancialDatePrecision.Exact) warnings.Add("ApproximateCashAnchorDate");
         foreach (var date in transactions.Select(x => DateOnly.FromDateTime(x.OccurredAt.UtcDateTime)).Concat(flows.Select(x => DateOnly.FromDateTime(x.OccurredAt.UtcDateTime))).Distinct().OrderBy(x => x))
@@ -52,12 +56,12 @@ public sealed class HistoricalCashStateService(PrumoDbContext db, CoverageServic
                 var amount = transaction.Items.Sum(x => x.Quantity * x.UnitPrice); balance += transaction.Type == nameof(PortfolioTransactionType.Sell) ? amount : -amount; transactionIds.AddRange(transaction.SourceRecordIds);
             }
         }
-        var candidates = await reconciliation.Candidates(portfolioId, ct);
+        var candidates = data?.Candidates ?? await reconciliation.Candidates(portfolioId, ct);
         if (candidates.Any(x => transactionIds.Contains(x.TransactionAId) || transactionIds.Contains(x.TransactionBId))) warnings.Add("UnresolvedTransactionReconciliation");
         if (balance < 0) warnings.Add("NegativeCashBalance");
-        var transactionCoverage = await coverage.Resolve(portfolioId, FinancialHistoryCoverageDimension.Transactions, anchor.AnchorDate, asOf, null, ct);
-        var cashFlowCoverage = await coverage.Resolve(portfolioId, FinancialHistoryCoverageDimension.CashFlows, anchor.AnchorDate, asOf, null, ct);
-        var incomeCoverage = await coverage.Resolve(portfolioId, FinancialHistoryCoverageDimension.Income, anchor.AnchorDate, asOf, null, ct);
+        var transactionCoverage = data is null ? await coverage.Resolve(portfolioId, FinancialHistoryCoverageDimension.Transactions, anchor.AnchorDate, asOf, null, ct) : CoverageService.Resolve(data.Coverage, FinancialHistoryCoverageDimension.Transactions, anchor.AnchorDate, asOf, null);
+        var cashFlowCoverage = data is null ? await coverage.Resolve(portfolioId, FinancialHistoryCoverageDimension.CashFlows, anchor.AnchorDate, asOf, null, ct) : CoverageService.Resolve(data.Coverage, FinancialHistoryCoverageDimension.CashFlows, anchor.AnchorDate, asOf, null);
+        var incomeCoverage = data is null ? await coverage.Resolve(portfolioId, FinancialHistoryCoverageDimension.Income, anchor.AnchorDate, asOf, null, ct) : CoverageService.Resolve(data.Coverage, FinancialHistoryCoverageDimension.Income, anchor.AnchorDate, asOf, null);
         if (transactionCoverage.Status != "Complete") warnings.Add("MissingTransactionCoverage");
         if (cashFlowCoverage.Status != "Complete") warnings.Add("MissingCashFlowCoverage");
         if (incomeCoverage.Status != "Complete") warnings.Add("MissingIncomeCoverage");

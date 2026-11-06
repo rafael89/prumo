@@ -29,6 +29,14 @@ public sealed class CoverageService(PrumoDbContext db)
     {
         if (from > to) throw new ArgumentException("O início deve ser anterior ou igual ao fim.");
         var evidence = await db.FinancialHistoryCoverages.AsNoTracking().Where(x => x.PortfolioId == portfolioId && x.Dimension == dimension && (!assetId.HasValue || x.AssetId == assetId || x.AssetId == null) && x.FromDate <= to && x.ToDate >= from).OrderBy(x => x.FromDate).Select(x => new CoverageEvidenceDto(x.Id, x.Dimension.ToString(), x.AssetId, x.Asset == null ? null : x.Asset.Ticker, x.FromDate, x.ToDate, x.Source.ToString(), x.Notes, x.CreatedAt)).ToListAsync(ct);
+        return Resolve(evidence, dimension, from, to, assetId);
+    }
+
+    internal static CoverageStatusDto Resolve(IEnumerable<CoverageEvidenceDto> source, FinancialHistoryCoverageDimension dimension, DateOnly from, DateOnly to, Guid? assetId)
+    {
+        var evidence = source.Where(x => x.Dimension == dimension.ToString()
+            && (!assetId.HasValue || x.AssetId == assetId || x.AssetId == null)
+            && x.FromDate <= to && x.ToDate >= from).OrderBy(x => x.FromDate).ToList();
         var cursor = from;
         foreach (var item in evidence)
         {

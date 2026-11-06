@@ -17,16 +17,28 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
         var transactions = await LoadTransactions(portfolioId, ct);
         var resolved = await db.TransactionReconciliationMembers.AsNoTracking().Include(x => x.Reconciliation).Where(x => x.Reconciliation!.PortfolioId == portfolioId).ToListAsync(ct);
         var candidates = new List<TransactionCandidateDto>();
-        for (var left = 0; left < transactions.Count; left++)
-        for (var right = left + 1; right < transactions.Count; right++)
+        var resolvedGroups = resolved.ToLookup(x => x.PortfolioTransactionId, x => x.ReconciliationId);
+        // Only a single-asset operation with the same quantity and type can match.
+        // Keep input order inside each pair because it is part of the response.
+        foreach (var bucket in transactions.Select((transaction, index) => (transaction, index))
+                     .Where(x => x.transaction.Items.Count == 1)
+                     .GroupBy(x => (x.transaction.Type, x.transaction.Items[0].AssetId, x.transaction.Items[0].Quantity)))
         {
-            var match = Match(transactions[left], transactions[right]);
-            if (match is null) continue;
-            var existing = resolved.FirstOrDefault(x => x.PortfolioTransactionId == transactions[left].Id && resolved.Any(y => y.ReconciliationId == x.ReconciliationId && y.PortfolioTransactionId == transactions[right].Id));
-            if (existing is not null) continue;
-            candidates.Add(match);
+            var ordered = bucket.OrderBy(x => x.transaction.OccurredAt.Date).ToArray();
+            for (var left = 0; left < ordered.Length; left++)
+            for (var right = left + 1; right < ordered.Length; right++)
+            {
+                ct.ThrowIfCancellationRequested();
+                if ((ordered[right].transaction.OccurredAt.Date - ordered[left].transaction.OccurredAt.Date).Days > ApproximateDateWindowDays) break;
+                var a = ordered[left].index < ordered[right].index ? ordered[left].transaction : ordered[right].transaction;
+                var b = ordered[left].index < ordered[right].index ? ordered[right].transaction : ordered[left].transaction;
+                if (a.Source == b.Source || resolvedGroups[a.Id].Intersect(resolvedGroups[b.Id]).Any()) continue;
+                var match = Match(a, b);
+                if (match is not null) candidates.Add(match);
+            }
         }
-        return candidates;
+        var inputOrder = transactions.Select((x, index) => (x.Id, index)).ToDictionary(x => x.Id, x => x.index);
+        return candidates.OrderBy(x => inputOrder[x.TransactionAId]).ThenBy(x => inputOrder[x.TransactionBId]).ToList();
     }
 
     public async Task<IReadOnlyList<ReconciliationDto>> List(Guid portfolioId, CancellationToken ct)
@@ -136,11 +148,12 @@ public sealed class TransactionReconciliationService(PrumoDbContext db)
         var groups = await db.TransactionReconciliations.AsNoTracking().Include(x => x.Members).Where(x => x.PortfolioId == portfolioId && x.Status == TransactionReconciliationStatus.ConfirmedSameEconomicTransaction).ToListAsync(ct);
         var byId = groups.SelectMany(g => g.Members.Select(m => (m.PortfolioTransactionId, Group: g))).ToDictionary(x => x.PortfolioTransactionId, x => x.Group);
         var emitted = new HashSet<Guid>(); var result = new List<CanonicalTransactionDto>();
+        var transactionsById = transactions.ToDictionary(x => x.Id);
         foreach (var transaction in transactions.OrderBy(x => x.OccurredAt).ThenBy(x => x.Id))
         {
             if (!byId.TryGetValue(transaction.Id, out var group)) { result.Add(MapCanonical(transaction, [transaction])); continue; }
             if (!emitted.Add(group.Id)) continue;
-            var records = transactions.Where(x => group.Members.Any(m => m.PortfolioTransactionId == x.Id)).ToList();
+            var records = group.Members.Where(m => transactionsById.ContainsKey(m.PortfolioTransactionId)).Select(m => transactionsById[m.PortfolioTransactionId]).ToList();
             result.Add(MapCanonical(ChooseRepresentative(records), records));
         }
         return result;

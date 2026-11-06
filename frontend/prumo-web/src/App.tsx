@@ -228,11 +228,17 @@ function App() {
     document.addEventListener('mousedown', handleOutsideClick)
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   })
-  const radarNotifications = useQuery({
-    queryKey: ['radar-notifications', activePortfolio?.id],
-    queryFn: () => getJson<RadarNotificationResponse>(`/api/radar?portfolioId=${activePortfolio!.id}&page=1&pageSize=100&requiresAttention=true&notificationPending=true`),
+  const notificationVersion = useQuery({
+    queryKey: ['radar-notification-version', activePortfolio?.id],
+    queryFn: () => getJson<{ version: string }>(`/api/radar/notifications/version?portfolioId=${activePortfolio!.id}`),
     enabled: Boolean(activePortfolio),
     refetchInterval: 20000,
+  })
+  const radarNotifications = useQuery({
+    queryKey: ['radar-notifications', activePortfolio?.id, notificationVersion.data?.version],
+    queryFn: () => getJson<RadarNotificationResponse>(`/api/radar?portfolioId=${activePortfolio!.id}&page=1&pageSize=100&requiresAttention=true&notificationPending=true`),
+    enabled: Boolean(activePortfolio && notificationVersion.data),
+    staleTime: 20000,
   })
   const notificationItems = radarNotifications.data?.attentionNow ?? []
   const readAllRadarNotifications = useMutation({

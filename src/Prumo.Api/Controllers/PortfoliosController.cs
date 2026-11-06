@@ -36,12 +36,10 @@ public sealed class PortfoliosController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PortfolioSummaryResponse>>> GetPortfolios(CancellationToken cancellationToken)
     {
-        var portfolios = await dbContext.Portfolios
-            .AsNoTracking()
-            .Include(portfolio => portfolio.Positions)
+        var portfolios = await dbContext.Portfolios.AsNoTracking()
+            .Select(p => new PortfolioSummaryResponse(p.Id, p.Name, p.Positions.Sum(x => x.CurrentValue ?? 0m), p.Positions.Count))
             .ToListAsync(cancellationToken);
-
-        return Ok(portfolios.Select(CreateSummary).ToList());
+        return Ok(portfolios);
     }
 
     [HttpPost]
@@ -107,89 +105,44 @@ public sealed class PortfoliosController : ControllerBase
     public async Task<ActionResult<DashboardResponse>> GetDashboard(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1); pageSize = Math.Clamp(pageSize, 10, 100);
-        var portfolio = await dbContext.Portfolios.AsNoTracking().SingleOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
+        var portfolio = await dbContext.Portfolios.AsNoTracking().Include(p => p.Positions).ThenInclude(p => p.Asset).SingleOrDefaultAsync(item => item.Id == portfolioId, cancellationToken);
         if (portfolio is null) return NotFound();
-        var positionsQuery = dbContext.PortfolioPositions.AsNoTracking().Where(position => position.PortfolioId == portfolioId);
-        var allPositions = await positionsQuery.Include(position => position.Asset).OrderBy(position => position.Asset == null ? string.Empty : position.Asset.Ticker).ThenBy(position => position.Id).ToListAsync(cancellationToken);
+        var allPositions = portfolio.Positions.OrderBy(position => position.Asset?.Ticker ?? string.Empty).ThenBy(position => position.Id).ToList();
         PortfolioCalculator.RecalculateWeights(allPositions);
         var positionCount = allPositions.Count;
         var totalValue = allPositions.Sum(position => position.CurrentValue ?? 0m);
         var positions = allPositions.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         var targets = await dbContext.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(cancellationToken);
-        var health = await LoadHealthForDashboard(portfolioId, targets, cancellationToken);
-        var snapshotPortfolio = await dbContext.Portfolios.AsNoTracking().Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, cancellationToken);
-        PortfolioCalculator.RecalculateWeights(snapshotPortfolio.Positions);
-        var snapshot = PortfolioSnapshotKeyCalculator.Calculate(snapshotPortfolio);
-        var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets).Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence).Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis!).ThenInclude(a => a.Document!).Where(a => a.PortfolioId == portfolioId).ToListAsync(cancellationToken);
-        // Assessments are historical data and older databases may contain an
-        // orphaned event or an event whose analysis was removed. Such rows
-        // cannot be rendered by the dashboard, but must not break the whole
-        // portfolio response.
-        var usableAssessments = loadedAssessments
-            .Where(a => a.InvestmentEvent?.DocumentAnalysis?.Document is not null)
-            .ToList();
-        if (usableAssessments.Count != loadedAssessments.Count)
-        {
-            logger?.LogWarning("Ignorando {IgnoredAssessmentCount} assessments incompletos no dashboard da carteira {PortfolioId}", loadedAssessments.Count - usableAssessments.Count, portfolioId);
-        }
-        var refreshedAssessments = await currentAssessmentService.EnsureFreshAsync(snapshotPortfolio, targets, usableAssessments, cancellationToken);
-        var assessments = refreshedAssessments
-            .Where(a => a.InvestmentEvent?.DocumentAnalysis?.Document is not null)
-            .ToList();
-        if (assessments.Count != refreshedAssessments.Count)
-        {
-            logger?.LogWarning("Ignorando {IgnoredAssessmentCount} assessments incompletos após atualização no dashboard da carteira {PortfolioId}", refreshedAssessments.Count - assessments.Count, portfolioId);
-        }
-        var eventsByDocument = assessments
-            .GroupBy(a => RadarEventPolicy.CardId(a.InvestmentEvent!))
-            .ToDictionary(group => group.Key, BuildDashboardEvents);
-        assessments = assessments
-            // Keep legacy document cards; new analyses preserve independent events.
-            .GroupBy(a => RadarEventPolicy.CardId(a.InvestmentEvent!))
-            .Select(RadarAssessmentSelector.SelectRepresentative)
-            .ToList();
-        // The card displays the document publication date, so order the Radar
-        // by that same date. Priority is only a tie-breaker; otherwise an older
-        // high-priority document can appear before a newer one.
-        var attention = assessments.Where(a => RadarEventPolicy.Importance(a.InvestmentEvent!) is AnalysisImportance.Critical or AnalysisImportance.Relevant).Where(RadarAttentionNowPolicy.RequiresAttention)
-            .OrderByDescending(a => a.InvestmentEvent!.DocumentAnalysis!.Document!.PublishedAt)
-            .ThenByDescending(a => a.AttentionPriority)
-            .ThenByDescending(a => a.InvestmentEvent!.OccurredAt)
-            .ThenByDescending(a => a.GeneratedAt)
-            .ThenByDescending(a => a.Id)
-            .Select(a => CreateDashboardAssessment(a, eventsByDocument.GetValueOrDefault(RadarEventPolicy.CardId(a.InvestmentEvent!)))).ToList();
-        var attentionIds = attention.Select(x => x.AssessmentId).ToHashSet();
-        // The card displays the document publication date, so use that same
-        // date for the ordering shown to users.
-        var recent = assessments.Where(a => !attentionIds.Contains(a.Id))
-            .OrderByDescending(a => a.InvestmentEvent!.DocumentAnalysis!.Document!.PublishedAt)
-            .ThenByDescending(a => a.InvestmentEvent!.OccurredAt)
-            .ThenByDescending(a => a.GeneratedAt)
-            .ThenByDescending(a => a.Id)
-            .Select(a => CreateDashboardAssessment(a, eventsByDocument.GetValueOrDefault(RadarEventPolicy.CardId(a.InvestmentEvent!))))
-            .ToList();
-        // Últimas notícias is a document feed, not a filtered Radar feed.
-        // Include analyzed documents of every importance and keep the latest
-        // analysis for each document, even when its assessment is closed.
+        var health = portfolioHealthCalculator.Calculate(portfolio, targets);
+        var reader = new PortfolioAssessmentReader(dbContext, currentAssessmentService, freshnessEvaluator);
+        var assessmentQuery = dbContext.PortfolioAssessments.AsNoTracking()
+            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysis!.Document != null);
+        var rows = (await reader.ReadAsync(assessmentQuery, portfolio, targets, cancellationToken))
+            .Where(x => x.Assessment.Status != AssessmentStatus.Closed).ToList();
+        var rowsById = rows.ToDictionary(x => x.Assessment.Id);
+        var representatives = rows.GroupBy(x => RadarEventPolicy.CardId(x.Event))
+            .Select(group => RadarAssessmentSelector.SelectRepresentative(group.Select(x => x.Assessment))).ToList();
+        var attentionRows = representatives
+            .Where(a => RadarEventPolicy.Importance(a.InvestmentEvent!, rowsById[a.Id].Importance) is AnalysisImportance.Critical or AnalysisImportance.Relevant)
+            .Where(RadarAttentionNowPolicy.RequiresAttention)
+            .OrderByDescending(a => rowsById[a.Id].PublishedAt)
+            .ThenByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt)
+            .ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).ToList();
         var portfolioAssetIds = allPositions.Select(position => position.AssetId).ToHashSet();
-        var analyzedDocuments = await dbContext.DocumentAnalyses.AsNoTracking()
-            .Include(analysis => analysis.Document!).ThenInclude(document => document!.Asset)
-            .Where(analysis => portfolioAssetIds.Contains(analysis.Document!.AssetId))
-            .Where(analysis => !dbContext.DocumentAnalyses.Any(other =>
-                other.DocumentId == analysis.DocumentId
-                && (other.CreatedAt > analysis.CreatedAt
-                    || (other.CreatedAt == analysis.CreatedAt && other.Id > analysis.Id))))
-            .OrderByDescending(analysis => analysis.Document!.PublishedAt)
-            .ThenByDescending(analysis => analysis.CreatedAt)
-            .ToListAsync(cancellationToken);
-        var assessmentByDocument = assessments
-            .Where(assessment => assessment.InvestmentEvent?.DocumentAnalysis is not null)
-            .GroupBy(assessment => assessment.InvestmentEvent!.DocumentAnalysisId)
-            .ToDictionary(group => group.Key, group => group.OrderByDescending(assessment => assessment.GeneratedAt).First());
-        recent = analyzedDocuments.Select(analysis => assessmentByDocument.TryGetValue(analysis.Id, out var assessment)
-                ? CreateDashboardAssessment(assessment, eventsByDocument.GetValueOrDefault(analysis.Id))
-                : CreateDashboardDocument(analysis))
-            .ToList();
+        var newsQuery = LatestAnalyses(portfolioAssetIds);
+        var recentTotal = await newsQuery.CountAsync(cancellationToken);
+        var analyzedDocuments = await newsQuery.Take(5).ToListAsync(cancellationToken);
+        var newsIds = analyzedDocuments.Select(x => x.Id).ToHashSet();
+        var requiredCards = attentionRows.Select(x => RadarEventPolicy.CardId(x.InvestmentEvent!))
+            .Concat(rows.Where(x => newsIds.Contains(x.Event.DocumentAnalysisId)).Select(x => RadarEventPolicy.CardId(x.Event))).ToHashSet();
+        var detailIds = rows.Where(x => requiredCards.Contains(RadarEventPolicy.CardId(x.Event))).Select(x => x.Assessment.Id).ToArray();
+        var details = await reader.LoadDetailsAsync(detailIds, cancellationToken);
+        var legacyLiquidations = rows.Where(x => x.LegacyLiquidation).Select(x => x.Assessment.Id).ToHashSet();
+        foreach (var detail in details.Where(x => legacyLiquidations.Contains(x.Id))) detail.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
+        var detailsById = details.ToDictionary(x => x.Id);
+        var eventsByDocument = details.GroupBy(x => RadarEventPolicy.CardId(x.InvestmentEvent!)).ToDictionary(g => g.Key, BuildDashboardEvents);
+        var attention = attentionRows.Select(a => CreateDashboardAssessment(detailsById[a.Id], eventsByDocument.GetValueOrDefault(RadarEventPolicy.CardId(a.InvestmentEvent!)))).ToList();
+        var recent = BuildNews(analyzedDocuments, details);
         var primaryNeed = health.CapitalNeeds.OrderBy(x => x.PriorityOrder).FirstOrDefault();
         return Ok(new DashboardResponse(
             portfolio.Id,
@@ -197,16 +150,49 @@ public sealed class PortfoliosController : ControllerBase
             totalValue,
             positionCount,
             positions.Select(CreatePositionResponse).ToList(), page, pageSize, positionCount, (int)Math.Ceiling(positionCount / (double)pageSize), DashboardState.Ready,
-            new PortfolioOverview(portfolio.Id, portfolio.Name, totalValue, health.Status.ToString(), HealthLabel(health.Status), health.MainDeviation is null ? null : DeviationLabel(health.MainDeviation), await positionsQuery.MaxAsync(p => (DateTimeOffset?)p.UpdatedAt, cancellationToken)), attention,
+            new PortfolioOverview(portfolio.Id, portfolio.Name, totalValue, health.Status.ToString(), HealthLabel(health.Status), health.MainDeviation is null ? null : DeviationLabel(health.MainDeviation), allPositions.Select(p => (DateTimeOffset?)p.UpdatedAt).DefaultIfEmpty().Max()), attention,
             new ContributionPreview(targets.Count == 0 ? ContributionPreviewStatus.NotConfigured : health.CapitalNeeds.Count == 0 ? ContributionPreviewStatus.NoNeeds : ContributionPreviewStatus.Available, primaryNeed?.AssetClass, primaryNeed is null ? targets.Count == 0 ? "Defina as alocações-alvo para receber orientação de aporte." : "Sua carteira está alinhada às alocações-alvo; nenhuma classe precisa ser priorizada neste momento." : $"{AssetClassLabel(primaryNeed.AssetClass)} são hoje a principal necessidade da carteira."),
-            new PortfolioHealthSummary(health.Status.ToString(), HealthLabel(health.Status), health.AllocationDeviations, health.MainDeviation), recent, DateTimeOffset.UtcNow));
+            new PortfolioHealthSummary(health.Status.ToString(), HealthLabel(health.Status), health.AllocationDeviations, health.MainDeviation), recent, DateTimeOffset.UtcNow, recentTotal));
     }
 
-    private async Task<PortfolioHealthResult> LoadHealthForDashboard(Guid portfolioId, IReadOnlyList<TargetAllocation> targets, CancellationToken cancellationToken)
+    [HttpGet("{portfolioId:guid}/news")]
+    public async Task<ActionResult<Prumo.Api.Models.PaginatedResponse<DashboardAssessment>>> GetNews(Guid portfolioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 5, CancellationToken cancellationToken = default)
     {
-        var portfolio = await dbContext.Portfolios.Include(p => p.Positions).ThenInclude(p => p.Asset).SingleAsync(p => p.Id == portfolioId, cancellationToken);
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100);
+        var portfolio = await dbContext.Portfolios.AsNoTracking().Include(p => p.Positions).ThenInclude(p => p.Asset).SingleOrDefaultAsync(p => p.Id == portfolioId, cancellationToken);
+        if (portfolio is null) return NotFound();
+        var ids = portfolio.Positions.Select(x => x.AssetId).ToHashSet();
+        var query = LatestAnalyses(ids);
+        var total = await query.CountAsync(cancellationToken);
+        var analyses = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        var analysisIds = analyses.Select(x => x.Id).ToArray();
+        var assessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery()
+            .Include(a => a.InvestmentEvent!).ThenInclude(e => e.AffectedAssets)
+            .Include(a => a.InvestmentEvent!).ThenInclude(e => e.Evidence)
+            .Include(a => a.InvestmentEvent!).ThenInclude(e => e.DocumentAnalysis!).ThenInclude(a => a.Document)
+            .Where(a => a.PortfolioId == portfolioId && analysisIds.Contains(a.InvestmentEvent!.DocumentAnalysisId)).ToListAsync(cancellationToken);
         PortfolioCalculator.RecalculateWeights(portfolio.Positions);
-        return portfolioHealthCalculator.Calculate(portfolio, targets);
+        var targets = await dbContext.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(cancellationToken);
+        var refreshed = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, assessments, cancellationToken);
+        return Ok(new Prumo.Api.Models.PaginatedResponse<DashboardAssessment>(BuildNews(analyses, refreshed), page, pageSize, total, (int)Math.Ceiling(total / (double)pageSize)));
+    }
+
+    private IOrderedQueryable<DocumentAnalysis> LatestAnalyses(HashSet<Guid> assetIds)
+        => dbContext.DocumentAnalyses.AsNoTracking().Include(a => a.Document!).ThenInclude(d => d.Asset)
+            .Where(a => assetIds.Contains(a.Document!.AssetId))
+            .Where(a => !dbContext.DocumentAnalyses.Any(other => other.DocumentId == a.DocumentId
+                && (other.CreatedAt > a.CreatedAt || other.CreatedAt == a.CreatedAt && other.Id > a.Id)))
+            .OrderByDescending(a => a.Document!.PublishedAt).ThenByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id);
+
+    private static List<DashboardAssessment> BuildNews(IReadOnlyList<DocumentAnalysis> analyses, IReadOnlyList<PortfolioAssessment> assessments)
+    {
+        var byAnalysis = assessments.Where(a => a.InvestmentEvent is not null).GroupBy(a => RadarEventPolicy.CardId(a.InvestmentEvent!))
+            .Select(RadarAssessmentSelector.SelectRepresentative).GroupBy(a => a.InvestmentEvent!.DocumentAnalysisId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).First());
+        var events = assessments.Where(a => a.InvestmentEvent is not null).GroupBy(a => RadarEventPolicy.CardId(a.InvestmentEvent!)).ToDictionary(g => g.Key, BuildDashboardEvents);
+        return analyses.Select(a => byAnalysis.TryGetValue(a.Id, out var assessment)
+            ? CreateDashboardAssessment(assessment, events.GetValueOrDefault(RadarEventPolicy.CardId(assessment.InvestmentEvent!)))
+            : CreateDashboardDocument(a)).ToList();
     }
 
     private static IReadOnlyList<RadarEventDto> BuildDashboardEvents(IEnumerable<PortfolioAssessment> assessments)
@@ -466,7 +452,7 @@ public sealed record PortfolioOverview(Guid PortfolioId, string PortfolioName, d
 public sealed record ContributionPreview(ContributionPreviewStatus Status, AssetClass? PrimaryCapitalNeed, string Summary);
 public sealed record DashboardAssessment(Guid AssessmentId, Guid InvestmentEventId, Guid? DocumentId, string Asset, string EventSummary, string WhyItMatters, string SuggestedBehavior, DateTimeOffset? OccurredAt, AttentionPriority AttentionPriority, ActionRequirement ActionRequirement, CapitalDecisionImpact CapitalDecisionImpact, AssessmentStatus Status, string DocumentImportance = "Unknown", bool HasRadarAssessment = true, IReadOnlyList<RadarEventDto>? Events = null);
 public sealed record PortfolioHealthSummary(string Status, string Summary, IReadOnlyList<AllocationDeviation> AllocationDeviations, MainDeviation? MainDeviation);
-public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0, DashboardState State = DashboardState.Ready, PortfolioOverview? PortfolioOverview = null, IReadOnlyList<DashboardAssessment>? AttentionNow = null, ContributionPreview? ContributionPreview = null, PortfolioHealthSummary? PortfolioHealthSummary = null, IReadOnlyList<DashboardAssessment>? RecentUpdates = null, DateTimeOffset? GeneratedAt = null);
+public sealed record DashboardResponse(Guid Id, string Name, decimal TotalValue, int PositionCount, IReadOnlyList<PositionResponse> Positions, int Page = 1, int PageSize = 10, int TotalItems = 0, int TotalPages = 0, DashboardState State = DashboardState.Ready, PortfolioOverview? PortfolioOverview = null, IReadOnlyList<DashboardAssessment>? AttentionNow = null, ContributionPreview? ContributionPreview = null, PortfolioHealthSummary? PortfolioHealthSummary = null, IReadOnlyList<DashboardAssessment>? RecentUpdates = null, DateTimeOffset? GeneratedAt = null, int RecentUpdatesTotalItems = 0);
 public sealed record PositionResponse(Guid Id, Guid AssetId, AssetClass AssetClass, string Ticker, string Name, AssetType AssetType, string? Sector, decimal Quantity, decimal AveragePrice, decimal? CurrentPrice, decimal? CurrentValue, decimal PortfolioWeight, ExposureMetadataResponse? Exposure = null);
 public sealed record ExposureMetadataResponse(string? SectorCategory, string? ListingCountryCode, string? TradingCurrency, string GeographicCoverage, IReadOnlyList<GeographicExposureResponse> GeographicExposures, string EconomicCurrencyCoverage, IReadOnlyList<CurrencyExposureResponse> CurrencyExposures);
 public sealed record GeographicExposureResponse(string CountryCode, decimal? Percentage, string Source, string? SourceReference, DateTimeOffset? ObservedAt, bool IsDerived);

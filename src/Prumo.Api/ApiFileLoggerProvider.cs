@@ -1,15 +1,13 @@
 using System.Text;
+using Prumo.Infrastructure.Logging;
 
 namespace Prumo.Api;
 
 public sealed class ApiFileLoggerProvider(string directory, LogLevel minimumLevel = LogLevel.Warning) : ILoggerProvider
 {
-    private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
-    private readonly object sync = new();
-    private readonly string directory = Path.GetFullPath(directory);
-
+    private readonly BufferedFileLogWriter writer = new(directory, "api");
     public ILogger CreateLogger(string categoryName) => new ApiFileLogger(this, categoryName);
-    public void Dispose() { }
+    public void Dispose() => writer.Dispose();
     internal bool IsEnabled(LogLevel level) => level >= minimumLevel;
 
     internal void Write(LogLevel level, string category, EventId eventId, string message, Exception? exception)
@@ -21,28 +19,7 @@ public sealed class ApiFileLoggerProvider(string directory, LogLevel minimumLeve
         text.AppendLine().AppendLine(message);
         if (exception is not null) text.AppendLine(exception.ToString());
         text.AppendLine();
-        try
-        {
-            lock (sync)
-            {
-                Directory.CreateDirectory(directory);
-                RemoveExpiredFiles(timestamp.UtcDateTime);
-                File.AppendAllText(Path.Combine(directory, $"api-{timestamp:yyyy-MM-dd}.txt"), text.ToString(), new UTF8Encoding(false));
-            }
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
-
-    private void RemoveExpiredFiles(DateTime nowUtc)
-    {
-        var cutoff = nowUtc - Retention;
-        foreach (var path in Directory.EnumerateFiles(directory, "api-*.txt"))
-        {
-            try { if (File.GetLastWriteTimeUtc(path) < cutoff) File.Delete(path); }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-        }
+        writer.Write(timestamp, text.ToString());
     }
 
     public static string ResolveDirectory(string storageRoot, string? configuredPath = null)

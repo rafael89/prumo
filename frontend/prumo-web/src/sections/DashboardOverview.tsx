@@ -1,6 +1,6 @@
 import { LoadingState } from '../components/LoadingState'
 import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
@@ -99,6 +99,7 @@ export type Dashboard = {
     allocationDeviations: Array<{ assetClass: number; currentPercentage: number; targetPercentage: number; deviationPercentagePoints: number }>
     mainDeviation: { assetClass: number; currentPercentage: number; targetPercentage: number; deviationPercentagePoints: number } | null
   }
+  recentUpdatesTotalItems?: number
   recentUpdates?: DashboardAssessment[]
 }
 
@@ -273,8 +274,22 @@ function newsPreview(summary: string) {
   return `${(lastSpace > 0 ? excerpt.slice(0, lastSpace) : excerpt).replace(/[,;:]+$/, '')}…`
 }
 
-function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[]; portfolioId: string }) {
-  const [visibleCount, setVisibleCount] = useState(5)
+function RecentUpdatesCard({ items: initialItems, totalItems, portfolioId }: { items: DashboardAssessment[]; totalItems: number; portfolioId: string }) {
+  type NewsPage = { items: DashboardAssessment[]; page: number; totalPages: number }
+  const news = useInfiniteQuery({
+    queryKey: ['dashboard', portfolioId, 'news', initialItems.map(item => item.assessmentId).join(',')],
+    initialPageParam: 2,
+    queryFn: async ({ pageParam }) => {
+      const response = await fetch(`${apiBaseUrl}/api/portfolios/${portfolioId}/news?page=${pageParam}&pageSize=5`)
+      if (!response.ok) throw new Error('Não foi possível carregar as notícias.')
+      return response.json() as Promise<NewsPage>
+    },
+    getNextPageParam: last => last.page < last.totalPages ? last.page + 1 : undefined,
+    enabled: false,
+  })
+  const items = [...new Map([...initialItems, ...(news.data?.pages.flatMap(page => page.items) ?? [])].map(item => [item.documentId ?? item.assessmentId, item])).values()]
+  const hasMore = news.data ? news.hasNextPage : totalItems > initialItems.length
+  const visibleCount = items.length
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
   return <article className="order-3 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
@@ -286,7 +301,7 @@ function RecentUpdatesCard({ items, portfolioId }: { items: DashboardAssessment[
         <div className="min-w-0 flex-1"><h3 className="line-clamp-2 sm:line-clamp-1 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}{items.length > visibleCount && <button type="button" onClick={() => setVisibleCount(current => Math.min(current + 3, items.length))} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
+    </div>}{hasMore && <button type="button" disabled={news.isFetchingNextPage} onClick={() => void news.fetchNextPage()} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{news.isError && <p role="alert" className="mt-2 text-sm text-rose-700">Não foi possível carregar mais notícias. Tente novamente.</p>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
   </article>
 }
 
@@ -384,7 +399,7 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
       <PortfolioAllocationCard data={data} privacyHidden={privacyHidden} />
       <DividendForecastWidget key={activePortfolio.id} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
       <div className="order-2 min-w-0 lg:col-span-2"><RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} /></div>
-      <div className="order-3 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} portfolioId={activePortfolio.id} /></div>
+      <div className="order-3 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} totalItems={data.recentUpdatesTotalItems ?? data.recentUpdates?.length ?? 0} portfolioId={activePortfolio.id} /></div>
     </div>
   </section>
 }

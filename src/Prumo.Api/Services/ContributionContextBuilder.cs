@@ -90,9 +90,8 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
             }).ToList();
         var positionAssetIds = portfolio.Positions.Select(x => x.AssetId).ToHashSet();
         var targetClasses = targets.Select(x => x.AssetClass).ToHashSet();
-        var catalogCandidates = await db.Assets.AsNoTracking().AsSplitQuery()
+        var catalogCandidates = await db.Assets.AsNoTracking().WithContributionFinancials(db)
             .Include(x => x.GeographicExposures).Include(x => x.CurrencyExposures)
-            .Include(x => x.FundamentalSnapshots).Include(x => x.ValuationSnapshots).Include(x => x.DocumentFinancialFacts).Include(x => x.CvmFiiMonthlyObservations)
             .Where(x => x.IsActive && (targetClasses.Contains(x.AssetClass) || targetClasses.Contains(AssetClass.International) && x.AssetType == AssetType.Etf) && !positionAssetIds.Contains(x.Id))
             .OrderBy(x => x.Ticker)
             .ToListAsync(ct);
@@ -138,19 +137,22 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
         var baseline = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(portfolioId, amount, health, positions, inputs));
         var classBudgets = baseline.Allocations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.Sum(a => a.Amount));
         var deviations = health.AllocationDeviations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.First());
+        var assetsById = portfolio.Positions.Where(x => x.Asset is not null).Select(x => x.Asset!).Concat(catalogCandidates).DistinctBy(x => x.Id).ToDictionary(x => x.Id);
+        var eventsByAsset = events.SelectMany(e => e.AffectedAssets.Select(a => (a.Id, Event: e))).ToLookup(x => x.Id, x => x.Event);
+        var inputsByAsset = inputs.ToLookup(x => x.AssetId);
         var candidates = positions.Select(position =>
         {
-            var contexts = inputs.Where(x => x.AssetId == position.AssetId).Select(x => new ContributionAssessmentContext(
+            var contexts = inputsByAsset[position.AssetId].Select(x => new ContributionAssessmentContext(
                 x.AttentionPriority.ToString(), x.ActionRequirement.ToString(), x.Impact.ToString(), x.Summary, x.WhyItMatters,
                 x.SuggestedBehavior, x.Confidence,
                 new[] { new EvidenceReference("PortfolioAssessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) }
-                    .Concat(events.Where(e => e.AffectedAssets.Any(a => a.Id == position.AssetId)).SelectMany(e => e.Evidence.Select(reference =>
+                    .Concat(eventsByAsset[position.AssetId].SelectMany(e => e.Evidence.Select(reference =>
                         new EvidenceReference("Document", reference.DocumentId.ToString(), reference.Reference, reference.Reference, e.OccurredAt))))
                     .Distinct().ToArray())).ToArray();
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
             var candidate = new ContributionCandidate(CandidateIdentity.Known(position.AssetId), position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
                 deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, requiresRebalance ? classBudgets.GetValueOrDefault(position.AssetClass) : amount,
-                inputs.Any(x => x.AssetId == position.AssetId && x.Impact == CapitalDecisionImpact.Block), contexts,
+                inputsByAsset[position.AssetId].Any(x => x.Impact == CapitalDecisionImpact.Block), contexts,
                 position.AssetType, position.Sector, position.RecentContributionAmount, position.RecentContributionCount,
                 position.LastContributionAt, position.SectorWeightWithinClass, position.HasPosition,
                 position.AllocationNeedScore, position.DiversificationScore, position.UnderweightScore,
@@ -166,8 +168,8 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
             {
                 CandidateIntelligence = CandidateIntelligenceBuilder.Build(
                     candidate,
-                    position.HasPosition ? portfolio.Positions.Single(x => x.AssetId == position.AssetId).Asset! : catalogCandidates.Single(x => x.Id == position.AssetId),
-                    events, contexts)
+                    assetsById[position.AssetId],
+                    eventsByAsset[position.AssetId].ToList(), contexts)
             };
         }).ToArray();
 

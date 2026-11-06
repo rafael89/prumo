@@ -1,5 +1,5 @@
 import { LoadingState } from '../components/LoadingState'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { DocumentAnalysisContent } from '../components/DocumentAnalysisContent'
 import { Pagination } from '../components/Pagination'
@@ -10,7 +10,7 @@ import { apiBaseUrl } from '../api/client'
 const apiUrl = apiBaseUrl
 type DocumentItem = { id: string; ticker: string; assetName: string; documentType: number; sourceType: string | null; sourceName: string; publishedAt: string; processingStatus: number; processedAt: string | null; sourceUrl: string; ignoredReason: string | null; lastError: string | null; jobStatus: string | null; retryAt: string | null }
 type DocumentsResponse = { items: DocumentItem[]; page: number; totalItems: number; totalPages: number }
-type ProcessingStatus = { failedCount: number }
+type ProcessingStatus = { activeCount: number; failedCount: number }
 type PortfolioAssessment = { priority: string; currentWeight: number; currentValue: number | null; requiresAttention: boolean; portfolioImpactText: string; actionRequirement: string; capitalDecisionImpact: string }
 type DocumentAnalysis = { importance: string; classification: string; summary: string; impact: string; portfolioImpact: string; portfolioAssessment: PortfolioAssessment | null; suggestedAction: string; requiresAction: boolean; confidence: number; model: string; promptVersion: string; affectedAssets: string[]; createdAt: string; publishedAt: string }
 type DocumentsSectionProps = { portfolioId: string; selectedDocumentId: string | null; setSelectedDocumentId: (id: string | null) => void }
@@ -60,13 +60,13 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     mutationFn: () => sendJson<{ requeuedCount: number }>(`/api/portfolios/${portfolioId}/documents/reprocess-failed`, { errorContains: errorFilter.trim() || null }),
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['documents'] }); await queryClient.invalidateQueries({ queryKey: ['document-processing-status'] }) },
   })
-  const processingStatus = useQuery({ queryKey: ['document-processing-status', portfolioId], queryFn: () => getJson<ProcessingStatus>(`/api/portfolios/${portfolioId}/document-processing-status`), enabled: Boolean(portfolioId), refetchInterval: 2000 })
+  const processingStatus = useQuery({ queryKey: ['document-processing-status', portfolioId], queryFn: () => getJson<ProcessingStatus>(`/api/portfolios/${portfolioId}/document-processing-status`), enabled: Boolean(portfolioId), refetchInterval: query => query.state.data?.activeCount ? 2000 : 30000 })
 
   const documents = useQuery({
     queryKey: ['documents', portfolioId, documentPage, documentFilter, documentStatus, documentTypeFilter],
     queryFn: () => getJson<DocumentsResponse>(`/api/portfolios/${portfolioId}/documents?page=${documentPage}&pageSize=10&asset=${encodeURIComponent(documentFilter)}${documentStatus ? `&status=${documentStatus}` : ''}${documentTypeFilter ? `&type=${documentTypeFilter}` : ''}`),
     enabled: Boolean(portfolioId),
-    refetchInterval: query => query.state.data?.items?.some((item: DocumentItem) => [0, 1, 2, 3].includes(item.processingStatus)) ? 2000 : false,
+
   })
 
   const selectedDocumentFromPage = documents.data?.items.find((item) => item.id === selectedDocumentId) ?? null
@@ -91,8 +91,18 @@ export function DocumentsSection({ portfolioId, selectedDocumentId, setSelectedD
     queryKey: ['document-analysis', selectedDocument?.id ?? null, portfolioId],
     queryFn: () => selectedDocument ? getOptionalJson<DocumentAnalysis>(`/api/documents/${selectedDocument.id}/analysis?portfolioId=${portfolioId}`) : Promise.resolve(null),
     enabled: Boolean(selectedDocument?.id),
-    refetchInterval: selectedDocument && [0, 1, 2, 3].includes(selectedDocument.processingStatus) ? 2000 : false,
+
   })
+  const wasProcessing = useRef(false)
+  useEffect(() => {
+    const active = (processingStatus.data?.activeCount ?? 0) > 0
+    if (active || wasProcessing.current) {
+      void queryClient.invalidateQueries({ queryKey: ['documents', portfolioId] })
+      void queryClient.invalidateQueries({ queryKey: ['document', selectedDocumentId] })
+      void queryClient.invalidateQueries({ queryKey: ['document-analysis', selectedDocumentId, portfolioId] })
+    }
+    wasProcessing.current = active
+  }, [processingStatus.dataUpdatedAt, processingStatus.data?.activeCount, portfolioId, selectedDocumentId, queryClient])
   useEffect(() => {
     const confidenceIcon = document.querySelector('[aria-label="Sobre a confiança da análise"]')
     if (!confidenceIcon || confidenceIcon.querySelector('[data-confidence-tooltip]')) return

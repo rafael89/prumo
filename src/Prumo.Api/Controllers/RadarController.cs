@@ -25,35 +25,54 @@ public sealed class RadarController : ControllerBase
     public async Task<ActionResult<RadarResponse>> Get([FromQuery] Guid portfolioId, [FromQuery] AttentionPriority? priority, [FromQuery] AssessmentStatus? status, [FromQuery] bool? requiresAttention, [FromQuery] bool notificationPending = false, [FromQuery] string? asset = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default)
     {
         if (portfolioId == Guid.Empty) return BadRequest("PortfolioId é obrigatório.");
-        var query = db.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
-            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis!).ThenInclude(x => x.Document)
-            .Where(x => x.PortfolioId == portfolioId
-                && (x.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical
-                    || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant
-                    || x.InvestmentEvent.RadarDetails != null));
-        if (!string.IsNullOrWhiteSpace(asset)) query = query.Where(x => x.InvestmentEvent!.AffectedAssets.Any(a => EF.Functions.ILike(a.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Name, $"%{asset.Trim()}%")));
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100);
         var portfolio = await db.Portfolios.AsNoTracking().Include(x => x.Positions).ThenInclude(x => x.Asset).SingleOrDefaultAsync(x => x.Id == portfolioId, ct);
         if (portfolio is null) return NotFound();
         var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
-        var loadedAssessments = await query.ToListAsync(ct);
-        var currentAssessments = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, ct);
-        var groupedAssessments = RadarEventPolicy.Latest(currentAssessments
-            .Concat(loadedAssessments.Where(x => x.Status == AssessmentStatus.Closed)))
-            .Where(x => RadarEventPolicy.Importance(x.InvestmentEvent!) is AnalysisImportance.Critical or AnalysisImportance.Relevant)
-            .GroupBy(x => RadarEventPolicy.CardId(x.InvestmentEvent!))
-            .Where(group => !notificationPending || group.All(x => x.UserState == AssessmentUserState.Unread))
-            .Select(group => new RadarGroup(RadarAssessmentSelector.SelectRepresentative(group), BuildEvents(group)))
-            .Where(x => !priority.HasValue || x.AttentionPriority == priority.Value)
-            .Where(x => !status.HasValue || x.Status == status.Value)
-            .OrderByDescending(x => x.Representative.InvestmentEvent!.DocumentAnalysis!.Document!.PublishedAt)
-            .ThenByDescending(x => x.Representative.Id)
-            .ToList();
-        var items = groupedAssessments.Select(x => ToDto(x.Representative, x.Events)).ToList();
-        items = items.Where(x => x.RequiresAttention || x.Status == AssessmentStatus.Closed).ToList();
-        if (requiresAttention.HasValue) items = items.Where(x => x.RequiresAttention == requiresAttention.Value).ToList();
-        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 10, 100);
-        var total = items.Count; var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        return Ok(new RadarResponse(pageItems.Where(x => x.RequiresAttention).ToList(), pageItems.Where(x => !x.RequiresAttention).ToList(), items.Count(x => x.RequiresAttention), page, pageSize, total, (int)Math.Ceiling(total / (double)pageSize)));
+        var query = db.PortfolioAssessments.AsNoTracking()
+            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysis!.Document != null
+                && (x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Critical
+                    || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant
+                    || x.InvestmentEvent.RadarDetails != null));
+        if (!string.IsNullOrWhiteSpace(asset)) query = query.Where(x => x.InvestmentEvent!.AffectedAssets.Any(a => EF.Functions.ILike(a.Ticker, $"%{asset.Trim()}%") || EF.Functions.ILike(a.Name, $"%{asset.Trim()}%")));
+        var reader = new PortfolioAssessmentReader(db, currentAssessmentService, freshnessEvaluator);
+        var rows = await reader.ReadAsync(query, portfolio, targets, ct);
+        var groups = rows.Where(x => RadarEventPolicy.Importance(x.Event, x.Importance) is AnalysisImportance.Critical or AnalysisImportance.Relevant)
+            .GroupBy(x => RadarEventPolicy.CardId(x.Event))
+            .Where(group => !notificationPending || group.All(x => x.Assessment.UserState == AssessmentUserState.Unread))
+            .Select(group => new { Rows = group.ToList(), Representative = RadarAssessmentSelector.SelectRepresentative(group.Select(x => x.Assessment)) })
+            .Where(x => !priority.HasValue || x.Representative.AttentionPriority == priority)
+            .Where(x => !status.HasValue || x.Representative.Status == status)
+            .Where(x => RadarAttentionNowPolicy.RequiresAttention(x.Representative) || x.Representative.Status == AssessmentStatus.Closed)
+            .Where(x => !requiresAttention.HasValue || RadarAttentionNowPolicy.RequiresAttention(x.Representative) == requiresAttention)
+            .OrderByDescending(x => x.Rows.First(r => r.Assessment.Id == x.Representative.Id).PublishedAt)
+            .ThenByDescending(x => x.Representative.Id).ToList();
+        var total = groups.Count;
+        var selected = groups.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        var ids = selected.SelectMany(x => x.Rows).Select(x => x.Assessment.Id).ToArray();
+        var details = (await reader.LoadDetailsAsync(ids, ct)).ToDictionary(x => x.Id);
+        var pageItems = selected.Select(group =>
+        {
+            var representative = details[group.Representative.Id];
+            if (group.Rows.Any(x => x.Assessment.Id == representative.Id && x.LegacyLiquidation)) representative.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
+            return ToDto(representative, BuildEvents(group.Rows.Select(x => details[x.Assessment.Id])));
+        }).ToList();
+        return Ok(new RadarResponse(pageItems.Where(x => x.RequiresAttention).ToList(), pageItems.Where(x => !x.RequiresAttention).ToList(), groups.Count(x => RadarAttentionNowPolicy.RequiresAttention(x.Representative)), page, pageSize, total, (int)Math.Ceiling(total / (double)pageSize)));
+    }
+
+    [HttpGet("notifications/version")]
+    public async Task<ActionResult<object>> GetNotificationVersion([FromQuery] Guid portfolioId, CancellationToken ct)
+    {
+        if (!await db.Portfolios.AnyAsync(x => x.Id == portfolioId, ct)) return NotFound();
+        var states = await db.PortfolioAssessments.AsNoTracking().Where(x => x.PortfolioId == portfolioId)
+            .OrderBy(x => x.Id).Select(x => new { x.Id, x.Status, x.UserState, x.GeneratedAt, x.InvestmentEventVersion, EventVersion = x.InvestmentEvent!.Version }).ToListAsync(ct);
+        var positions = await db.PortfolioPositions.AsNoTracking().Where(x => x.PortfolioId == portfolioId)
+            .OrderBy(x => x.Id).Select(x => new { x.Id, x.UpdatedAt, x.Asset!.AssetClass }).ToListAsync(ct);
+        var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).OrderBy(x => x.AssetClass)
+            .Select(x => new { x.AssetClass, x.TargetPercentage }).ToListAsync(ct);
+        var canonical = System.Text.Json.JsonSerializer.Serialize(new { states, positions, targets, Policy = PortfolioImpactAssessmentService.CurrentVersion });
+        var version = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical)));
+        return Ok(new { version });
     }
 
     [HttpPatch("{assessmentId:guid}/dismiss-notification")]
