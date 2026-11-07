@@ -61,7 +61,9 @@ public static class RadarEventPolicy
     public static AnalysisImportance Importance(InvestmentEvent e, AnalysisImportance? fallback = null)
         => Enum.TryParse<AnalysisImportance>(e.RadarDetails?.Importance, out var importance) ? importance : fallback ?? e.DocumentAnalysis?.Importance ?? AnalysisImportance.Informative;
 
-    public static Guid CardId(InvestmentEvent e) => e.RadarDetails is null ? e.DocumentAnalysisId : e.Id;
+    // Structured event details describe individual operations inside the document;
+    // they do not turn those operations into separate Radar cards.
+    public static Guid CardId(InvestmentEvent e) => e.DocumentAnalysisId;
 
     public static IReadOnlyList<PortfolioAssessment> Latest(IEnumerable<PortfolioAssessment> assessments)
         => assessments.GroupBy(a => a.InvestmentEvent?.RadarDetails?.ContinuityKey ?? a.InvestmentEventId.ToString())

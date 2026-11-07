@@ -83,7 +83,7 @@ public sealed class RadarController : ControllerBase
         var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
         var relatedAssessments = await db.PortfolioAssessments
             .Include(x => x.InvestmentEvent)
-            .Where(x => x.PortfolioId == portfolioId && (x.InvestmentEventId == assessment.InvestmentEventId || assessment.InvestmentEvent.RadarDetails == null && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId))
+            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
             .ToListAsync(ct);
         foreach (var related in relatedAssessments) related.MarkSeen();
         await db.SaveChangesAsync(ct);
@@ -137,7 +137,7 @@ public sealed class RadarController : ControllerBase
         var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
         var relatedAssessments = await db.PortfolioAssessments
             .Include(x => x.InvestmentEvent)
-            .Where(x => x.PortfolioId == portfolioId && (x.InvestmentEventId == assessment.InvestmentEventId || assessment.InvestmentEvent.RadarDetails == null && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId))
+            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
             .ToListAsync(ct);
         foreach (var related in relatedAssessments) related.SetStatus(status);
         await db.SaveChangesAsync(ct); return Ok(ToDto(assessment, BuildEvents(relatedAssessments)));

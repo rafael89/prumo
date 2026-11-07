@@ -12,6 +12,56 @@ namespace Prumo.Domain.Tests;
 public sealed class RadarControllerBulkTests
 {
     [Fact]
+    public async Task Structured_events_share_one_document_card_and_its_actions()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var portfolio = new Portfolio("Carteira teste");
+        var asset = new Asset("TRXF11", "TRX", AssetType.Stock, "Teste");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 10m, 10m, 10m));
+        db.AddRange(portfolio, asset);
+        var first = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Closed);
+        await db.SaveChangesAsync(ct);
+        var firstEvent = await db.InvestmentEvents.SingleAsync(e => e.Id == first.InvestmentEventId, ct);
+        firstEvent.SetRadarDetails(new(Importance: "Relevant"));
+        var siblings = new[] { "Recompra de cotas", "Compra Meli City" }.Select(summary =>
+        {
+            var e = new InvestmentEvent(firstEvent.DocumentAnalysisId, InvestmentEventType.AssetTransaction, null, summary, []);
+            e.SetRadarDetails(new(Importance: "Relevant"));
+            e.AffectedAssets.Add(asset);
+            var a = new PortfolioAssessment(portfolio.Id, e.Id, AttentionPriority.High, ActionRequirement.Review,
+                CapitalDecisionImpact.None, AssessmentStatus.Closed, AssessmentUserState.Unread,
+                summary, "Motivo", "Comportamento", IntelligenceConfidence.High, null,
+                PortfolioImpactAssessmentService.CurrentVersion, PortfolioSnapshotKeyCalculator.Calculate(portfolio), e.Version);
+            db.AddRange(e, a);
+            return a;
+        }).ToList();
+        var unrelated = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Closed);
+        var otherPortfolio = AddAssessment(db, Guid.NewGuid(), AnalysisImportance.Relevant, ActionRequirement.Review);
+        await db.SaveChangesAsync(ct);
+        var controller = new RadarController(db);
+
+        var result = await controller.Get(portfolio.Id, null, null, null, ct: ct);
+        var response = Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(2, response.TotalItems);
+        var card = Assert.Single(response.RecentUpdates, i => i.DocumentAnalysisId == firstEvent.DocumentAnalysisId);
+        Assert.Equal(3, card.Events!.Count);
+        Assert.Contains(card.Events, e => e.Summary == "Recompra de cotas");
+        Assert.Contains(card.Events, e => e.Summary == "Compra Meli City");
+
+        await controller.SetStatus(card.AssessmentId, portfolio.Id, new("Active"), ct);
+        Assert.All(siblings.Append(first), a => Assert.Equal(AssessmentStatus.Active, a.Status));
+        await controller.DismissNotification(card.AssessmentId, portfolio.Id, ct);
+        Assert.All(siblings.Append(first), a => Assert.Equal(AssessmentUserState.Seen, a.UserState));
+        await controller.SetStatus(card.AssessmentId, portfolio.Id, new("Closed"), ct);
+        Assert.All(siblings.Append(first), a => Assert.Equal(AssessmentStatus.Closed, a.Status));
+        Assert.Equal(AssessmentUserState.Unread, unrelated.UserState);
+        Assert.Equal(AssessmentStatus.Detected, otherPortfolio.Status);
+        Assert.Equal(AssessmentUserState.Unread, otherPortfolio.UserState);
+    }
+
+    [Fact]
     public async Task Resolve_all_keeps_monitoring_informative_events_and_other_portfolios_unchanged()
     {
         await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>()
