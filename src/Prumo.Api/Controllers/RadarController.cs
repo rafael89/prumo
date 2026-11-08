@@ -38,14 +38,14 @@ public sealed class RadarController : ControllerBase
         var reader = new PortfolioAssessmentReader(db, currentAssessmentService, freshnessEvaluator);
         var rows = await reader.ReadAsync(query, portfolio, targets, ct);
         var groups = rows.Where(x => RadarEventPolicy.Importance(x.Event, x.Importance) is AnalysisImportance.Critical or AnalysisImportance.Relevant)
-            .GroupBy(x => RadarEventPolicy.CardId(x.Event))
+            .GroupBy(x => x.CardId)
             .Where(group => !notificationPending || group.All(x => x.Assessment.UserState == AssessmentUserState.Unread))
             .Select(group => new { Rows = group.ToList(), Representative = RadarAssessmentSelector.SelectRepresentative(group.Select(x => x.Assessment)) })
             .Where(x => !priority.HasValue || x.Representative.AttentionPriority == priority)
             .Where(x => !status.HasValue || x.Representative.Status == status)
             .Where(x => RadarAttentionNowPolicy.RequiresAttention(x.Representative) || x.Representative.Status == AssessmentStatus.Closed)
             .Where(x => !requiresAttention.HasValue || RadarAttentionNowPolicy.RequiresAttention(x.Representative) == requiresAttention)
-            .OrderByDescending(x => x.Rows.First(r => r.Assessment.Id == x.Representative.Id).PublishedAt)
+            .OrderByDescending(x => x.Rows.Max(r => r.PublishedAt))
             .ThenByDescending(x => x.Representative.Id).ToList();
         var total = groups.Count;
         var selected = groups.Skip((page - 1) * pageSize).Take(pageSize).ToList();
@@ -55,7 +55,7 @@ public sealed class RadarController : ControllerBase
         {
             var representative = details[group.Representative.Id];
             if (group.Rows.Any(x => x.Assessment.Id == representative.Id && x.LegacyLiquidation)) representative.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
-            return ToDto(representative, BuildEvents(group.Rows.Select(x => details[x.Assessment.Id])));
+            return ToDto(representative, BuildEvents(group.Rows.Select(x => details[x.Assessment.Id])), group.Rows.Select(x => details[x.Assessment.Id]));
         }).ToList();
         return Ok(new RadarResponse(pageItems.Where(x => x.RequiresAttention).ToList(), pageItems.Where(x => !x.RequiresAttention).ToList(), groups.Count(x => RadarAttentionNowPolicy.RequiresAttention(x.Representative)), page, pageSize, total, (int)Math.Ceiling(total / (double)pageSize)));
     }
@@ -80,14 +80,10 @@ public sealed class RadarController : ControllerBase
     {
         var assessment = await db.PortfolioAssessments.AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis).SingleOrDefaultAsync(x => x.Id == assessmentId && x.PortfolioId == portfolioId, ct);
         if (assessment is null) return NotFound();
-        var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
-        var relatedAssessments = await db.PortfolioAssessments
-            .Include(x => x.InvestmentEvent)
-            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
-            .ToListAsync(ct);
+        var relatedAssessments = await RelatedAssessments(assessment, portfolioId, ct);
         foreach (var related in relatedAssessments) related.MarkSeen();
         await db.SaveChangesAsync(ct);
-        return Ok(ToDto(assessment, BuildEvents(relatedAssessments)));
+        return Ok(ToDto(assessment, BuildEvents(relatedAssessments), relatedAssessments));
     }
 
     [HttpPatch("notifications/read-all")]
@@ -134,13 +130,9 @@ public sealed class RadarController : ControllerBase
         if (!Enum.TryParse<AssessmentStatus>(request.Status, true, out var status)) return BadRequest("Status inválido.");
         var assessment = await db.PortfolioAssessments.AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis).SingleOrDefaultAsync(x => x.Id == assessmentId && x.PortfolioId == portfolioId, ct);
         if (assessment is null) return NotFound();
-        var documentAnalysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
-        var relatedAssessments = await db.PortfolioAssessments
-            .Include(x => x.InvestmentEvent)
-            .Where(x => x.PortfolioId == portfolioId && x.InvestmentEvent!.DocumentAnalysisId == documentAnalysisId)
-            .ToListAsync(ct);
+        var relatedAssessments = await RelatedAssessments(assessment, portfolioId, ct);
         foreach (var related in relatedAssessments) related.SetStatus(status);
-        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment, BuildEvents(relatedAssessments)));
+        await db.SaveChangesAsync(ct); return Ok(ToDto(assessment, BuildEvents(relatedAssessments), relatedAssessments));
     }
 
     [HttpPatch("status-all")]
@@ -157,9 +149,33 @@ public sealed class RadarController : ControllerBase
             .Where(x => RadarEventPolicy.Importance(x.InvestmentEvent!) is AnalysisImportance.Critical or AnalysisImportance.Relevant)
             .ToList();
         assessments = assessments.Where(RadarAttentionNowPolicy.RequiresAttention).ToList();
+        var cards = await RadarCardReader.ReadAsync(db, portfolioId, ct);
+        var selectedCards = assessments.Select(x => cards.GetValueOrDefault(x.InvestmentEvent!.DocumentAnalysisId, x.InvestmentEvent.DocumentAnalysisId)).ToHashSet();
+        var analysisIds = cards.Where(x => selectedCards.Contains(x.Value)).Select(x => x.Key)
+            .Concat(assessments.Select(x => x.InvestmentEvent!.DocumentAnalysisId)).Distinct().ToArray();
+        assessments = await db.PortfolioAssessments
+            .Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed
+                && analysisIds.Contains(x.InvestmentEvent!.DocumentAnalysisId))
+            .ToListAsync(ct);
         foreach (var assessment in assessments) assessment.SetStatus(AssessmentStatus.Closed);
         await db.SaveChangesAsync(ct);
         return Ok(new RadarBulkUpdateResponse(assessments.Count));
+    }
+
+    private async Task<List<PortfolioAssessment>> RelatedAssessments(PortfolioAssessment assessment, Guid portfolioId, CancellationToken ct)
+    {
+        var cards = await RadarCardReader.ReadAsync(db, portfolioId, ct);
+        var analysisId = assessment.InvestmentEvent!.DocumentAnalysisId;
+        var cardId = cards.GetValueOrDefault(analysisId, analysisId);
+        var analysisIds = cards.Where(x => x.Value == cardId).Select(x => x.Key).Append(analysisId).Distinct().ToArray();
+        var related = await db.PortfolioAssessments.AsSplitQuery()
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis!).ThenInclude(x => x.Document)
+            .Where(x => x.PortfolioId == portfolioId && analysisIds.Contains(x.InvestmentEvent!.DocumentAnalysisId))
+            .ToListAsync(ct);
+        if (!related.Any(x => x.Id == assessment.Id)) related.Add(assessment);
+        return related;
     }
 
     private static IReadOnlyList<RadarEventDto> BuildEvents(IEnumerable<PortfolioAssessment> assessments)
@@ -180,11 +196,13 @@ public sealed class RadarController : ControllerBase
         return events;
     }
 
-    private static RadarItemDto ToDto(PortfolioAssessment x, IReadOnlyList<RadarEventDto> events)
+    private static RadarItemDto ToDto(PortfolioAssessment x, IReadOnlyList<RadarEventDto> events, IEnumerable<PortfolioAssessment>? related = null)
     {
         var attention = RadarAttentionNowPolicy.RequiresAttention(x);
         var eventItem = x.InvestmentEvent!;
-        var evidence = eventItem.Evidence.Select(e => new RadarEvidenceDto(e.DocumentId, e.DocumentAnalysisId, e.Reference)).ToList();
+        var evidence = (related ?? [x]).OrderByDescending(a => a.Id == x.Id)
+            .SelectMany(a => a.InvestmentEvent!.Evidence.Select(e => new RadarEvidenceDto(e.DocumentId, e.DocumentAnalysisId, e.Reference)))
+            .Distinct().ToList();
         var references = evidence.Select(e => new EvidenceReference("Document", e.DocumentId.ToString(), e.Reference, e.Reference, eventItem.OccurredAt)).ToList();
         return new(x.Id, eventItem.Id, eventItem.DocumentAnalysisId, eventItem.AffectedAssets.Select(a => a.Ticker).ToList(), eventItem.EventType, eventItem.OccurredAt, x.AttentionPriority, x.ActionRequirement, x.CapitalDecisionImpact, x.Status, attention, eventItem.Summary, x.Summary, x.WhyItMatters, x.SuggestedBehavior, x.Confidence, x.GeneratedAt, evidence, FreshnessStatus.Fresh, Array.Empty<FreshnessReason>(), references, RadarEventPolicy.Importance(eventItem).ToString(), events, eventItem.DocumentAnalysis?.Document?.PublishedAt, eventItem.DocumentAnalysis?.Impact ?? "", eventItem.RadarDetails?.Novelty ?? "Unknown", eventItem.RadarDetails?.ImpactDirection ?? "Indeterminate", eventItem.RadarDetails?.Materiality ?? "Unknown");
     }

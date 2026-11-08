@@ -12,6 +12,63 @@ namespace Prumo.Domain.Tests;
 public sealed class RadarControllerBulkTests
 {
     [Fact]
+    public async Task Related_stock_documents_share_radar_dashboard_sources_and_actions()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new PrumoDbContext(new DbContextOptionsBuilder<PrumoDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var portfolio = new Portfolio("Carteira teste");
+        var asset = new Asset("EGIE3", "Engie", AssetType.Stock, "Energia");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 10m, 10m, 10m));
+        db.AddRange(portfolio, asset);
+        var first = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Active,
+            "Convocação de assembleia para incorporação da ENGIE Brasil Energia Comercializadora Ltda.");
+        var second = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Monitor, AssessmentStatus.Active,
+            "Laudo de avaliação contábil para incorporação da ENGIE Brasil Energia Comercializadora Ltda.");
+        var unrelated = AddDocumentAssessment(db, portfolio, asset, ActionRequirement.Review, AssessmentStatus.Active,
+            "Divulgação de nova política de remuneração dos administradores.");
+        var otherPortfolio = new Portfolio("Outra carteira");
+        db.Add(otherPortfolio);
+        var outside = AddDocumentAssessment(db, otherPortfolio, asset, ActionRequirement.Review, AssessmentStatus.Closed,
+            "Convocação de assembleia para incorporação da ENGIE Brasil Energia Comercializadora Ltda.");
+        await db.SaveChangesAsync(ct);
+        var controller = new RadarController(db);
+
+        var response = Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(
+            (await controller.Get(portfolio.Id, null, null, null, ct: ct)).Result).Value);
+        Assert.Equal(2, response.TotalItems);
+        var card = Assert.Single(response.AttentionNow, x => x.Events!.Count == 2);
+        Assert.Equal(2, card.Evidence.Select(x => x.DocumentId).Distinct().Count());
+        var dashboard = Assert.IsType<DashboardResponse>(Assert.IsType<OkObjectResult>(
+            (await new PortfoliosController(db).GetDashboard(portfolio.Id, cancellationToken: ct)).Result).Value);
+        Assert.Equal(2, dashboard.AttentionNow!.Count);
+        Assert.Single(dashboard.AttentionNow, x => x.Events!.Count == 2);
+
+        await controller.DismissNotification(card.AssessmentId, portfolio.Id, ct);
+        Assert.Equal(AssessmentUserState.Seen, first.UserState);
+        Assert.Equal(AssessmentUserState.Seen, second.UserState);
+        var notifications = Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(
+            (await controller.Get(portfolio.Id, null, null, null, notificationPending: true, ct: ct)).Result).Value);
+        Assert.Single(notifications.AttentionNow);
+        await controller.SetStatus(card.AssessmentId, portfolio.Id, new("Closed"), ct);
+        Assert.Equal(AssessmentStatus.Closed, first.Status);
+        Assert.Equal(AssessmentStatus.Closed, second.Status);
+        Assert.Equal(AssessmentStatus.Active, unrelated.Status);
+        Assert.Equal(AssessmentUserState.Unread, unrelated.UserState);
+        Assert.Equal(AssessmentUserState.Unread, outside.UserState);
+        await controller.SetStatus(card.AssessmentId, portfolio.Id, new("Active"), ct);
+        Assert.Equal(AssessmentStatus.Active, first.Status);
+        Assert.Equal(AssessmentStatus.Active, second.Status);
+        Assert.Equal(AssessmentStatus.Closed, outside.Status);
+        await controller.ResolveAll(portfolio.Id, ct);
+        Assert.Equal(AssessmentStatus.Closed, first.Status);
+        Assert.Equal(AssessmentStatus.Closed, second.Status);
+        var resolved = Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(
+            (await controller.Get(portfolio.Id, null, null, null, ct: ct)).Result).Value);
+        Assert.Equal(2, resolved.RecentUpdates.Count);
+    }
+
+    [Fact]
     public async Task Structured_events_share_one_document_card_and_its_actions()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -154,14 +211,15 @@ public sealed class RadarControllerBulkTests
         Assert.Equal(1, response.RequiresAttention);
     }
 
-    private static PortfolioAssessment AddDocumentAssessment(PrumoDbContext db, Portfolio portfolio, Asset asset, ActionRequirement action, AssessmentStatus status)
+    private static PortfolioAssessment AddDocumentAssessment(PrumoDbContext db, Portfolio portfolio, Asset asset, ActionRequirement action, AssessmentStatus status, string summary = "Evento")
     {
         var document = new Document(asset.Id, (DocumentType)0, DateTimeOffset.UtcNow, "Teste", null, "https://example.com/document", Guid.NewGuid().ToString());
         var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1", AnalysisImportance.Relevant,
             AnalysisClassification.Other, action != ActionRequirement.None, SuggestedAction.Monitor,
             "Resumo", "Impacto do documento", "Impacto da carteira", [asset.Ticker], 1, "{}");
-        var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.Other, DateTimeOffset.UtcNow, "Evento", []);
+        var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.CorporateAction, DateTimeOffset.UtcNow, summary, []);
         investmentEvent.AffectedAssets.Add(asset);
+        investmentEvent.Evidence.Add(new InvestmentEventEvidence(investmentEvent.Id, analysis.Id, document.Id, summary));
         var assessment = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, AttentionPriority.High, action,
             CapitalDecisionImpact.None, status, AssessmentUserState.Unread,
             "Resumo", "Motivo", "Comportamento", IntelligenceConfidence.High, null,

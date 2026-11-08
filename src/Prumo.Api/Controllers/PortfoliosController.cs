@@ -120,12 +120,15 @@ public sealed class PortfoliosController : ControllerBase
         var rows = (await reader.ReadAsync(assessmentQuery, portfolio, targets, cancellationToken))
             .Where(x => x.Assessment.Status != AssessmentStatus.Closed).ToList();
         var rowsById = rows.ToDictionary(x => x.Assessment.Id);
-        var representatives = rows.GroupBy(x => RadarEventPolicy.CardId(x.Event))
+        var cardIds = rows.GroupBy(x => x.Event.DocumentAnalysisId).ToDictionary(g => g.Key, g => g.First().CardId);
+        Guid Card(InvestmentEvent e) => cardIds.GetValueOrDefault(e.DocumentAnalysisId, e.DocumentAnalysisId);
+        var publishedByCard = rows.GroupBy(x => x.CardId).ToDictionary(g => g.Key, g => g.Max(x => x.PublishedAt));
+        var representatives = rows.GroupBy(x => x.CardId)
             .Select(group => RadarAssessmentSelector.SelectRepresentative(group.Select(x => x.Assessment))).ToList();
         var attentionRows = representatives
             .Where(a => RadarEventPolicy.Importance(a.InvestmentEvent!, rowsById[a.Id].Importance) is AnalysisImportance.Critical or AnalysisImportance.Relevant)
             .Where(RadarAttentionNowPolicy.RequiresAttention)
-            .OrderByDescending(a => rowsById[a.Id].PublishedAt)
+            .OrderByDescending(a => publishedByCard[Card(a.InvestmentEvent!)])
             .ThenByDescending(a => a.AttentionPriority).ThenByDescending(a => a.InvestmentEvent!.OccurredAt)
             .ThenByDescending(a => a.GeneratedAt).ThenByDescending(a => a.Id).ToList();
         var portfolioAssetIds = allPositions.Select(position => position.AssetId).ToHashSet();
@@ -133,15 +136,15 @@ public sealed class PortfoliosController : ControllerBase
         var recentTotal = await newsQuery.CountAsync(cancellationToken);
         var analyzedDocuments = await newsQuery.Take(5).ToListAsync(cancellationToken);
         var newsIds = analyzedDocuments.Select(x => x.Id).ToHashSet();
-        var requiredCards = attentionRows.Select(x => RadarEventPolicy.CardId(x.InvestmentEvent!))
-            .Concat(rows.Where(x => newsIds.Contains(x.Event.DocumentAnalysisId)).Select(x => RadarEventPolicy.CardId(x.Event))).ToHashSet();
-        var detailIds = rows.Where(x => requiredCards.Contains(RadarEventPolicy.CardId(x.Event))).Select(x => x.Assessment.Id).ToArray();
+        var requiredCards = attentionRows.Select(x => Card(x.InvestmentEvent!))
+            .Concat(rows.Where(x => newsIds.Contains(x.Event.DocumentAnalysisId)).Select(x => x.CardId)).ToHashSet();
+        var detailIds = rows.Where(x => requiredCards.Contains(x.CardId)).Select(x => x.Assessment.Id).ToArray();
         var details = await reader.LoadDetailsAsync(detailIds, cancellationToken);
         var legacyLiquidations = rows.Where(x => x.LegacyLiquidation).Select(x => x.Assessment.Id).ToHashSet();
         foreach (var detail in details.Where(x => legacyLiquidations.Contains(x.Id))) detail.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
         var detailsById = details.ToDictionary(x => x.Id);
-        var eventsByDocument = details.GroupBy(x => RadarEventPolicy.CardId(x.InvestmentEvent!)).ToDictionary(g => g.Key, BuildDashboardEvents);
-        var attention = attentionRows.Select(a => CreateDashboardAssessment(detailsById[a.Id], eventsByDocument.GetValueOrDefault(RadarEventPolicy.CardId(a.InvestmentEvent!)))).ToList();
+        var eventsByDocument = details.GroupBy(x => Card(x.InvestmentEvent!)).ToDictionary(g => g.Key, BuildDashboardEvents);
+        var attention = attentionRows.Select(a => CreateDashboardAssessment(detailsById[a.Id], eventsByDocument.GetValueOrDefault(Card(a.InvestmentEvent!)))).ToList();
         var recent = BuildNews(analyzedDocuments, details);
         var primaryNeed = health.CapitalNeeds.OrderBy(x => x.PriorityOrder).FirstOrDefault();
         return Ok(new DashboardResponse(

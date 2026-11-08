@@ -44,7 +44,8 @@ internal sealed class PortfolioAssessmentReader(PrumoDbContext db, PortfolioAsse
         }
         rows = rows.Where(x => x.Assessment.Status == AssessmentStatus.Closed || Fresh(x)).ToList();
         foreach (var row in rows.Where(x => x.LegacyLiquidation)) row.Assessment.OverrideCapitalDecisionImpact(CapitalDecisionImpact.Block);
-        return rows;
+        var cards = await RadarCardReader.ReadAsync(db, portfolioId, ct);
+        return rows.Select(x => x with { CardId = cards.GetValueOrDefault(x.Event.DocumentAnalysisId, x.Event.DocumentAnalysisId) }).ToList();
     }
 
     public Task<List<PortfolioAssessment>> LoadDetailsAsync(Guid[] ids, CancellationToken ct)
@@ -56,4 +57,7 @@ internal sealed class PortfolioAssessmentReader(PrumoDbContext db, PortfolioAsse
 
 }
 
-internal sealed record PortfolioAssessmentReadRow(PortfolioAssessment Assessment, InvestmentEvent Event, AnalysisImportance Importance, DateTimeOffset PublishedAt, bool LegacyLiquidation);
+internal sealed record PortfolioAssessmentReadRow(PortfolioAssessment Assessment, InvestmentEvent Event, AnalysisImportance Importance, DateTimeOffset PublishedAt, bool LegacyLiquidation)
+{
+    public Guid CardId { get; init; }
+}
