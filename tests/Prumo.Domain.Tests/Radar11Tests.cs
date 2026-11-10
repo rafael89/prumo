@@ -43,9 +43,9 @@ public sealed class Radar11Tests
     }
 
     [Theory]
-    [InlineData(InvestmentEventType.CapitalRaise, "8ª emissão", "encerrada")]
-    [InlineData(InvestmentEventType.Governance, "instrumento 32/2026", "administrador substituído")]
-    public void Repeated_economic_state_does_not_create_another_strong_alert(InvestmentEventType type, string id, string stage)
+    [InlineData(InvestmentEventType.CapitalRaise, "8ª emissão", "encerrada", ActionRequirement.None, "sem alerta no Radar")]
+    [InlineData(InvestmentEventType.Governance, "instrumento 32/2026", "administrador substituído", ActionRequirement.Monitor, "sem novo alerta forte")]
+    public void Repeated_economic_state_does_not_create_another_strong_alert(InvestmentEventType type, string id, string stage, ActionRequirement expectedAction, string expectedReason)
     {
         var first = Event(Details(id, stage), type);
         var details = RadarEventPolicy.Classify(Details(id, stage), type, [AssetId], [first]);
@@ -54,9 +54,9 @@ public sealed class Radar11Tests
         repeat.SetRadarDetails(details);
         var output = Assess(repeat, 80);
         Assert.Equal(AttentionPriority.Low, output.AttentionPriority);
-        Assert.Equal(ActionRequirement.Monitor, output.ActionRequirement);
+        Assert.Equal(expectedAction, output.ActionRequirement);
         Assert.Equal(CapitalDecisionImpact.None, output.CapitalDecisionImpact);
-        Assert.Contains("sem novo alerta forte", output.WhyItMatters);
+        Assert.Contains(expectedReason, output.WhyItMatters);
     }
 
     [Fact]

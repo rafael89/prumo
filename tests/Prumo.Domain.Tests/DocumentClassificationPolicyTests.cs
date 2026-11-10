@@ -39,6 +39,14 @@ public sealed class DocumentClassificationPolicyTests
     [Theory]
     [InlineData("Anúncio de Início")]
     [InlineData("Instrumento Particular de Emissão de Cotas")]
+    [InlineData("Anúncio de Encerramento")]
+    [InlineData("Instrumento Particular de Emissão de Novas Cotas")]
+    [InlineData("Prospecto Definitivo de Distribuição Pública")]
+    [InlineData("Prospecto Preliminar")]
+    [InlineData("Lâmina da Oferta")]
+    [InlineData("Material Publicitário")]
+    [InlineData("Boletim de Subscrição")]
+    [InlineData("Aviso ao Mercado")]
     public void Identifies_operational_issuance_documents(string sourceType)
     {
         Assert.True(DocumentClassificationPolicy.IsOperationalIssuanceDocument(null, sourceType, null));
@@ -57,6 +65,9 @@ public sealed class DocumentClassificationPolicyTests
     [InlineData("Assembleia", "AGE", "Boletim de voto a distância", true)]
     [InlineData(null, "  MAPA   FINAL DE VOTAÇÃO DETALHADO ", null, true)]
     [InlineData("Ofertas Públicas", "Anúncio de Início", null, true)]
+    [InlineData("Ofertas Públicas", "Anúncio de Encerramento", null, true)]
+    [InlineData("  EMISSÃO   DE NOVAS COTAS ", null, null, true)]
+    [InlineData(null, null, "Lâmina de Oferta", true)]
     [InlineData("Fato Relevante", "Anúncio de Início", null, false)]
     [InlineData("Fato Relevante", null, "Mapa final de votação detalhado", false)]
     [InlineData("Assembleia", "AGE", "Ata", false)]

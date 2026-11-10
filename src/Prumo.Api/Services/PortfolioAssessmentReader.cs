@@ -18,12 +18,18 @@ internal sealed class PortfolioAssessmentReader(PrumoDbContext db, PortfolioAsse
         var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
         // Read only selection metadata first. Analysis responses, evidence and assets
         // are hydrated for the requested page, or when an event actually needs refresh.
-        async Task<List<PortfolioAssessmentReadRow>> ReadRows() => await query.Select(x => new PortfolioAssessmentReadRow(
+        async Task<List<PortfolioAssessmentReadRow>> ReadRows() => (await query.Select(x => new PortfolioAssessmentReadRow(
             x, x.InvestmentEvent!, x.InvestmentEvent!.DocumentAnalysis!.Importance,
             x.InvestmentEvent.DocumentAnalysis.Document!.PublishedAt,
             x.InvestmentEvent.RadarDetails == null && x.InvestmentEvent.EventType == InvestmentEventType.Liquidation
-                && x.InvestmentEvent.AffectedAssets.Any(a => db.PortfolioPositions.Any(p => p.PortfolioId == portfolioId && p.AssetId == a.Id))))
-            .ToListAsync(ct);
+                && x.InvestmentEvent.AffectedAssets.Any(a => db.PortfolioPositions.Any(p => p.PortfolioId == portfolioId && p.AssetId == a.Id)))
+            {
+                IsEligible = RadarEligibilityPolicy.IsEligible(x.InvestmentEvent.EventType, x.InvestmentEvent.DocumentAnalysis.Classification,
+                    x.InvestmentEvent.DocumentAnalysis.Document.SourceCategory,
+                    x.InvestmentEvent.DocumentAnalysis.Document.SourceType,
+                    x.InvestmentEvent.DocumentAnalysis.Document.SourceSpecies)
+            })
+            .ToListAsync(ct)).Where(x => x.IsEligible).ToList();
         bool Fresh(PortfolioAssessmentReadRow row) => freshnessEvaluator.Evaluate(row.Assessment, snapshot, targetKey, row.Event, PortfolioImpactAssessmentService.CurrentVersion).Status == FreshnessStatus.Fresh;
         var rows = await ReadRows();
         foreach (var row in rows) row.Assessment.AttachInvestmentEvent(row.Event);
@@ -60,4 +66,5 @@ internal sealed class PortfolioAssessmentReader(PrumoDbContext db, PortfolioAsse
 internal sealed record PortfolioAssessmentReadRow(PortfolioAssessment Assessment, InvestmentEvent Event, AnalysisImportance Importance, DateTimeOffset PublishedAt, bool LegacyLiquidation)
 {
     public Guid CardId { get; init; }
+    public bool IsEligible { get; init; }
 }

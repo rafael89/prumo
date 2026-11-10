@@ -33,7 +33,8 @@ public sealed class PortfolioAssessmentCurrentService
         IReadOnlyList<PortfolioAssessment> assessments,
         CancellationToken ct)
     {
-        assessments = RadarEventPolicy.Latest(assessments);
+        assessments = RadarEventPolicy.Latest(assessments)
+            .Where(x => x.InvestmentEvent is null || RadarEligibilityPolicy.IsEligible(x.InvestmentEvent)).ToList();
         var snapshot = PortfolioSnapshotKeyCalculator.Calculate(portfolio);
         var targetKey = TargetAllocationKeyCalculator.Calculate(targets);
         var current = new List<PortfolioAssessment>();

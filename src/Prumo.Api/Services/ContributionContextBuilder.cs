@@ -113,7 +113,7 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
         var ids = positions.Select(x => x.AssetId).ToHashSet();
         var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery()
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets)
-            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis!).ThenInclude(x => x.Document)
             .Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
             .Where(x => x.PortfolioId == portfolioId
                 && (x.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical

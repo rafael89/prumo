@@ -230,7 +230,9 @@ public sealed class RadarControllerBulkTests
 
     private static PortfolioAssessment AddAssessment(PrumoDbContext db, Guid portfolioId, AnalysisImportance importance, ActionRequirement action, RadarEventDetails? details = null)
     {
-        var analysis = new DocumentAnalysis(Guid.NewGuid(), Guid.NewGuid(), "test", "test-v1", importance,
+        var document = new Document(Guid.NewGuid(), DocumentType.Other, DateTimeOffset.UtcNow,
+            "Teste", null, "https://example.test/document", Guid.NewGuid().ToString());
+        var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test-v1", importance,
             AnalysisClassification.Other, action != ActionRequirement.None, SuggestedAction.Monitor,
             "Resumo", "Impacto", "Impacto", ["TEST"], 1, "{}");
         var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.AssetTransaction,
@@ -239,7 +241,7 @@ public sealed class RadarControllerBulkTests
         var assessment = new PortfolioAssessment(portfolioId, investmentEvent.Id, AttentionPriority.High, action,
             CapitalDecisionImpact.None, AssessmentStatus.Detected, AssessmentUserState.Unread,
             "Resumo", "Motivo", "Comportamento", IntelligenceConfidence.High, null);
-        db.AddRange(analysis, investmentEvent, assessment);
+        db.AddRange(document, analysis, investmentEvent, assessment);
         return assessment;
     }
 }

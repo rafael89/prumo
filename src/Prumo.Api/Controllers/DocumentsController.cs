@@ -228,12 +228,13 @@ public sealed class DocumentsController : ControllerBase
         var loadedAssessments = await dbContext.PortfolioAssessments.AsNoTracking().AsSplitQuery()
             .Include(item => item.InvestmentEvent!).ThenInclude(item => item.AffectedAssets)
             .Include(item => item.InvestmentEvent!).ThenInclude(item => item.Evidence)
-            .Include(item => item.InvestmentEvent!).ThenInclude(item => item.DocumentAnalysis)
+            .Include(item => item.InvestmentEvent!).ThenInclude(item => item.DocumentAnalysis!).ThenInclude(item => item.Document)
             .Where(item => item.PortfolioId == portfolioId && item.InvestmentEvent!.DocumentAnalysisId == analysis.Id)
             .ToListAsync(cancellationToken);
         if (loadedAssessments.Count == 0) return null;
         var current = await currentAssessmentService.EnsureFreshAsync(portfolio, targets, loadedAssessments, cancellationToken);
-        var assessments = current.Concat(loadedAssessments.Where(item => item.Status == AssessmentStatus.Closed)).ToList();
+        var assessments = current.Concat(loadedAssessments.Where(item => item.Status == AssessmentStatus.Closed
+            && item.InvestmentEvent is not null && RadarEligibilityPolicy.IsEligible(item.InvestmentEvent))).ToList();
         if (assessments.Count == 0) return null;
         var persisted = RadarAssessmentSelector.SelectRepresentative(assessments);
 

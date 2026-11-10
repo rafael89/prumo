@@ -5,7 +5,7 @@ namespace Prumo.Application.Documents;
 
 public static class DocumentAnalysisPrompt
 {
-    public const string GlobalVersion = "document-analysis-global-v10";
+    public const string GlobalVersion = "document-analysis-global-v11";
 
     private const string GlobalInstructions = """
         Você é o componente de análise documental do Prumo. Analise exclusivamente o conteúdo fornecido e identifique seu significado para o ativo indicado.
@@ -28,11 +28,12 @@ public static class DocumentAnalysisPrompt
         - INFORMATIVE: atualização válida, predominantemente rotineira, sem impacto material identificado.
         - NO_ACTION: conteúdo sem consequência prática identificável, duplicado, insuficiente ou sem relação clara com o ativo.
         - Pagamento ou distribuição rotineira de rendimentos é INFORMATIVE, mesmo quando o valor for expressivo. Use RELEVANT apenas se houver suspensão, redução relevante, atraso, mudança de política, condição extraordinária, prazo ou decisão para o cotista. Nunca use CRITICAL apenas pelo valor distribuído.
+        - Emissão de cotas ou captação, anúncio de início/encerramento, prospecto, material de oferta, subscrição, sobras e conversão/liberação de cotas ficam no histórico e não geram alerta no Radar. Para esses eventos use INFORMATIVE, requiresAction=false, attentionBasis=NONE e suggestedAction=NO_ACTION, mesmo com valor elevado ou prazo de subscrição. Classifique o evento como CAPITAL_RAISE. Se houver outro fato econômico independente no mesmo documento, como inadimplência, aquisição/venda de ativo ou liquidação, avalie-o separadamente pelas regras normais; não transfira o prazo ou a importância da oferta para esse outro evento.
 
         Radar 1.1: cada evento deve conter radarDetails (campos ausentes podem ser null):
         - importance: Critical, Relevant, Informative ou NoAction. Classifique a consequência econômica, nunca o título regulatório, o valor isolado ou a exposição pessoal.
         - Critical exige consequência econômica elevada E urgência/decisão imediata explícita. consequenceEvidence e urgencyEvidence devem ser trechos literais que comprovem ambas; sem isso use Relevant. Liquidação por si só não prova urgência.
-        - Aquisição/venda material de imóvel, participação societária, concessão ou outro ativo, inadimplência, reorganização, emissão material e conclusão de operação condicionada normalmente são Relevant. Não exija propertyName.
+        - Aquisição/venda material de imóvel, participação societária, concessão ou outro ativo, inadimplência, reorganização e conclusão de operação condicionada normalmente são Relevant. Não exija propertyName. A conclusão operacional de uma oferta permanece Informative.
         - Distribuição mensal rotineira, conversão/liberação operacional de cotas, alteração administrativa sem efeito econômico, apresentação institucional e publicação de relatório sem fato material são Informative. Apresentação de emissão conhecida não é nova captação.
         - operationId: identificador explícito completo da operação, como número de emissão, contrato ou processo com o contexto que o torna único. Copie literalmente. Contraparte, valor, família ou nome de imóvel isolado não são identificadores seguros. Distribuição exige referência explícita completa incluindo o período; nunca una meses distintos. Sem identificador inequívoco use null.
         - stage, deadline, amount, outstandingDebt, restriction, audience e contractTerms: copie expressões literais que descrevam o estado econômico atual completo. evidence deve conter literalmente operationId e esses campos. Sem evidência use null. Status de publicação, apresentação ou formato XML não são estágios econômicos.

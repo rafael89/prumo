@@ -118,14 +118,17 @@ public sealed class PortfolioImpactAssessmentServiceTests
         Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
     }
 
-    [Fact]
-    public void Relevant_capital_raise_is_not_suppressed()
+    [Theory]
+    [InlineData(AnalysisImportance.Relevant, 6)]
+    [InlineData(AnalysisImportance.Critical, 100)]
+    public void Capital_raise_does_not_create_attention_or_capital_restrictions(AnalysisImportance importance, decimal exposure)
     {
-        var result = Assess(InvestmentEventType.CapitalRaise, 6m, AnalysisImportance.Relevant, requiresAction: true, action: SuggestedAction.Monitor);
+        var result = Assess(InvestmentEventType.CapitalRaise, exposure, importance, requiresAction: true, action: SuggestedAction.Monitor);
 
-        Assert.Equal(AttentionPriority.High, result.AttentionPriority);
-        Assert.Equal(ActionRequirement.Review, result.ActionRequirement);
-        Assert.Equal(CapitalDecisionImpact.Caution, result.CapitalDecisionImpact);
+        Assert.Equal(AttentionPriority.Low, result.AttentionPriority);
+        Assert.Equal(ActionRequirement.None, result.ActionRequirement);
+        Assert.Equal(CapitalDecisionImpact.None, result.CapitalDecisionImpact);
+        Assert.False(RadarAttentionNowPolicy.RequiresAttention(AssessmentStatus.Detected, result.AttentionPriority, result.ActionRequirement, result.CapitalDecisionImpact));
     }
 
     [Fact]
@@ -140,7 +143,6 @@ public sealed class PortfolioImpactAssessmentServiceTests
 
     [Theory]
     [InlineData(InvestmentEventType.CorporateAction, CapitalDecisionImpact.Caution)]
-    [InlineData(InvestmentEventType.CapitalRaise, CapitalDecisionImpact.Caution)]
     [InlineData(InvestmentEventType.Liquidation, CapitalDecisionImpact.Block)]
     public void Portfolio_risk_requires_review_despite_general_maintain_recommendation(InvestmentEventType eventType, CapitalDecisionImpact expectedImpact)
     {

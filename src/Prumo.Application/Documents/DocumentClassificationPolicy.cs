@@ -42,7 +42,16 @@ public static class DocumentClassificationPolicy
 
         return values.Any(value =>
             value.Contains("ANUNCIO DE INICIO", StringComparison.Ordinal)
-            || value.Contains("INSTRUMENTO PARTICULAR DE EMISSAO DE COTAS", StringComparison.Ordinal));
+            || value.Contains("ANUNCIO DE ENCERRAMENTO", StringComparison.Ordinal)
+            || value.Contains("EMISSAO DE COTAS", StringComparison.Ordinal)
+            || value.Contains("EMISSAO DE NOVAS COTAS", StringComparison.Ordinal)
+            || value.Contains("PROSPECTO", StringComparison.Ordinal)
+            || value.Contains("LAMINA DA OFERTA", StringComparison.Ordinal)
+            || value.Contains("LAMINA DE OFERTA", StringComparison.Ordinal)
+            || value.Contains("MATERIAL PUBLICITARIO", StringComparison.Ordinal)
+            || value.Contains("MATERIAL DA OFERTA", StringComparison.Ordinal)
+            || value.Contains("BOLETIM DE SUBSCRICAO", StringComparison.Ordinal)
+            || value.Contains("AVISO AO MERCADO", StringComparison.Ordinal));
     }
 
     public static bool IsShareholderNotice(string? sourceCategory, string? sourceType, string? sourceSpecies)

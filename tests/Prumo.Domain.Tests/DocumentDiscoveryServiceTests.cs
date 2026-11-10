@@ -67,8 +67,14 @@ public sealed class DocumentDiscoveryServiceTests
         Assert.Empty(db.ProcessingJobs);
     }
 
-    [Fact]
-    public async Task Keeps_operational_issuance_document_without_downloading_or_analyzing()
+    [Theory]
+    [InlineData("Anúncio de Início")]
+    [InlineData("Anúncio de Encerramento")]
+    [InlineData("Instrumento Particular de Emissão de Novas Cotas")]
+    [InlineData("Prospecto Definitivo")]
+    [InlineData("Lâmina da Oferta")]
+    [InlineData("Boletim de Subscrição")]
+    public async Task Keeps_operational_issuance_document_without_downloading_or_analyzing(string sourceType)
     {
         await using var db = CreateDb();
         var asset = AddPositionedAsset(db, "AAA3");
@@ -80,7 +86,7 @@ public sealed class DocumentDiscoveryServiceTests
             "https://example.test/issuance-start",
             "https://example.test/issuance-start.pdf",
             "Ofertas Públicas",
-            "Anúncio de Início",
+            sourceType,
             null));
 
         var result = await CreateService(db, source).DiscoverAsync(From, To, TestContext.Current.CancellationToken);

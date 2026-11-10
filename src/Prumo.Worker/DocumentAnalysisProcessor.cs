@@ -65,6 +65,16 @@ public sealed class DocumentAnalysisProcessor
             .SingleOrDefaultAsync(item => item.Id == job.DocumentId, cancellationToken)
             ?? throw new InvalidOperationException("Documento do job nao encontrado.");
 
+        var ignoredReason = DocumentClassificationPolicy.GetAutomaticAnalysisIgnoredReason(
+            document.SourceCategory, document.SourceType, document.SourceSpecies);
+        if (ignoredReason is not null)
+        {
+            document.MarkIgnored(ignoredReason);
+            job.Complete(DateTimeOffset.UtcNow);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
         var latestDownload = await dbContext.ProcessingJobs
             .Where(item => item.JobType == ProcessingJobType.DownloadDocument
                 && item.Document!.AssetId == document.AssetId && item.Status == ProcessingJobStatus.Completed)

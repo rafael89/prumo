@@ -17,6 +17,24 @@ namespace Prumo.Domain.Tests;
 
 public sealed class DocumentAnalysisProcessorTests
 {
+    [Fact]
+    public async Task Previously_queued_offering_paperwork_is_ignored_without_calling_ai()
+    {
+        await using var db = CreateDbContext();
+        var seeded = await SeedDocumentScenarioAsync(db);
+        seeded.Document.UpdateSourceMetadata("Ofertas Públicas", "Prospecto Definitivo", null, DocumentType.Other);
+        var ai = new ThrowingAiAnalysisService(new InvalidOperationException("AI must not be called"));
+        var processor = CreateProcessor(db, new FakeFileStorage(new MemoryStream()), new FakePdfTextExtractor(), ai);
+
+        await processor.ProcessAsync(seeded.Job, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ProcessingJobStatus.Completed, seeded.Job.Status);
+        Assert.Equal(DocumentProcessingStatus.Ignored, seeded.Document.ProcessingStatus);
+        Assert.Contains("emissão", seeded.Document.IgnoredReason);
+        Assert.Empty(db.DocumentAnalyses);
+        Assert.Empty(db.InvestmentEvents);
+    }
+
     [RelationalFact]
     public async Task Radar11_round_trip_groups_document_operations_and_preserves_closed_repeats()
     {
@@ -71,7 +89,7 @@ public sealed class DocumentAnalysisProcessorTests
             var initial = await ReadRadar();
             Assert.Equal(1, initial.TotalItems);
             Assert.Equal(1, initial.RequiresAttention);
-            Assert.Equal(2, Assert.Single(initial.AttentionNow).Events!.Count);
+            Assert.Single(Assert.Single(initial.AttentionNow).Events!);
             var storedAcquisition = await db.InvestmentEvents.Include(e => e.Evidence).SingleAsync(e => e.EventType == InvestmentEventType.AssetTransaction, ct);
             var storedEvidence = Assert.Single(storedAcquisition.Evidence).Reference;
             Assert.Equal(1000, storedEvidence.Length);
@@ -84,7 +102,7 @@ public sealed class DocumentAnalysisProcessorTests
             var repeated = await NextDocument("apresentacao");
             await Analyze(repeated.Document, repeated.Job, "contratada", false, "Apresentação posterior");
             var afterRepeat = await ReadRadar();
-            Assert.Equal(2, afterRepeat.TotalItems);
+            Assert.Equal(1, afterRepeat.TotalItems);
             Assert.Equal(0, afterRepeat.RequiresAttention);
             var repeat = Assert.Single(afterRepeat.RecentUpdates, i => i.EventType == InvestmentEventType.AssetTransaction);
             Assert.Equal("Repeat", repeat.Novelty);
@@ -93,7 +111,7 @@ public sealed class DocumentAnalysisProcessorTests
             var completed = await NextDocument("conclusao");
             await Analyze(completed.Document, completed.Job, "concluída", false, "Conclusão da operação");
             var afterUpdate = await ReadRadar();
-            Assert.Equal(2, afterUpdate.TotalItems);
+            Assert.Equal(1, afterUpdate.TotalItems);
             Assert.Equal(1, afterUpdate.RequiresAttention);
             Assert.Equal("Update", afterUpdate.AttentionNow.Single(i => i.EventType == InvestmentEventType.AssetTransaction).Novelty);
             Assert.Equal(4, await db.InvestmentEvents.CountAsync(ct));
@@ -102,14 +120,14 @@ public sealed class DocumentAnalysisProcessorTests
             var informativeRepeat = await NextDocument("apresentacao-informativa");
             await Analyze(informativeRepeat.Document, informativeRepeat.Job, "concluída", false, "Apresentação informativa", AnalysisImportance.Informative);
             var beforeResolveAll = await ReadRadar();
-            Assert.Single(beforeResolveAll.RecentUpdates);
+            Assert.Empty(beforeResolveAll.RecentUpdates);
             Assert.Empty(beforeResolveAll.AttentionNow);
-            Assert.Equal(1, beforeResolveAll.TotalItems);
+            Assert.Equal(0, beforeResolveAll.TotalItems);
             Assert.DoesNotContain(beforeResolveAll.AttentionNow, item => item.EventType == InvestmentEventType.AssetTransaction);
             Assert.Equal(AnalysisImportance.Informative, (await db.DocumentAnalyses.SingleAsync(a => a.DocumentId == informativeRepeat.Document.Id, ct)).Importance);
             await new RadarController(db).ResolveAll(portfolioId, ct);
             var afterResolveAll = await ReadRadar();
-            Assert.Equal(1, afterResolveAll.TotalItems);
+            Assert.Equal(0, afterResolveAll.TotalItems);
             Assert.Empty(afterResolveAll.AttentionNow);
             Assert.All(afterResolveAll.RecentUpdates, item => Assert.Equal(AssessmentStatus.Closed, item.Status));
         }

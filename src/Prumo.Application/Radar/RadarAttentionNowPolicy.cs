@@ -5,10 +5,11 @@ namespace Prumo.Application.Radar;
 
 public static class RadarAttentionNowPolicy
 {
-    public const string Version = "radar-attention-v3";
+    public const string Version = "radar-attention-v4";
 
     public static bool RequiresAttention(PortfolioAssessment assessment)
-        => RequiresAttention(assessment.Status, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact);
+        => (assessment.InvestmentEvent is null || RadarEligibilityPolicy.IsEligible(assessment.InvestmentEvent))
+            && RequiresAttention(assessment.Status, assessment.AttentionPriority, assessment.ActionRequirement, assessment.CapitalDecisionImpact);
 
     public static bool RequiresAttention(AssessmentStatus status, AttentionPriority priority, ActionRequirement action, CapitalDecisionImpact impact)
         => status != AssessmentStatus.Closed

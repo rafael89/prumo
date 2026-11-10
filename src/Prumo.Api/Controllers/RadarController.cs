@@ -139,7 +139,7 @@ public sealed class RadarController : ControllerBase
     public async Task<ActionResult<RadarBulkUpdateResponse>> ResolveAll([FromQuery] Guid portfolioId, CancellationToken ct)
     {
         var assessments = (await db.PortfolioAssessments
-            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis!).ThenInclude(x => x.Document)
             .Where(x => x.PortfolioId == portfolioId
                 && x.Status != AssessmentStatus.Closed
                 && (x.InvestmentEvent!.DocumentAnalysis!.Importance == AnalysisImportance.Critical
@@ -182,7 +182,7 @@ public sealed class RadarController : ControllerBase
     {
         var representative = RadarAssessmentSelector.SelectRepresentative(assessments);
         var events = assessments
-            .Where(x => x.InvestmentEvent is not null)
+            .Where(x => x.InvestmentEvent is not null && RadarEligibilityPolicy.IsEligible(x.InvestmentEvent))
             .Select(x => x.InvestmentEvent!)
             .GroupBy(x => x.Id)
             .Select(group => group.First())

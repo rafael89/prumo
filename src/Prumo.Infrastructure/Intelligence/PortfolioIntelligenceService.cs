@@ -18,7 +18,9 @@ public sealed class PortfolioIntelligenceService(PrumoDbContext db, PortfolioPer
         if (portfolio is null) return null;
         var generatedAt = DateTimeOffset.UtcNow;
         var targets = await db.TargetAllocations.AsNoTracking().Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
-        var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence).Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed).ToListAsync(ct);
+        var assessments = await db.PortfolioAssessments.AsNoTracking().AsSplitQuery().Include(x => x.InvestmentEvent!).ThenInclude(x => x.AffectedAssets).Include(x => x.InvestmentEvent!).ThenInclude(x => x.Evidence)
+            .Include(x => x.InvestmentEvent!).ThenInclude(x => x.DocumentAnalysis!).ThenInclude(x => x.Document)
+            .Where(x => x.PortfolioId == portfolioId && x.Status != AssessmentStatus.Closed).ToListAsync(ct);
         var transactions = await db.PortfolioTransactions.AsNoTracking().Include(x => x.Items).Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
         var prices = await db.AssetPrices.AsNoTracking().Where(x => portfolio.Positions.Select(p => p.AssetId).Contains(x.AssetId)).OrderByDescending(x => x.PriceDate).ThenByDescending(x => x.FetchedAt).ToListAsync(ct);
         var performanceData = await performance.GetAsync(portfolioId, null, null, ct);
@@ -54,7 +56,8 @@ public sealed class PortfolioIntelligenceService(PrumoDbContext db, PortfolioPer
 
     private static void AddAssessmentSignals(IReadOnlyList<Domain.Entities.PortfolioAssessment> assessments, List<PortfolioIntelligenceSignal> signals)
     {
-        foreach (var assessment in assessments.OrderByDescending(x => x.AttentionPriority).ThenByDescending(x => x.GeneratedAt).Take(10))
+        foreach (var assessment in assessments.Where(x => x.InvestmentEvent is not null && RadarEligibilityPolicy.IsEligible(x.InvestmentEvent))
+            .OrderByDescending(x => x.AttentionPriority).ThenByDescending(x => x.GeneratedAt).Take(10))
         {
             var eventItem = assessment.InvestmentEvent;
             if (eventItem is null) continue;
