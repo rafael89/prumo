@@ -314,11 +314,11 @@ type DividendForecast = {
 function DividendPaymentDate({ value }: { value: string }) {
   const [today] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()))
   const daysUntilPayment = Math.round((Date.parse(value) - Date.parse(today)) / 86_400_000)
-  const upcoming = daysUntilPayment >= 0 && daysUntilPayment <= 7
+  const isPaymentDay = daysUntilPayment === 0
   const label = new Intl.DateTimeFormat('pt-BR').format(new Date(`${value}T12:00:00`))
-  const status = daysUntilPayment < 0 ? 'Data de pagamento já passou' : daysUntilPayment === 0 ? 'Pagamento previsto para hoje' : upcoming ? 'Pagamento previsto nos próximos 7 dias' : 'Pagamento futuro'
-  return <time dateTime={value} title={status} aria-label={`${label}: ${status}`} className={`inline-flex items-center gap-1 whitespace-nowrap ${upcoming ? 'font-semibold text-emerald-700' : daysUntilPayment < 0 ? 'text-slate-500' : 'text-slate-700'}`}>
-    {upcoming && <FontAwesomeIcon icon={faClock} className="text-[10px]" aria-hidden="true" />}{label}
+  const status = daysUntilPayment < 0 ? 'Data de pagamento já passou' : isPaymentDay ? 'Pagamento previsto para hoje' : 'Pagamento futuro'
+  return <time dateTime={value} title={status} aria-label={`${label}: ${status}`} className={`inline-flex items-center gap-1 whitespace-nowrap ${isPaymentDay ? 'font-semibold text-emerald-700' : daysUntilPayment < 0 ? 'text-slate-500' : 'text-slate-700'}`}>
+    {isPaymentDay && <FontAwesomeIcon icon={faClock} className="text-[10px]" aria-hidden="true" />}{label}
   </time>
 }
 

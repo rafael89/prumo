@@ -30,20 +30,28 @@ test('document color follows importance even with a critical Radar priority', ()
   }
 })
 
-test('shared content includes translated labels, analysis and metadata', () => {
+test('news content keeps document details and hides Radar details', () => {
   const html = render()
-  for (const content of ['Informativo', 'Distribuição', 'Acompanhar', 'Resumo do documento',
-    'Impacto do documento', 'Não requer ação imediata', '91%', 'Modelo modelo - Prompt v1', 'TEST11']) {
+  for (const content of ['Informativo', 'Distribuição', 'Resumo do documento', 'TEST11']) {
     assert.ok(html.includes(content), content)
+  }
+  for (const content of ['Impacto', 'Ação sugerida', 'Acompanhar', 'Não requer ação imediata',
+    'Confiança', '91%', 'Modelo modelo - Prompt v1']) {
+    assert.ok(!html.includes(content), content)
   }
   assert.match(render({ importance: 'NoAction', affectedAssets: [] }), /Sem ação/)
   assert.match(render({ affectedAssets: [] }), /Nenhum ativo listado/)
 })
 
-test('portfolio attention overrides the document action flag when available', () => {
+test('Radar content keeps impact, suggested action and confidence even without attention required', () => {
+  const html = render({ portfolioAssessment: { requiresAttention: false } })
+  for (const content of ['Impacto do documento', 'Ação sugerida', 'Acompanhar',
+    'Não requer ação imediata', 'Confiança', '91%', 'Modelo modelo - Prompt v1']) {
+    assert.ok(html.includes(content), content)
+  }
   assert.match(render({ requiresAction: true, portfolioAssessment: { requiresAttention: false } }), /Não requer ação imediata/)
   assert.match(render({ portfolioAssessment: { requiresAttention: true } }), /Requer atenção/)
-  assert.match(render({ requiresAction: true }), /Requer atenção/)
+  assert.doesNotMatch(render({ requiresAction: true }), /Requer atenção/)
 })
 
 test('modal content has no inner frame and keeps the document content', () => {
