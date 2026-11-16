@@ -11,6 +11,29 @@ namespace Prumo.Domain.Tests;
 public sealed class DocumentsControllerTests
 {
     [Fact]
+    public async Task Reprocess_failed_download_requeues_it_and_resets_attempts()
+    {
+        var options = new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new PrumoDbContext(options);
+        var asset = new Asset("TEST3", "Teste", AssetType.Stock, "Teste");
+        var portfolio = new Portfolio("Carteira");
+        portfolio.Positions.Add(new PortfolioPosition(portfolio.Id, asset.Id, 1m, 100m, 100m));
+        var document = new Document(asset.Id, DocumentType.Other, DateTimeOffset.UtcNow, "CVM", "doc", "https://example.test/doc", "fingerprint");
+        var job = new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow);
+        job.Start(DateTimeOffset.UtcNow);
+        job.MarkFailedPermanently(DateTimeOffset.UtcNow, "Download inválido");
+        document.MarkError();
+        db.AddRange(asset, portfolio, document, job);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DocumentsController(db).ReprocessFailedDocuments(portfolio.Id, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, Assert.IsType<ReprocessFailedDocumentsResponse>(Assert.IsType<OkObjectResult>(result.Result).Value).RequeuedCount);
+        Assert.Equal(ProcessingJobStatus.Queued, job.Status);
+        Assert.Equal(0, job.Attempts);
+        Assert.Equal(DocumentProcessingStatus.Discovered, document.ProcessingStatus);
+    }
+    [Fact]
     public async Task Duplicate_publication_returns_original_analysis_without_copying_it()
     {
         var options = new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;

@@ -54,6 +54,14 @@ test('Radar content keeps impact, suggested action and confidence even without a
   assert.doesNotMatch(render({ requiresAction: true }), /Requer atenção/)
 })
 
+test('news hides Radar details even when the document has an assessment', () => {
+  const html = renderToStaticMarkup(createElement(DocumentAnalysisContent, {
+    analysis: { ...analysis, portfolioAssessment: { requiresAttention: true } }, showRadarDetails: false,
+  }))
+  assert.doesNotMatch(html, /Impacto do documento|Ação sugerida|Confiança/)
+  assert.match(html, /Resumo do documento/)
+})
+
 test('modal content has no inner frame and keeps the document content', () => {
   const html = renderToStaticMarkup(createElement(DocumentAnalysisContent, { analysis, framed: false }))
   assert.doesNotMatch(html, /level-card|rounded-3xl|border-slate-300/)

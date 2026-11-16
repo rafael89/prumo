@@ -137,6 +137,14 @@ public sealed class DocumentAnalysisProcessor
 
         if (string.IsNullOrWhiteSpace(document.FilePath))
         {
+            if (await dbContext.ProcessingJobs.AnyAsync(item => item.DocumentId == document.Id
+                && item.JobType == ProcessingJobType.DownloadDocument
+                && (item.Status == ProcessingJobStatus.Queued || item.Status == ProcessingJobStatus.Processing), cancellationToken))
+            {
+                job.Defer(DateTimeOffset.UtcNow.AddMinutes(1));
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
             throw new InvalidOperationException("Documento sem arquivo armazenado.");
         }
 

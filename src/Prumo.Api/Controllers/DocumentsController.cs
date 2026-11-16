@@ -130,20 +130,28 @@ public sealed class DocumentsController : ControllerBase
         var errorFilter = request?.ErrorContains?.Trim();
         var jobs = await dbContext.ProcessingJobs
             .Include(job => job.Document)
-            .Where(job => job.JobType == ProcessingJobType.AnalyzeDocument
+            .Where(job => (job.JobType == ProcessingJobType.AnalyzeDocument || job.JobType == ProcessingJobType.DownloadDocument)
                 && job.Status == ProcessingJobStatus.Failed
+                && job.Document!.ProcessingStatus == DocumentProcessingStatus.Error
+                && !dbContext.ProcessingJobs.Any(active => active.DocumentId == job.DocumentId && active.JobType == job.JobType
+                    && (active.Status == ProcessingJobStatus.Queued || active.Status == ProcessingJobStatus.Processing))
                 && dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == job.Document!.AssetId && position.Quantity > 0)
                 && (string.IsNullOrEmpty(errorFilter) || (job.LastError != null && EF.Functions.ILike(job.LastError, $"%{errorFilter}%"))))
             .ToListAsync(cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
-        var downloadsQueued = new HashSet<Guid>();
-        foreach (var job in jobs)
+        var downloadsQueued = jobs.Where(job => job.JobType == ProcessingJobType.DownloadDocument)
+            .Select(job => job.DocumentId).ToHashSet();
+        foreach (var job in jobs.GroupBy(job => (job.DocumentId, job.JobType)).Select(group => group.OrderByDescending(job => job.CompletedAt).First()))
         {
             job.Requeue(now);
             if (job.Document is null) continue;
 
-            if (string.IsNullOrWhiteSpace(job.Document.FilePath))
+            if (job.JobType == ProcessingJobType.DownloadDocument)
+            {
+                job.Document.MarkPendingDownload();
+            }
+            else if (string.IsNullOrWhiteSpace(job.Document.FilePath))
             {
                 job.Document.MarkPendingDownload();
                 var activeDownload = await dbContext.ProcessingJobs.AnyAsync(item => item.DocumentId == job.DocumentId
@@ -155,7 +163,7 @@ public sealed class DocumentsController : ControllerBase
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Ok(new ReprocessFailedDocumentsResponse(jobs.Count));
+        return Ok(new ReprocessFailedDocumentsResponse(jobs.Select(job => (job.DocumentId, job.JobType)).Distinct().Count()));
     }
 
     [HttpGet("portfolios/{portfolioId:guid}/document-processing-status")]
@@ -164,7 +172,7 @@ public sealed class DocumentsController : ControllerBase
         if (!await dbContext.Portfolios.AnyAsync(portfolio => portfolio.Id == portfolioId, cancellationToken)) return NotFound();
 
         var statuses = await dbContext.Documents
-            .Where(document => dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == document.AssetId))
+            .Where(document => dbContext.PortfolioPositions.Any(position => position.PortfolioId == portfolioId && position.AssetId == document.AssetId && position.Quantity > 0))
             .Select(document => new
             {
                 document.ProcessingStatus,

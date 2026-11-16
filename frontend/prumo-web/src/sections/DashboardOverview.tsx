@@ -192,7 +192,7 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
   </article>
 }
 
-export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onClose, onResolve, onReopen, actionPending = false }: { item: DashboardAssessment; portfolioId: string; isResolved?: boolean; onClose: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean }) {
+export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onClose, onResolve, onReopen, actionPending = false, showRadarDetails = true }: { item: DashboardAssessment; portfolioId: string; isResolved?: boolean; onClose: () => void; onResolve?: () => void; onReopen?: () => void; actionPending?: boolean; showRadarDetails?: boolean }) {
   const queryClient = useQueryClient()
   const readAttemptedFor = useRef<string | null>(null)
   const { mutate: markRead, isError: markReadFailed } = useMutation({
@@ -254,7 +254,7 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
       {analysis.isLoading && <LoadingState message="Carregando análise…" className="my-4" />}
       {analysis.isError && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível carregar a análise deste documento.</p>}
       {!analysis.isLoading && !analysis.isError && !analysis.data && <p className="mt-5 rounded-xl border border-dashed border-slate-300 bg-stone-50 p-4 text-sm text-slate-600">Nenhuma análise validada foi encontrada para este documento ainda.</p>}
-      {analysis.data && <DocumentAnalysisContent analysis={analysis.data} framed={false} />}
+      {analysis.data && <DocumentAnalysisContent analysis={analysis.data} framed={false} showRadarDetails={showRadarDetails} />}
       </div>
       {hasVisibleAction && <div data-radar-actions="true" className="mt-6 grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white pt-4 sm:flex sm:flex-wrap">
         {canManageSituation() && !isResolved && onResolve && <button type="button" onClick={onResolve} disabled={actionPending} className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-amber-500 hover:bg-current/10 hover:text-amber-700 disabled:opacity-50"><FontAwesomeIcon icon={faCircleCheck} />Fechar situação</button>}
@@ -301,7 +301,7 @@ function RecentUpdatesCard({ items: initialItems, totalItems, portfolioId }: { i
         <div className="min-w-0 flex-1"><h3 className="line-clamp-2 sm:line-clamp-1 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</h3></div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
       </div>)}
-    </div>}{hasMore && <button type="button" disabled={news.isFetchingNextPage} onClick={() => void news.fetchNextPage()} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{news.isError && <p role="alert" className="mt-2 text-sm text-rose-700">Não foi possível carregar mais notícias. Tente novamente.</p>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} onClose={() => setSelectedItem(null)} />}
+    </div>}{hasMore && <button type="button" disabled={news.isFetchingNextPage} onClick={() => void news.fetchNextPage()} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{news.isError && <p role="alert" className="mt-2 text-sm text-rose-700">Não foi possível carregar mais notícias. Tente novamente.</p>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} showRadarDetails={false} onClose={() => setSelectedItem(null)} />}
   </article>
 }
 
