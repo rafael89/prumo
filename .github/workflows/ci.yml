@@ -125,6 +125,9 @@ jobs:
     name: Build and test images
     needs: validate
     runs-on: ubuntu-latest
+    concurrency:
+      group: prumo-images-${{ github.event_name == 'push' && 'main' || github.run_id }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -212,6 +215,12 @@ jobs:
             fi
             echo "${service}_image=$image" >> "$GITHUB_OUTPUT"
           done
+          if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$GITHUB_SHA" ]]; then
+            for service in api worker frontend; do
+              docker tag "prumo-$service:ci" "$repository-$service:latest"
+              docker push "$repository-$service:latest"
+            done
+          fi
 
   deploy:
     name: Deploy
