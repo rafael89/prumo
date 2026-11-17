@@ -276,6 +276,29 @@ public sealed class ContributionScenarioSelectionTests
     }
 
     [Fact]
+    public void Allocation_prompt_limits_context_and_prioritizes_actionable_assessments()
+    {
+        var candidate = Candidate("AAA3");
+        var reference = new EvidenceReference("Document", "doc", "label", new string('X', 5000));
+        var assessments = Enumerable.Range(0, 20).Select(i => new ContributionAssessmentContext(
+            i == 19 ? "High" : "Low", i == 19 ? "Monitor" : "None", "None",
+            $"assessment-{i}", "impact", "monitor", 0.8m, new[] { reference })).ToArray();
+        var events = Enumerable.Range(0, 20).Select(i => new CandidateIntelligenceEvent(Guid.NewGuid(),
+            InvestmentEventType.Other, DateTimeOffset.UnixEpoch.AddDays(i), $"event-{i}", Array.Empty<string>(), new[] { reference })).ToArray();
+        candidate = candidate with { CandidateIntelligence = CandidateIntelligence.Unavailable(candidate) with { Assessments = assessments, RecentEvents = events } };
+
+        var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 100m, new[] { candidate }, Array.Empty<ContributionScenarioOption>());
+        using var document = JsonDocument.Parse(prompt[(prompt.LastIndexOf("\n{") + 1)..]);
+        var context = document.RootElement.GetProperty("eligibleCandidates")[0].GetProperty("candidateIntelligence");
+        Assert.Equal(12, context.GetProperty("events").GetArrayLength());
+        Assert.Equal(8, context.GetProperty("omittedEventCount").GetInt32());
+        Assert.Equal(8, context.GetProperty("omittedAssessmentCount").GetInt32());
+        Assert.Equal("assessment-19", context.GetProperty("assessments")[0].GetProperty("summary").GetString());
+        Assert.Equal("event-19", context.GetProperty("events")[0].GetProperty("summary").GetString());
+        Assert.DoesNotContain(new string('X', 5000), prompt);
+    }
+
+    [Fact]
     public void Allocation_prompt_exposes_eligible_universe_and_keeps_scores_as_references()
     {
         var candidate = Candidate("AAA3") with { AllocationNeedScore = 90m, RecentContributionCount = 1, LastContributionAt = DateTimeOffset.UtcNow.AddDays(-5) };
