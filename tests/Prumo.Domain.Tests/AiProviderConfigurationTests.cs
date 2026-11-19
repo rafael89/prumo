@@ -4,6 +4,23 @@ namespace Prumo.Domain.Tests;
 
 public sealed class AiProviderConfigurationTests
 {
+    [Fact]
+    public void Disabled_ai_requires_no_credentials_or_model()
+    {
+        var settings = new AiProviderOptions { Provider = "None" };
+        Assert.True(new AiProviderOptionsValidator().Validate(null, settings).Succeeded);
+    }
+
+    [Theory]
+    [InlineData("Gemini")]
+    [InlineData("OpenAI")]
+    public void Selected_provider_without_key_is_rejected(string provider)
+    {
+        var result = new AiProviderOptionsValidator().Validate(null, new AiProviderOptions { Provider = provider, Model = "test-model" });
+        Assert.True(result.Failed);
+        Assert.Contains("ApiKey", result.FailureMessage);
+    }
+
     [Theory]
     [InlineData("Gemini")]
     [InlineData("OpenAI")]

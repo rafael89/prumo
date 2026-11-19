@@ -26,7 +26,11 @@ IHost host = Host.CreateDefaultBuilder(args)
     {
         var aiSettings = context.Configuration.GetSection("AI").Get<AiProviderOptions>() ?? new();
         var aiProvider = aiSettings.Provider.Trim();
-        if (string.Equals(aiProvider, "Fake", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(aiProvider, "None", StringComparison.OrdinalIgnoreCase))
+        {
+            // Analysis jobs remain queued until an AI provider is configured.
+        }
+        else if (string.Equals(aiProvider, "Fake", StringComparison.OrdinalIgnoreCase))
         {
             if (context.HostingEnvironment.IsProduction())
             {
@@ -113,7 +117,8 @@ IHost host = Host.CreateDefaultBuilder(args)
         services.AddHostedService<DocumentStorageRepairWorker>();
         services.AddHostedService<StorageMaintenanceWorker>();
         services.AddHostedService<DocumentDownloadWorker>();
-        services.AddHostedService<DocumentAnalysisWorker>();
+        if (!string.Equals(aiProvider, "None", StringComparison.OrdinalIgnoreCase))
+            services.AddHostedService<DocumentAnalysisWorker>();
         services.AddHostedService<ContributionGuidanceWorker>();
     })
     .Build();

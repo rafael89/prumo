@@ -315,7 +315,7 @@ function App() {
     whyItMatters: selectedNotification.whyItMatters,
     suggestedBehavior: selectedNotification.suggestedBehavior,
     occurredAt: selectedNotification.occurredAt,
-    attentionPriority: typeof selectedNotification.attentionPriority === 'number' ? selectedNotification.attentionPriority : 0,
+    attentionPriority: typeof selectedNotification.attentionPriority === 'number' ? selectedNotification.attentionPriority : Math.max(0, ['Low', 'Medium', 'High', 'Critical'].indexOf(selectedNotification.attentionPriority)),
     actionRequirement: selectedNotification.actionRequirement,
     capitalDecisionImpact: selectedNotification.capitalDecisionImpact,
     status: selectedNotification.status,

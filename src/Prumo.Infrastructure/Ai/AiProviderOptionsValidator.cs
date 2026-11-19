@@ -8,8 +8,8 @@ public sealed class AiProviderOptionsValidator : IValidateOptions<AiProviderOpti
     {
         var errors = new List<string>();
         var provider = options.Provider.Trim().ToUpperInvariant();
-        if (provider is not ("FAKE" or "GEMINI" or "OPENAI" or "HTTP"))
-            errors.Add("AI:Provider deve ser Fake, Gemini, OpenAI ou Http.");
+        if (provider is not ("NONE" or "FAKE" or "GEMINI" or "OPENAI" or "HTTP"))
+            errors.Add("AI:Provider deve ser None, Fake, Gemini, OpenAI ou Http.");
         if (options.TimeoutSeconds <= 0) errors.Add("AI:TimeoutSeconds deve ser positivo.");
         if (provider is "GEMINI" or "OPENAI" or "HTTP") ValidateProvider(options, "AI", errors);
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);

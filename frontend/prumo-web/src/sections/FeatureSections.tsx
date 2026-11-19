@@ -52,6 +52,7 @@ export function TargetAllocationSection({ portfolioId }: { portfolioId: string }
 }
 
 export function RadarSection({ portfolioId }: { portfolioId: string | null }) {
+  const aiConfiguration = useQuery({ queryKey: ['ai-configuration'], queryFn: () => getJson<{ enabled: boolean }>('/api/configuration/ai') })
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'all' | 'attention' | 'resolved'>('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -97,6 +98,7 @@ export function RadarSection({ portfolioId }: { portfolioId: string | null }) {
   const selectedModalItem: DashboardAssessment | null = selectedItem && selectedItem.evidence[0]?.documentId ? { assessmentId: selectedItem.assessmentId, documentId: selectedItem.evidence[0].documentId, asset: selectedItem.affectedAssets[0] ?? 'Carteira', eventSummary: selectedItem.eventSummary, whyItMatters: selectedItem.whyItMatters, suggestedBehavior: selectedItem.suggestedBehavior, occurredAt: selectedItem.occurredAt, attentionPriority: typeof selectedItem.attentionPriority === 'number' ? selectedItem.attentionPriority : radarPriorityValues.indexOf(selectedItem.attentionPriority), actionRequirement: selectedItem.actionRequirement, capitalDecisionImpact: selectedItem.capitalDecisionImpact, status: selectedItem.status === 'Resolved' ? 'Closed' : 'Active', documentImportance: selectedItem.documentImportance, events: selectedItem.events } : null
   const selectedItemId = selectedItem?.assessmentId
   return <section id="radar" className="relative w-full max-w-none px-0 pb-0 pt-0">
+    {aiConfiguration.data?.enabled === false && <p className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Análise por IA indisponível. Configure um provedor para habilitar novas análises; os resultados anteriores continuam disponíveis.</p>}
     <div className="absolute right-0 top-0 z-10" onMouseEnter={showRadarInfoAfterDelay} onMouseLeave={hideRadarInfo}>
       <button type="button" aria-label="Como funciona o Radar" aria-expanded={showRadarInfo} aria-describedby={showRadarInfo ? 'radar-info-tooltip' : undefined} onFocus={showRadarInfoAfterDelay} onBlur={hideRadarInfo} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition hover:border-amber-500 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400"><FontAwesomeIcon icon={faCircleInfo} /></button>
       {showRadarInfo && <div id="radar-info-tooltip" role="tooltip" className="absolute right-0 top-10 w-[min(23rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 text-left text-xs leading-5 text-slate-600 shadow-xl">

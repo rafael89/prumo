@@ -154,11 +154,15 @@ function formatRelativeDate(value: string | null) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date)
 }
 
+function priorityLevel(priority: number) {
+  return priority >= 3 ? 3 : priority === 2 ? 2 : priority === 1 ? 1 : 0
+}
+
 function RadarPriorityIcon({ priority }: { priority: number }) {
-  const level = priority >= 3 ? 3 : priority === 2 ? 2 : priority === 1 ? 1 : 0
+  const level = priorityLevel(priority)
   const icons = [faCircleInfo, faClock, faTriangleExclamation, faCircleExclamation]
   const tones = ['level-low', 'level-medium', 'level-high', 'level-critical']
-  const label = `Prioridade: ${priorityLabels[level]}`
+  const label = `Prioridade para a carteira: ${priorityLabels[level]}`
   return <span role="img" aria-label={label} title={label} className={`radar-priority-icon inline-flex h-7 w-7 shrink-0 items-center justify-center text-lg ${tones[level]}`}><FontAwesomeIcon icon={icons[level]} aria-hidden="true" /></span>
 }
 
@@ -182,6 +186,7 @@ function RadarCard({ items, portfolioId }: { items: DashboardAssessment[]; portf
       {items.slice(0, visibleCount).map(item => item.documentId ? <div key={item.assessmentId} role="button" tabIndex={0} onClick={() => setSelectedItem(item)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedItem(item) } }} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
         <div className="shrink-0"><RadarPriorityIcon priority={item.attentionPriority} /></div>
         <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600"><span>Prioridade {priorityLabels[priorityLevel(item.attentionPriority)].toLowerCase()}</span>{item.documentImportance === 'Critical' && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-rose-800">Documento crítico</span>}</div>
           <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{item.eventSummary}{(item.events?.length ?? 0) > 1 && <span className="ml-2 text-xs font-medium text-slate-500">· {item.events!.length} acontecimentos</span>}</h3>
         </div>
         {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
@@ -249,6 +254,7 @@ export function RecentAnalysisModal({ item, portfolioId, isResolved = false, onC
     <div className={`level-card flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-7 ${analysisTone(analysis.data?.importance ?? item.documentImportance ?? '')}`}>
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Resultado da análise</p><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><h2 id="recent-analysis-title" className="text-xl font-semibold text-slate-950">Análise de <span className="text-amber-700">{item.asset}</span></h2>{documentDetails.data?.sourceUrl && <a href={officialDocumentUrl(documentDetails.data.sourceUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-normal text-slate-500 transition hover:text-amber-700"><span>{documentTypeLabel(documentDetails.data)}</span><FontAwesomeIcon icon={faArrowUpRightFromSquare} className="text-[10px]" /></a>}</div></div><button type="button" aria-label="Fechar análise" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><FontAwesomeIcon icon={faXmark} /></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      {showRadarDetails && item.hasRadarAssessment !== false && <p className="mt-4 text-sm text-slate-600"><strong>Prioridade para sua carteira:</strong> {priorityLabels[priorityLevel(item.attentionPriority)]}{(analysis.data?.importance ?? item.documentImportance) === 'Critical' && <span className="ml-2 inline-block rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">Documento crítico</span>}</p>}
       {markReadFailed && <p role="alert" className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Não foi possível marcar o documento como lido. Feche e abra a análise para tentar novamente.</p>}
       {analysis.data && <div className="mb-5 grid grid-cols-2 gap-1 border-b border-slate-200 pb-4 pt-4 text-[11px] leading-4 text-slate-600"><span className="min-w-0"><strong>Publicado:</strong> {formatDate(analysis.data.publishedAt)}</span><span className="min-w-0"><strong>Analisado:</strong> {formatDate(analysis.data.createdAt)}</span></div>}
       {analysis.isLoading && <LoadingState message="Carregando análise…" className="my-4" />}

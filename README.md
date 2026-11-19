@@ -70,6 +70,7 @@ Você precisa de [Docker com Compose](https://docs.docker.com/compose/install/).
          Database__ApplyMigrations: "true"
          ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
          Storage__RootPath: /storage/documents
+         AI__Provider: ${AI_PROVIDER:-None}
          Discord__WebhookUrl: ${DISCORD_WEBHOOK_URL:-}
        ports:
          - "127.0.0.1:5200:8080"
@@ -93,8 +94,9 @@ Você precisa de [Docker com Compose](https://docs.docker.com/compose/install/).
          DOTNET_ENVIRONMENT: Production
          ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-prumo};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-dev123}
          Storage__RootPath: /storage/documents
-         AI__Provider: ${AI_PROVIDER:-Gemini}
+         AI__Provider: ${AI_PROVIDER:-None}
          AI__ApiKey: ${AI_API_KEY:-${GEMINI_API_KEY:-}}
+         AI__Endpoint: ${AI_ENDPOINT:-}
          AI__Model: ${AI_MODEL:-gemini-3.5-flash-lite}
          AI__FallbackModel: ${AI_FALLBACK_MODEL:-gemini-3.1-flash-lite}
          Discord__WebhookUrl: ${DISCORD_WEBHOOK_URL:-}
@@ -122,7 +124,7 @@ Você precisa de [Docker com Compose](https://docs.docker.com/compose/install/).
 
    Na mesma pasta, crie um arquivo `.env` usando o [.env.example](.env.example) como referência.
 
-2. Edite o `.env`: altere `POSTGRES_PASSWORD` e preencha `AI_API_KEY` com a chave do provedor escolhido. O exemplo usa Gemini.
+2. Edite o `.env` e altere `POSTGRES_PASSWORD`. A configuração de IA é opcional.
 
 3. Baixe as imagens e inicie os serviços:
 
@@ -141,13 +143,16 @@ As opções mais comuns estão no [.env.example](.env.example):
 | Variável | Uso |
 | --- | --- |
 | `POSTGRES_PASSWORD` | Senha do banco de dados. Altere antes de iniciar. |
-| `AI_PROVIDER` | Provedor de IA: `Gemini`, `OpenAI` ou `Http`. |
+| `AI_PROVIDER` | `None` (padrão), `Gemini`, `OpenAI` ou `Http`. |
 | `AI_API_KEY` | Chave do provedor. `GEMINI_API_KEY` também é aceita como alternativa. |
 | `AI_MODEL` | Modelo usado nas análises. |
 | `AI_FALLBACK_MODEL` | Modelo alternativo, quando aplicável ao provedor. |
+| `AI_ENDPOINT` | URL HTTP(S) do provedor `Http`. |
 | `DISCORD_WEBHOOK_URL` | Webhook opcional para notificações de logs. |
 
 Ao trocar de provedor, ajuste também os modelos. O provedor `Http` exige `AI__Endpoint` no ambiente do worker. A integração OpenAI atende à análise documental; nesse caso, a orientação de aportes usa o motor de regras.
+
+Gemini é o único provedor validado em uso até o momento. OpenAI e HTTP possuem suporte implementado, mas ainda não foram testados em uso.
 
 O Prumo foi pensado para uso pessoal em rede privada e ainda não possui autenticação de usuários. Para acesso remoto, proteja o frontend com VPN ou um proxy com autenticação e HTTPS. Não exponha o banco nem a API diretamente à internet.
 

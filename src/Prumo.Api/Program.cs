@@ -113,6 +113,8 @@ app.UseCors("frontend");
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapGet("/api/configuration/ai", (IConfiguration configuration) =>
+    Results.Ok(new { enabled = !string.Equals(configuration["AI:Provider"] ?? "None", "None", StringComparison.OrdinalIgnoreCase) }));
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/ready");
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
