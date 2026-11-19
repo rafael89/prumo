@@ -242,7 +242,7 @@ jobs:
           done
           docker save "${images[@]}" -o "$RUNNER_TEMP/prumo-images.tar"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           name: tested-images
@@ -263,7 +263,7 @@ jobs:
       frontend_image: ${{ steps.publish.outputs.frontend_image }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: tested-images
           path: ${{ runner.temp }}
