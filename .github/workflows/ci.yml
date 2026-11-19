@@ -456,6 +456,14 @@ jobs:
           printf '%s\n' "$GITHUB_SHA" > "$deployed_file"
           echo "deployed=true" >> "$GITHUB_OUTPUT"
 
+      - name: Cleanup old Docker artifacts
+        if: steps.deploy.outputs.deployed == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker image prune --all --force
+          docker builder prune --all --force
+
   notify-discord:
     name: Notify Discord
     needs:
