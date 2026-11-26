@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="frontend/prumo-web/public/prumo_logo.png" alt="Prumo" width="240">
-</p>
-
 # Prumo
 
 [![CI](https://github.com/rafael89/prumo/actions/workflows/ci.yml/badge.svg)](https://github.com/rafael89/prumo/actions/workflows/ci.yml)
