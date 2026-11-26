@@ -1353,6 +1353,34 @@ namespace Prumo.Infrastructure.Migrations
                     b.ToTable("PortfolioPositions");
                 });
 
+            modelBuilder.Entity("Prumo.Domain.Entities.PortfolioPositionQuantity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(20, 8)
+                        .HasColumnType("numeric(20,8)");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("PortfolioId", "AssetId", "RecordedAt");
+
+                    b.ToTable("PortfolioPositionQuantities");
+                });
+
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1875,6 +1903,21 @@ namespace Prumo.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Asset");
+                });
+
+            modelBuilder.Entity("Prumo.Domain.Entities.PortfolioPositionQuantity", b =>
+                {
+                    b.HasOne("Prumo.Domain.Entities.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Prumo.Domain.Entities.Portfolio", null)
+                        .WithMany()
+                        .HasForeignKey("PortfolioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Prumo.Domain.Entities.PortfolioTransaction", b =>

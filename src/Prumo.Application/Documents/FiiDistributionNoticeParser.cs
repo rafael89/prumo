@@ -65,12 +65,14 @@ public static partial class FiiDistributionNoticeParser
             .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
         var payments = NarrativePayment().Matches(summary).Select(x => ParseNarrativeDate(x.Groups["value"].Value))
             .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
-        var bases = NarrativeBase().Matches(summary).Select(x => ParseNarrativeDate(x.Groups["value"].Value))
-            .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
         return amounts.Length == 1 && payments.Length == 1
-            ? new FiiDistributionNotice(amounts[0], payments[0], bases.Length == 1 ? bases[0] : null)
+            ? new FiiDistributionNotice(amounts[0], payments[0], ReadAnalysisBaseDate(summary))
             : null;
     }
+
+    public static DateOnly? ReadAnalysisBaseDate(string text)
+        => NarrativeBase().Matches(text).Select(x => ParseNarrativeDate(x.Groups["value"].Value))
+            .Where(x => x.HasValue).Distinct().Take(2).ToArray() is [var date] ? date : null;
 
     private static decimal? ParseAmount(string value)
     {

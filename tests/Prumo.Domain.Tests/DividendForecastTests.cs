@@ -720,6 +720,55 @@ public sealed class DividendForecastTests
         Assert.Equal(2, decemberPayment.Components!.Count);
     }
 
+    [Theory]
+    [InlineData(AssetClass.Fii, true)]
+    [InlineData(AssetClass.Fii, false)]
+    [InlineData(AssetClass.BrazilianStock, false)]
+    public async Task Payment_uses_quantity_at_the_end_of_the_base_date_in_sao_paulo(AssetClass assetClass, bool officialFiiNotice)
+    {
+        await using var db = CreateDb();
+        var ct = TestContext.Current.CancellationToken;
+        var (portfolio, asset) = await Seed(db, assetClass, 200);
+        var month = CurrentMonthDate(1).AddMonths(-1);
+        var baseDate = month.AddDays(9);
+        var paymentDate = month.AddDays(24);
+        db.PortfolioPositionQuantities.AddRange(
+            new(portfolio.Id, asset.Id, LocalNoon(baseDate.AddDays(-1)), 5),
+            new(portfolio.Id, asset.Id, new DateTimeOffset(baseDate.ToDateTime(new TimeOnly(23, 30)), TimeSpan.FromHours(-3)), 10),
+            new(portfolio.Id, asset.Id, LocalNoon(baseDate.AddDays(1)), 200));
+        if (officialFiiNotice)
+            AddAnalyzedFiiNotice(db, asset, 1m, paymentDate, baseDate, LocalNoon(baseDate));
+        else
+        {
+            var description = assetClass == AssetClass.Fii ? "Rendimentos de R$ 1,00 por cota" : "Dividendos de R$ 1,00 por ação";
+            AddDistribution(db, asset, $"{description}. Data-base: {baseDate:dd/MM/yyyy}. Pagamento em {paymentDate:dd/MM/yyyy}.", LocalNoon(baseDate));
+        }
+        await db.SaveChangesAsync(ct);
+
+        var result = await new DividendForecastService(db).GetAsync(portfolio.Id, ct, month);
+
+        Assert.Equal(10m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(paymentDate, Assert.Single(result.Items).PaymentDate);
+    }
+
+    [Fact]
+    public async Task Position_history_is_saved_only_when_the_quantity_changes()
+    {
+        await using var db = CreateDb();
+        var ct = TestContext.Current.CancellationToken;
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 10);
+        var position = db.PortfolioPositions.Single();
+        position.Update(10, 10, 11);
+        await db.SaveChangesAsync(ct);
+        position.Update(200, 10, 11);
+        await db.SaveChangesAsync(ct);
+
+        var quantities = await db.PortfolioPositionQuantities.Where(x => x.PortfolioId == portfolio.Id && x.AssetId == asset.Id)
+            .OrderBy(x => x.RecordedAt).Select(x => x.Quantity).ToListAsync(ct);
+
+        Assert.Equal([10m, 200m], quantities);
+    }
+
     private static DateOnly CurrentMonthDate(int day)
     {
         var localNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "America/Sao_Paulo");
