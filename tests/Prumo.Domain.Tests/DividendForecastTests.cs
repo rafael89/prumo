@@ -627,6 +627,99 @@ public sealed class DividendForecastTests
         Assert.Equal("Sem pagamento informado neste mês", result.Items[0].Source);
     }
 
+    [Fact]
+    public async Task Xpml_notice_uses_the_held_ticker_instead_of_subscription_receipts()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.Fii, 190, "XPML11");
+        var month = CurrentMonthDate(1).AddMonths(-1);
+        var payment = month.AddDays(24);
+        AddDownloadedDocument(db, asset, DocumentType.Other, LocalNoon(month.AddDays(16)),
+            "Aviso aos Cotistas - Estruturado", "Rendimentos e Amortizações");
+        var text = $"""
+            CodNegociacao: XPML11
+            Data-base: {month.AddDays(16):dd/MM/yyyy}
+            Valor do provento (R$/unidade) | 0,8 |
+            Data do pagamento | {payment:dd/MM/yyyy} |
+            CodNegociacao: XPML13
+            Valor do provento (R$/unidade) | 0,74315885073 |
+            Data do pagamento | {payment:dd/MM/yyyy} |
+            CodNegociacao: XPML15
+            Valor do provento (R$/unidade) | 0,19706112005 |
+            Data do pagamento | {payment:dd/MM/yyyy} |
+            """;
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(text), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+
+        Assert.Equal(152m, result!.EstimatedMonthlyAmount);
+        Assert.Equal(payment, Assert.Single(result.Items).PaymentDate);
+    }
+
+    [Fact]
+    public async Task Taesa_unit_receives_the_announced_dividend_and_estimated_net_jcp()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 400, "TAEE11");
+        var month = new DateOnly(2026, 11, 1);
+        AddDownloadedDocument(db, asset, DocumentType.Other, LocalNoon(new DateOnly(2026, 8, 11)), "Aviso aos Acionistas");
+        const string text = """
+            Total dividendos intercalares (R$) | Dividendos intercalares por ação TAEE3/TAEE4 (R$) | Dividendos intercalares por Unit TAEE11 (R$)
+            R$ 82.942.850,32 | R$ 0,08025458488 | R$ 0,24076375464
+            Total juros sobre capital próprio (R$) | Juros sobre capital próprio por ação TAEE3/TAEE4 (R$) | Juros sobre capital próprio por Unit TAEE11 (R$)
+            R$ 123.838.599,86 | R$ 0,11982485996 | R$ 0,35947457988
+            O pagamento dos dividendos intercalares e JCP ocorrerá no dia 26 de novembro de 2026, com base na posição acionária do dia 14 de agosto de 2026.
+            Do JCP será deduzido o Imposto de Renda na Fonte.
+            """;
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await new DividendForecastService(db, new MemoryStorage(text), new TextExtractor())
+            .GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+
+        var item = Assert.Single(result!.Items);
+        Assert.Equal(new DateOnly(2026, 11, 26), item.PaymentDate);
+        Assert.Equal(214.94m, result.EstimatedMonthlyAmount);
+        Assert.Collection(item.Components!,
+            dividend => Assert.Equal(96.31m, dividend.EstimatedAmount),
+            jcp =>
+            {
+                Assert.Equal(118.63m, jcp.EstimatedAmount);
+                Assert.Equal("EstimatedNet", jcp.AmountBasis);
+                Assert.Equal(0.35947457988m, jcp.GrossAmountPerShare);
+            });
+    }
+
+    [Fact]
+    public async Task Petrobras_relevant_fact_assigns_each_installment_to_its_payment_month()
+    {
+        await using var db = CreateDb();
+        var (portfolio, asset) = await Seed(db, AssetClass.BrazilianStock, 200, "PETR4");
+        var month = new DateOnly(2026, 11, 1);
+        AddDownloadedDocument(db, asset, DocumentType.RelevantFact, LocalNoon(new DateOnly(2026, 8, 6)), "Fato Relevante");
+        const string text = """
+            Data base: Para ações negociadas na B3, a data base será em 21 de agosto de 2026.
+            Valor total de R$ 1,34814262 por ação ordinária e preferencial em circulação:
+            (i) a primeira parcela, no valor de R$ 0,67407131 por ação ordinária e preferencial, será paga em 23 de novembro de 2026, integralmente sob a forma de juros sobre capital próprio.
+            (ii) a segunda parcela, no valor de R$ 0, 67407131 por ação ordinária e preferencial, será paga em 21 de dezembro de 2026, sendo 0,47156696 sob a forma de dividendos e 0,20250435 sob a forma de juros sobre capital próprio.
+            Os valores estarão sujeitos à incidência de imposto de renda.
+            Para ADRs os pagamentos ocorrem em 01 de dezembro e 29 de dezembro de 2026.
+            """;
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var service = new DividendForecastService(db, new MemoryStorage(text), new TextExtractor());
+        var november = await service.GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month);
+        var december = await service.GetAsync(portfolio.Id, TestContext.Current.CancellationToken, month.AddMonths(1));
+
+        var novemberPayment = Assert.Single(november!.Items);
+        Assert.Equal(new DateOnly(2026, 11, 23), novemberPayment.PaymentDate);
+        Assert.Equal("JCP", Assert.Single(novemberPayment.Components!).Type);
+        Assert.Equal(111.22m, november.EstimatedMonthlyAmount);
+        var decemberPayment = Assert.Single(december!.Items);
+        Assert.Equal(new DateOnly(2026, 12, 21), decemberPayment.PaymentDate);
+        Assert.Equal(2, decemberPayment.Components!.Count);
+    }
+
     private static DateOnly CurrentMonthDate(int day)
     {
         var localNow = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "America/Sao_Paulo");
@@ -638,10 +731,10 @@ public sealed class DividendForecastTests
 
     private static PrumoDbContext CreateDb() => new(new DbContextOptionsBuilder<PrumoDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
-    private static async Task<(Portfolio, Asset)> Seed(PrumoDbContext db, AssetClass assetClass, decimal quantity)
+    private static async Task<(Portfolio, Asset)> Seed(PrumoDbContext db, AssetClass assetClass, decimal quantity, string ticker = "TEST11")
     {
         var portfolio = new Portfolio("Principal");
-        var asset = new Asset("TEST11", "Teste", assetClass == AssetClass.Fii ? AssetType.Fii : AssetType.Stock, null, assetClass);
+        var asset = new Asset(ticker, "Teste", assetClass == AssetClass.Fii ? AssetType.Fii : AssetType.Stock, null, assetClass);
         db.Portfolios.Add(portfolio);
         db.Assets.Add(asset);
         db.PortfolioPositions.Add(new PortfolioPosition(portfolio.Id, asset.Id, quantity, 10, 10));
@@ -651,6 +744,14 @@ public sealed class DividendForecastTests
 
     private static void AddIncome(PrumoDbContext db, Guid portfolioId, Guid assetId, decimal amount, DateTimeOffset date)
         => db.PortfolioCashFlows.Add(new PortfolioCashFlow(portfolioId, PortfolioCashFlowType.Income, amount, date, FinancialSource.Manual, assetId));
+
+    private static void AddDownloadedDocument(PrumoDbContext db, Asset asset, DocumentType type, DateTimeOffset publishedAt, string category, string? sourceType = null)
+    {
+        var document = new Document(asset.Id, type, publishedAt, "CVM/FNET", null, "https://source/distribution", Guid.NewGuid().ToString(),
+            sourceCategory: category, sourceType: sourceType);
+        document.MarkDownloaded("memory://distribution", "distribution-hash");
+        db.Documents.Add(document);
+    }
 
     private static void AddAnalyzedFiiNotice(PrumoDbContext db, Asset asset, decimal amount, DateOnly payment, DateOnly baseDate, DateTimeOffset publishedAt)
     {

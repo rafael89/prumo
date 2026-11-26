@@ -107,6 +107,47 @@ public sealed class RadarEligibilityTests
         Assert.Equal(2, await db.InvestmentEvents.CountAsync(ct));
     }
 
+    [Theory]
+    [InlineData("Positive", "CHANGE", null, false)]
+    [InlineData("Mixed", "CHANGE", null, false)]
+    [InlineData(null, "CHANGE", null, false)]
+    [InlineData("Negative", "CHANGE", "Inadimplência elevou a vacância e reduziu a receita.", true)]
+    [InlineData("Mixed", "CHANGE", "Parcela vencida pode executar a garantia.", true)]
+    [InlineData("Positive", "DECISION", null, true)]
+    public async Task Periodic_report_only_alerts_when_there_is_a_risk_or_decision(
+        string? direction, string basis, string? consequence, bool expected)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = CreateDb();
+        var portfolio = new Portfolio("Carteira");
+        var asset = new Asset("VILG11", "Vinci Logística", AssetType.Fii, "Logística");
+        portfolio.Positions.Add(new(portfolio.Id, asset.Id, 10, 100, 100));
+        PortfolioCalculator.RecalculateWeights(portfolio.Positions);
+        var document = new Document(asset.Id, DocumentType.Other, DateTimeOffset.UtcNow, "CVM/FNET", "1392029",
+            "https://example.test/relatorio", "relatorio", sourceCategory: "Relatórios", sourceType: "Outros Relatórios");
+        var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "old-prompt", AnalysisImportance.Relevant,
+            AnalysisClassification.AssetTransaction, true, SuggestedAction.Monitor, "Aquisição e novas locações no trimestre.",
+            "Impacto", "Impacto", [asset.Ticker], 1, "{}");
+        var item = new InvestmentEvent(analysis.Id, InvestmentEventType.AssetTransaction, null, analysis.Summary, []);
+        item.AffectedAssets.Add(asset);
+        item.SetRadarDetails(new(Importance: "Relevant", ImpactDirection: direction, AttentionBasis: basis,
+            AttentionReason: "Revisão", AttentionEvidence: "Aquisição de imóvel com parcelas previstas.", ConsequenceEvidence: consequence));
+        db.AddRange(portfolio, asset, document, analysis, item);
+        AddAssessment(db, portfolio, item);
+        await db.SaveChangesAsync(ct);
+        db.ChangeTracker.Clear();
+
+        var radar = new RadarController(db);
+        var response = Assert.IsType<RadarResponse>(Assert.IsType<OkObjectResult>(
+            (await radar.Get(portfolio.Id, null, null, null, notificationPending: true, ct: ct)).Result).Value);
+        var dashboard = Assert.IsType<DashboardResponse>(Assert.IsType<OkObjectResult>(
+            (await new PortfoliosController(db).GetDashboard(portfolio.Id, cancellationToken: ct)).Result).Value);
+
+        Assert.Equal(expected ? 1 : 0, response.RequiresAttention);
+        Assert.Equal(expected ? 1 : 0, dashboard.AttentionNow!.Count);
+        Assert.Equal(1, await db.DocumentAnalyses.CountAsync(ct));
+    }
+
     private static PrumoDbContext CreateDb() => new(new DbContextOptionsBuilder<PrumoDbContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 

@@ -53,7 +53,8 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             return Array.Empty<DocumentCandidate>();
         }
 
-        var year = DateTimeOffset.UtcNow.Year;
+        var lastYear = (to ?? DateTimeOffset.UtcNow).Year;
+        var firstYear = from?.Year ?? lastYear;
         var candidates = new List<DocumentCandidate>();
         var directFailureWarnings = new HashSet<string>(StringComparer.Ordinal);
 
@@ -62,22 +63,23 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             var isStock = group.Key;
             var groupAssets = group.ToArray();
             var template = isStock ? options.CompanhiasIpeUrlTemplate : options.DocumentosEventuaisUrlTemplate;
-            var uri = string.Format(CultureInfo.InvariantCulture, template, year);
-            logger.LogInformation("Consultando recurso CVM {ResourceUrl} para {TickerCount} ativo(s)", uri, groupAssets.Length);
-
-            try
+            var archiveRecords = new List<CvmDocumentRecord>();
+            var csvAvailable = false;
+            for (var year = firstYear; year <= lastYear; year++)
             {
-                IReadOnlyList<CvmDocumentRecord> records;
-                var csvAvailable = false;
+                var uri = string.Format(CultureInfo.InvariantCulture, template, year);
+                logger.LogInformation("Consultando recurso CVM {ResourceUrl} para {TickerCount} ativo(s)", uri, groupAssets.Length);
                 try
                 {
                     using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                     response.EnsureSuccessStatusCode();
                     var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-                    records = isStock
+                    var records = isStock
                         ? await ParseZipCsvAsync(content, cancellationToken)
                         : ParseCsv(Encoding.Latin1.GetString(content));
+                    archiveRecords.AddRange(records);
                     csvAvailable = true;
+                    logger.LogInformation("Recurso CVM {ResourceUrl} retornou {RecordCount} registro(s)", uri, records.Count);
                 }
                 catch (HttpRequestException exception)
                 {
@@ -88,10 +90,12 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     // progressed. Recent documents can still be obtained from
                     // the direct ENET/FNET endpoints below.
                     logger.LogInformation("Arquivo anual CVM ainda não publicado; continuando pela consulta direta: {RequestUrl}", uri);
-                    records = Array.Empty<CvmDocumentRecord>();
                 }
-                logger.LogInformation("Recurso CVM {ResourceUrl} retornou {RecordCount} registro(s)", uri, records.Count);
+            }
 
+            var recordsByIssuer = archiveRecords.ToLookup(record => NormalizeCnpj(record.Cnpj));
+            try
+            {
                 foreach (var asset in groupAssets)
                 {
                     var cnpj = asset.Cnpj;
@@ -103,7 +107,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
                     }
 
                     var normalizedCnpj = NormalizeCnpj(cnpj);
-                    var tickerRecords = records.Where(record => NormalizeCnpj(record.Cnpj) == normalizedCnpj).ToList();
+                    var tickerRecords = recordsByIssuer[normalizedCnpj].ToList();
                     if (isStock && options.EnetDirectDiscoveryEnabled)
                     {
                         var directRecords = await FindRecentEnetRecordsAsync(asset, normalizedCnpj, from, to, cancellationToken, directFailureWarnings);
@@ -144,7 +148,7 @@ public sealed class CvmFnetDocumentSource : IDocumentSource
             }
             catch (Exception exception)
             {
-                logger.LogError(exception, "Erro ao consultar a fonte {SourceName} em {RequestUrl}", Name, uri);
+                logger.LogError(exception, "Erro ao mapear os documentos da fonte {SourceName}", Name);
                 throw;
             }
         }

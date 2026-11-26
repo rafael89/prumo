@@ -21,6 +21,10 @@ public static partial class OfficialCvmHtmlExtractor
             && (uri.AbsolutePath.StartsWith("/ENETCONSULTA/", StringComparison.OrdinalIgnoreCase)
                 || uri.AbsolutePath.StartsWith("/ENET/", StringComparison.OrdinalIgnoreCase));
 
+    public static bool IsOfficialFnetUrl(Uri? uri)
+        => uri is { Scheme: "https" } && uri.Host.Equals("fnet.bmfbovespa.com.br", StringComparison.OrdinalIgnoreCase)
+            && uri.AbsolutePath.StartsWith("/fnet/publico/", StringComparison.OrdinalIgnoreCase);
+
     public static bool TryExtract(byte[] payload, out string text)
     {
         text = string.Empty;

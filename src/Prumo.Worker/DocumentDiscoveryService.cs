@@ -42,11 +42,14 @@ public sealed class DocumentDiscoveryService
     public async Task<DocumentDiscoveryRunSummary> DiscoverAsync(
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool includeRecentDistributions = false)
     {
         var interval = DocumentDiscoveryInterval.Create(from, to);
         var normalizedFrom = interval.From;
         var normalizedTo = interval.To;
+        var distributionFrom = normalizedTo.AddMonths(-6);
+        var sourceFrom = includeRecentDistributions && distributionFrom < normalizedFrom ? distributionFrom : normalizedFrom;
 
         var startedAt = Stopwatch.GetTimestamp();
         var usesRelationalDatabase = dbContext.Database.IsRelational();
@@ -94,7 +97,7 @@ public sealed class DocumentDiscoveryService
             {
                 candidates = await source.FindAsync(
                     assets.Select(asset => new DocumentSourceAsset(asset.Ticker, asset.Cnpj, asset.AssetClass)).ToArray(),
-                    normalizedFrom,
+                    sourceFrom,
                     normalizedTo,
                     cancellationToken);
             }
@@ -109,14 +112,15 @@ public sealed class DocumentDiscoveryService
             }
 
             var assetByTicker = assets.ToDictionary(asset => asset.Ticker, StringComparer.OrdinalIgnoreCase);
+            var activeAssetIds = assets.Select(asset => asset.Id).ToArray();
+            var existingDocuments = (await dbContext.Documents
+                .Where(document => document.SourceName == source.Name && activeAssetIds.Contains(document.AssetId))
+                .ToListAsync(cancellationToken)).ToLookup(document => document.AssetId);
             var reclassifiedDocuments = 0;
             foreach (var candidate in candidates)
             {
                 if (!assetByTicker.TryGetValue(candidate.Ticker, out var asset)) continue;
-                var existing = await dbContext.Documents.FirstOrDefaultAsync(document =>
-                    document.AssetId == asset.Id && document.SourceName == source.Name
-                    && ((!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && document.SourceIdentifier == candidate.SourceIdentifier)
-                        || document.SourceUrl == candidate.SourceUrl), cancellationToken);
+                var existing = existingDocuments[asset.Id].FirstOrDefault(document => SameSource(document, candidate));
                 if (existing is not null)
                 {
                     existing.UpdateSourceMetadata(candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies, candidate.DocumentType, candidate.DownloadUrl);
@@ -125,14 +129,35 @@ public sealed class DocumentDiscoveryService
             }
             if (reclassifiedDocuments > 0) await dbContext.SaveChangesAsync(cancellationToken);
 
+            if (includeRecentDistributions)
+            {
+                var activeDownloads = (await dbContext.ProcessingJobs.Where(job => job.JobType == ProcessingJobType.DownloadDocument
+                        && (job.Status == ProcessingJobStatus.Queued || job.Status == ProcessingJobStatus.Processing))
+                    .Select(job => job.DocumentId).ToListAsync(cancellationToken)).ToHashSet();
+                var released = existingDocuments.SelectMany(group => group).Where(document =>
+                    document.PublishedAt >= distributionFrom && document.PublishedAt <= normalizedTo
+                    && document.ProcessingStatus == DocumentProcessingStatus.Processed
+                    && document.FilePath is null && document.FileHash is not null && document.DownloadUrl is not null
+                    && !activeDownloads.Contains(document.Id)
+                    && DocumentClassificationPolicy.MayReportDistribution(document.Asset!.AssetClass, document.DocumentType,
+                        document.SourceCategory, document.SourceType, document.SourceSpecies)).ToList();
+                foreach (var document in released)
+                {
+                    document.MarkPendingDownload();
+                    dbContext.ProcessingJobs.Add(new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow));
+                }
+                if (released.Count > 0) await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
             var inInterval = candidates
-                .Where(candidate => interval.Contains(candidate.PublishedAt))
+                .Where(candidate => interval.Contains(candidate.PublishedAt)
+                    || includeRecentDistributions && candidate.PublishedAt >= distributionFrom && candidate.PublishedAt <= normalizedTo
+                    && assetByTicker.TryGetValue(candidate.Ticker, out var asset)
+                    && DocumentClassificationPolicy.MayReportDistribution(asset.AssetClass, candidate.DocumentType,
+                        candidate.SourceCategory, candidate.SourceType, candidate.SourceSpecies))
                 .ToList();
             var skipped = candidates.Count - inInterval.Count;
-            var existingDocuments = await dbContext.Documents
-                .Where(document => document.SourceName == source.Name && assets.Select(asset => asset.Id).Contains(document.AssetId))
-                .Select(document => new { document.AssetId, document.Fingerprint, document.SourceIdentifier, document.SourceUrl })
-                .ToListAsync(cancellationToken);
+            var documentsByAsset = existingDocuments.ToDictionary(group => group.Key, group => group.ToList());
             var existingCount = 0;
             var failed = 0;
             var newDocuments = 0;
@@ -147,11 +172,9 @@ public sealed class DocumentDiscoveryService
                 }
 
                 var fingerprint = Document.CreateFingerprint(candidate.Ticker, candidate.PublishedAt, candidate.DocumentType, source.Name, candidate.SourceIdentifier, candidate.SourceUrl);
-                var exists = existingDocuments.Any(document =>
-                    document.AssetId == asset.Id
-                    && (document.Fingerprint == fingerprint
-                        || (!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && document.SourceIdentifier == candidate.SourceIdentifier)
-                        || document.SourceUrl == candidate.SourceUrl));
+                if (!documentsByAsset.TryGetValue(asset.Id, out var assetDocuments))
+                    documentsByAsset[asset.Id] = assetDocuments = [];
+                var exists = assetDocuments.Any(document => document.Fingerprint == fingerprint || SameSource(document, candidate));
                 if (exists)
                 {
                     existingCount++;
@@ -173,7 +196,7 @@ public sealed class DocumentDiscoveryService
                     dbContext.ProcessingJobs.Add(new ProcessingJob(document.Id, ProcessingJobType.DownloadDocument, DateTimeOffset.UtcNow));
                 }
                 await dbContext.SaveChangesAsync(cancellationToken);
-                existingDocuments.Add(new { AssetId = asset.Id, Fingerprint = fingerprint, SourceIdentifier = candidate.SourceIdentifier, SourceUrl = candidate.SourceUrl });
+                assetDocuments.Add(document);
                 newDocuments++;
                 logger.LogInformation("Document {DocumentId} discovered and download job queued.", document.Id);
             }
@@ -192,6 +215,10 @@ public sealed class DocumentDiscoveryService
             }
         }
     }
+
+    private static bool SameSource(Document document, DocumentCandidate candidate)
+        => (!string.IsNullOrWhiteSpace(candidate.SourceIdentifier) && document.SourceIdentifier == candidate.SourceIdentifier)
+            || document.SourceUrl == candidate.SourceUrl;
 
     private DocumentDiscoveryRunSummary Complete(DateTimeOffset from, DateTimeOffset to, int eligibleAssets, int candidates, int newDocuments, int existingDocuments, int skipped, int failed, long startedAt)
     {

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Prumo.Application.Abstractions;
+using Prumo.Application.Documents;
 using Prumo.Application.PortfolioImports;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
@@ -48,17 +49,20 @@ public sealed class StorageMaintenanceWorker : BackgroundService
 
         var cutoff = DateTimeOffset.UtcNow.AddDays(-retention.RetainPdfDays.Value);
         var documents = await db.Documents
+            .Include(document => document.Asset)
             .Where(document => document.ProcessingStatus == DocumentProcessingStatus.Processed
                 && document.FilePath != null
                 && document.ProcessedAt != null
                 && document.ProcessedAt <= cutoff)
             .ToListAsync(cancellationToken);
-        foreach (var document in documents)
+        var expired = documents.Where(document => !DocumentClassificationPolicy.MayReportDistribution(document.Asset!.AssetClass,
+            document.DocumentType, document.SourceCategory, document.SourceType, document.SourceSpecies)).ToList();
+        foreach (var document in expired)
         {
             await storage.DeleteAsync(document.FilePath!, cancellationToken);
             document.ReleaseStoredFile();
         }
-        if (documents.Count > 0) await db.SaveChangesAsync(cancellationToken);
-        if (documents.Count > 0) logger.LogInformation("Política de retenção removeu {RemovedCount} PDF(s) já processado(s).", documents.Count);
+        if (expired.Count > 0) await db.SaveChangesAsync(cancellationToken);
+        if (expired.Count > 0) logger.LogInformation("Política de retenção removeu {RemovedCount} PDF(s) já processado(s).", expired.Count);
     }
 }

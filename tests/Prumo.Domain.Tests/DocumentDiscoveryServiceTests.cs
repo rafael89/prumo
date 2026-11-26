@@ -56,6 +56,36 @@ public sealed class DocumentDiscoveryServiceTests
     }
 
     [Fact]
+    public async Task Regular_discovery_backfills_recent_distribution_sources_and_recovers_released_files_once()
+    {
+        await using var db = CreateDb();
+        var asset = AddPositionedAsset(db, "TAEE11");
+        var earlier = From.AddMonths(-3);
+        var existing = new Document(asset.Id, DocumentType.Other, earlier, "Test source", "notice",
+            "https://example.test/notice", "notice", "https://example.test/notice.pdf", "Aviso aos Acionistas");
+        existing.MarkDownloaded("notice.pdf", "file-hash");
+        existing.MarkProcessed();
+        existing.ReleaseStoredFile();
+        db.Documents.Add(existing);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        db.ChangeTracker.Clear();
+        var source = new FakeDocumentSource(
+            Candidate(asset, "fact", earlier, DocumentType.RelevantFact),
+            Candidate(asset, "unrelated", earlier, DocumentType.Communication),
+            Candidate(asset, "too-old", To.AddMonths(-7), DocumentType.RelevantFact));
+        var service = CreateService(db, source);
+        var ct = TestContext.Current.CancellationToken;
+
+        await service.DiscoverAsync(From, To, ct, includeRecentDistributions: true);
+        await service.DiscoverAsync(From, To, ct, includeRecentDistributions: true);
+
+        Assert.Equal(To.AddMonths(-6), source.LastFrom);
+        Assert.Equal(new[] { "fact", "notice" }, db.Documents.OrderBy(x => x.SourceIdentifier).Select(x => x.SourceIdentifier).ToArray());
+        Assert.Equal(2, db.ProcessingJobs.Count());
+        Assert.Single(db.ProcessingJobs, job => job.DocumentId == existing.Id);
+    }
+
+    [Fact]
     public async Task Source_failure_is_propagated_and_does_not_persist_partial_documents()
     {
         await using var db = CreateDb();

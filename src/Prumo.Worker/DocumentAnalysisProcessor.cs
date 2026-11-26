@@ -261,6 +261,10 @@ public sealed class DocumentAnalysisProcessor
     private async Task ReleasePdfAfterAnalysisAsync(Document document, CancellationToken cancellationToken)
     {
         if (!retention.DeletePdfAfterAnalysis || string.IsNullOrWhiteSpace(document.FilePath)) return;
+        var assetClass = document.Asset?.AssetClass ?? await dbContext.Assets.Where(x => x.Id == document.AssetId)
+            .Select(x => x.AssetClass).SingleAsync(cancellationToken);
+        if (DocumentClassificationPolicy.MayReportDistribution(assetClass, document.DocumentType,
+            document.SourceCategory, document.SourceType, document.SourceSpecies)) return;
 
         var path = document.FilePath;
         var shared = await dbContext.Documents.AsNoTracking()

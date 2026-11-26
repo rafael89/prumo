@@ -8,6 +8,9 @@ public sealed record FiiDistributionNotice(decimal AmountPerUnit, DateOnly Payme
 
 public static partial class FiiDistributionNoticeParser
 {
+    [GeneratedRegex(@"(?im)(?:C[oó]digo\s+de\s+negocia[cç][aã]o|Cod(?:igo)?Negociacao|CodigoAtivo)\s*(?::\s*\|?|\|)\s*(?<ticker>[A-Z0-9]{4}\d{1,2})\b", RegexOptions.CultureInvariant)]
+    private static partial Regex TickerField();
+
     [GeneratedRegex(@"(?im)^\s*(?:Valor\s+do\s+provento\s*(?:\(R\$\s*/\s*unidade\))?|ValorProvento(?:PorCota|PorUnidade)?|ValorRendimento(?:PorCota|PorUnidade)?)\s*(?:[:|]\s*|\s+)(?:R\$\s*)?(?<value>\d[\d.,]*)", RegexOptions.CultureInvariant)]
     private static partial Regex AmountField();
 
@@ -30,7 +33,24 @@ public static partial class FiiDistributionNoticeParser
         => Normalize(category).Contains("AVISO AOS COTISTAS", StringComparison.Ordinal)
             && Normalize(type).Contains("RENDIMENTOS E AMORTIZACOES", StringComparison.Ordinal);
 
-    public static FiiDistributionNotice? Parse(string text)
+    public static FiiDistributionNotice? Parse(string text, string? ticker = null, string? analysisSummary = null)
+    {
+        var tickers = TickerField().Matches(text);
+        if (ticker is null || tickers.Count == 0)
+            return ParseFields(text) ?? (analysisSummary is null ? null : ParseAnalysisSummary(analysisSummary));
+
+        var notices = new List<FiiDistributionNotice>();
+        for (var i = 0; i < tickers.Count; i++)
+        {
+            if (!tickers[i].Groups["ticker"].Value.Equals(ticker, StringComparison.OrdinalIgnoreCase)) continue;
+            var end = i + 1 < tickers.Count ? tickers[i + 1].Index : text.Length;
+            var notice = ParseFields(text[tickers[i].Index..end]);
+            if (notice is not null) notices.Add(notice);
+        }
+        return notices.Distinct().Take(2).ToArray() is [var single] ? single : null;
+    }
+
+    private static FiiDistributionNotice? ParseFields(string text)
     {
         var amounts = AmountField().Matches(text).Select(x => ParseAmount(x.Groups["value"].Value)).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
         var payments = PaymentField().Matches(text).Select(x => ParseDate(x.Groups["value"].Value)).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();

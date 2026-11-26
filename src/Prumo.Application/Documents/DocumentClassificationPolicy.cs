@@ -58,6 +58,19 @@ public static class DocumentClassificationPolicy
         => new[] { sourceCategory, sourceType, sourceSpecies }.Select(Normalize)
             .Any(value => value is "AVISO AOS ACIONISTAS" or "AVISOS AOS ACIONISTAS");
 
+    public static bool IsPeriodicReport(string? sourceCategory, string? sourceType)
+        => Normalize(sourceCategory) is "RELATORIOS" or "INFORMES PERIODICOS"
+            || Map(sourceCategory, sourceType, null) is DocumentType.ManagementReport or DocumentType.MonthlyReport or DocumentType.QuarterlyReport;
+
+    public static bool MayReportDistribution(AssetClass assetClass, DocumentType documentType, string? category, string? type, string? species)
+        => assetClass switch
+        {
+            AssetClass.Fii => FiiDistributionNoticeParser.IsNotice(category, type),
+            AssetClass.BrazilianStock => IsShareholderNotice(category, type, species)
+                || documentType == DocumentType.RelevantFact,
+            _ => false
+        };
+
     public static string? GetAutomaticAnalysisIgnoredReason(string? sourceCategory, string? sourceType, string? sourceSpecies)
     {
         if (Map(sourceCategory, sourceType, sourceSpecies) == DocumentType.RelevantFact) return null;

@@ -27,7 +27,7 @@ internal sealed class PortfolioAssessmentReader(PrumoDbContext db, PortfolioAsse
                 IsEligible = RadarEligibilityPolicy.IsEligible(x.InvestmentEvent.EventType, x.InvestmentEvent.DocumentAnalysis.Classification,
                     x.InvestmentEvent.DocumentAnalysis.Document.SourceCategory,
                     x.InvestmentEvent.DocumentAnalysis.Document.SourceType,
-                    x.InvestmentEvent.DocumentAnalysis.Document.SourceSpecies)
+                    x.InvestmentEvent.DocumentAnalysis.Document.SourceSpecies, x.InvestmentEvent.RadarDetails)
             })
             .ToListAsync(ct)).Where(x => x.IsEligible).ToList();
         bool Fresh(PortfolioAssessmentReadRow row) => freshnessEvaluator.Evaluate(row.Assessment, snapshot, targetKey, row.Event, PortfolioImpactAssessmentService.CurrentVersion).Status == FreshnessStatus.Fresh;

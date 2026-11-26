@@ -8,7 +8,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
 {
     // v5 reaplica a regra percentual com os limites balanceados de 3%, 5% e 10%.
     // v4 usou a regra de existência de posição e não deve ser reutilizada.
-    public const string CurrentVersion = "portfolio-impact-v9";
+    public const string CurrentVersion = "portfolio-impact-v10";
     private const decimal MediumExposureThreshold = 3m;
     private const decimal HighExposureThreshold = 5m;
     private const decimal CriticalExposureThreshold = 10m;
@@ -23,7 +23,7 @@ public sealed class PortfolioImpactAssessmentService : IPortfolioImpactAssessmen
         if (!RadarEligibilityPolicy.IsEligible(context.InvestmentEvent))
             return new(AttentionPriority.Low, ActionRequirement.None, CapitalDecisionImpact.None,
                 context.InvestmentEvent.Summary,
-                "Emissão ou documento operacional de oferta; mantido no histórico, sem alerta no Radar.",
+                "Evento mantido no histórico, sem alerta no Radar.",
                 "Nenhuma ação específica necessária neste momento.", IntelligenceConfidence.High);
 
         var totalExposure = context.RelevantPositions.Sum(x => x.PortfolioWeight);

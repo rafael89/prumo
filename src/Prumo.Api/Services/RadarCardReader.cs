@@ -15,7 +15,7 @@ internal static class RadarCardReader
                 IsEligible = RadarEligibilityPolicy.IsEligible(x.InvestmentEvent!.EventType, x.InvestmentEvent.DocumentAnalysis!.Classification,
                     x.InvestmentEvent.DocumentAnalysis.Document!.SourceCategory,
                     x.InvestmentEvent.DocumentAnalysis.Document.SourceType,
-                    x.InvestmentEvent.DocumentAnalysis.Document.SourceSpecies),
+                    x.InvestmentEvent.DocumentAnalysis.Document.SourceSpecies, x.InvestmentEvent.RadarDetails),
                 Source = new RadarCardSource(x.InvestmentEvent.DocumentAnalysisId,
                 x.InvestmentEvent.DocumentAnalysis!.Document!.AssetId,
                 x.InvestmentEvent.DocumentAnalysis.Document.Asset!.AssetType,

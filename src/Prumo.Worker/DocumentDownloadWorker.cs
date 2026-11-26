@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using System.Text;
 using Prumo.Application.Abstractions;
+using Prumo.Application.Documents;
 using Prumo.Application.PortfolioImports;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
@@ -140,6 +141,10 @@ public sealed class DocumentDownloadWorker : BackgroundService
     private async Task ReleasePdfAfterExistingAnalysisAsync(Document document, PrumoDbContext dbContext, IFileStorage storage, CancellationToken cancellationToken)
     {
         if (!retention.DeletePdfAfterAnalysis || string.IsNullOrWhiteSpace(document.FilePath)) return;
+        var assetClass = document.Asset?.AssetClass ?? await dbContext.Assets.Where(x => x.Id == document.AssetId)
+            .Select(x => x.AssetClass).SingleAsync(cancellationToken);
+        if (DocumentClassificationPolicy.MayReportDistribution(assetClass, document.DocumentType,
+            document.SourceCategory, document.SourceType, document.SourceSpecies)) return;
         var path = document.FilePath;
         var shared = await dbContext.Documents.AsNoTracking().AnyAsync(item => item.Id != document.Id && item.FilePath == path, cancellationToken);
         if (!shared) await storage.DeleteAsync(path, cancellationToken);
@@ -159,7 +164,8 @@ public sealed class DocumentDownloadWorker : BackgroundService
         using var response = await SendDownloadWithRetryAsync(client, job.Document.Id, job.Document.DownloadUrl, cancellationToken);
         var payload = await response.Content.ReadAsByteArrayAsync(cancellationToken);
         var detected = DocumentPayloadDetector.TryDetect(payload, response.Content.Headers.ContentType?.MediaType, out var payloadKind);
-        if (!detected && OfficialCvmHtmlExtractor.IsOfficialCvmUrl(downloadUri) && OfficialCvmHtmlExtractor.TryExtract(payload, out _))
+        if (!detected && (OfficialCvmHtmlExtractor.IsOfficialCvmUrl(downloadUri) || OfficialCvmHtmlExtractor.IsOfficialFnetUrl(downloadUri))
+            && OfficialCvmHtmlExtractor.TryExtract(payload, out _))
         {
             payloadKind = DocumentPayloadKind.Html;
             detected = true;
@@ -192,6 +198,20 @@ public sealed class DocumentDownloadWorker : BackgroundService
     internal async Task<HttpResponseMessage> SendDownloadWithRetryAsync(HttpClient client, Guid documentId, string downloadUrl, CancellationToken cancellationToken)
     {
         Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri);
+        if (GetCvmConsultationUrl(uri) is { } consultationUrl)
+        {
+            // Buffer the official CVM response here so an interrupted PDF can fall back to the published URL.
+            try
+            {
+                var consultation = await client.GetAsync(consultationUrl, HttpCompletionOption.ResponseContentRead, cancellationToken);
+                if (consultation.IsSuccessStatusCode) return consultation;
+                consultation.Dispose();
+            }
+            catch (HttpRequestException exception)
+            {
+                logger.LogDebug(exception, "Consulta CVM indisponível, tentando o endereço publicado para {DocumentId}.", documentId);
+            }
+        }
         for (var attempt = 0; ; attempt++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
@@ -220,6 +240,20 @@ public sealed class DocumentDownloadWorker : BackgroundService
 
     private static Task<bool> HasActivePositionAsync(PrumoDbContext dbContext, Guid assetId, CancellationToken cancellationToken) =>
         dbContext.PortfolioPositions.AnyAsync(position => position.AssetId == assetId && position.Quantity > 0, cancellationToken);
+
+    private static Uri? GetCvmConsultationUrl(Uri? uri)
+    {
+        if (!OfficialCvmHtmlExtractor.IsOfficialCvmUrl(uri)
+            || !uri!.AbsolutePath.EndsWith("/frmDownloadDocumento.aspx", StringComparison.OrdinalIgnoreCase)) return null;
+        var parameters = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries);
+        if (!parameters.Contains("descTipo=IPE", StringComparer.OrdinalIgnoreCase)) return null;
+        var consultation = new UriBuilder(uri)
+        {
+            Path = "/ENETCONSULTA/frmDownloadDocumento.aspx",
+            Query = "Tela=99&" + string.Join('&', parameters.Where(parameter => !parameter.StartsWith("Tela=", StringComparison.OrdinalIgnoreCase)))
+        }.Uri;
+        return consultation == uri ? null : consultation;
+    }
 
     private static string GetFnetDocumentId(Uri uri) =>
         uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)

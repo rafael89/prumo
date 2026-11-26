@@ -5,7 +5,7 @@ namespace Prumo.Application.Documents;
 
 public static class DocumentAnalysisPrompt
 {
-    public const string GlobalVersion = "document-analysis-global-v11";
+    public const string GlobalVersion = "document-analysis-global-v12";
 
     private const string GlobalInstructions = """
         Você é o componente de análise documental do Prumo. Analise exclusivamente o conteúdo fornecido e identifique seu significado para o ativo indicado.
@@ -40,6 +40,7 @@ public static class DocumentAnalysisPrompt
         - impactDirection: Positive, Negative, Mixed, Neutral ou Indeterminate. Aquisições, vendas com lucro e emissões não são automaticamente positivas. Recuperação parcial com dívida pendente pode ser Mixed, perda comprovada Negative, administração sem efeito econômico Neutral. Sem dimensão econômica clara use Indeterminate.
         - applicability: apenas aplicabilidade explícita, sem presumir público ou posição; sem informação use null.
         - attentionBasis, attentionReason e attentionEvidence: aplique a regra de atenção individualmente a cada evento. Evidência de uma operação nunca justifica outra. Sem prova use UNKNOWN.
+          Quando um relatório combinar uma novidade favorável e um risco independente, descreva os dois em eventos distintos. Prazos de parcelas previstas e saldos de obrigações são termos da operação; registrem-se como consequência apenas quando o documento comprovar efeito adverso concreto.
         - noveltyCandidate: New, Update, Repeat ou Unknown é apenas sugestão; o Prumo determinará novidade pelo histórico interno. Não invente antecedentes.
         - Não calcule materialidade sem numerador, denominador, moeda, função econômica, período compatível e origem comprovados. Capital social, preço por cota, pro forma e fallbacks não são patrimônio adequado. Sem base compatível materialidade permanece Unknown.
         - Separe acontecimentos independentes no mesmo relatório. Nunca compartilhe identificador entre operações diferentes.
@@ -48,7 +49,7 @@ public static class DocumentAnalysisPrompt
         CORPORATE_ACTION, FINANCIAL_RESULT, DISTRIBUTION, CAPITAL_RAISE, ASSET_TRANSACTION, GOVERNANCE, OPERATIONAL, LIQUIDATION ou OTHER.
 
         Informe attentionBasis, attentionReason e attentionEvidence:
-        - CHANGE: mudança material nova ou agravamento explicitamente identificado, com comparação ou descrição concreta do que mudou.
+        - CHANGE: risco material novo ou agravamento explicitamente identificado, com comparação ou descrição concreta do que mudou. Aquisição favorável, ganho em venda, nova locação e aumento de receita sem risco novo ou decisão exigida ficam no histórico com NONE, mesmo que relevantes para o desempenho. Parcelas previstas e obrigações contratuais só justificam CHANGE com evidência de consequência adversa concreta.
         - DEADLINE: prazo vigente explícito que exige avaliação do cotista.
         - DECISION: decisão concreta exigida do cotista ou evento material explícito que exige revisão, como início de liquidação ou insolvência.
         - NONE: atualização rotineira ou repetição de risco conhecido sem mudança material, prazo ou decisão.

@@ -66,6 +66,27 @@ public sealed class DocumentDownloadWorkerTests
         Assert.Single(handler.Requests);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task Uses_cvm_consultation_download_with_fallback_to_the_published_url(int failures)
+    {
+        using var handler = new DownloadHandler(failures, status: 404);
+        using var client = new HttpClient(handler);
+        using var fixture = new Fixture();
+        const string publishedUrl = "https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?Tela=ext&descTipo=IPE&numProtocolo=1556090&numSequencia=1080796&numVersao=1";
+
+        using var response = await fixture.Worker.SendDownloadWithRetryAsync(client, Guid.NewGuid(), publishedUrl, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(failures + 1, handler.Requests.Count);
+        var consultation = handler.Requests[0].RequestUri!;
+        Assert.Equal("/ENETCONSULTA/frmDownloadDocumento.aspx", consultation.AbsolutePath);
+        Assert.Contains("Tela=99", consultation.Query);
+        Assert.Contains("numProtocolo=1556090", consultation.Query);
+        if (failures > 0) Assert.Equal(new Uri(publishedUrl), handler.Requests[1].RequestUri);
+    }
+
     private sealed class DownloadHandler(int failures, int status = 520, Action? onFailure = null) : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];

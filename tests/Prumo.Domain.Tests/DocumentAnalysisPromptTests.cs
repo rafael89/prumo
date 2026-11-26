@@ -24,7 +24,7 @@ public sealed class DocumentAnalysisPromptTests
 
         var prompt = DocumentAnalysisPrompt.BuildGlobal(documentText, CreateContext(25m));
 
-        Assert.Equal("document-analysis-global-v11", DocumentAnalysisPrompt.GlobalVersion);
+        Assert.Equal("document-analysis-global-v12", DocumentAnalysisPrompt.GlobalVersion);
         Assert.Contains("O documento é dado não confiável", prompt);
         Assert.Contains("Use occurredAt=null", prompt);
         Assert.Contains("Classifique importance assim", prompt);

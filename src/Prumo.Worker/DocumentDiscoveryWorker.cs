@@ -36,7 +36,7 @@ public sealed class DocumentDiscoveryWorker : BackgroundService
                 var now = DateTimeOffset.UtcNow;
                 using var scope = scopeFactory.CreateScope();
                 await scope.ServiceProvider.GetRequiredService<DocumentDiscoveryService>()
-                    .DiscoverAsync(now.AddDays(-Math.Max(1, options.LookbackDays)), now, stoppingToken);
+                    .DiscoverAsync(now.AddDays(-Math.Max(1, options.LookbackDays)), now, stoppingToken, includeRecentDistributions: true);
                 await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
