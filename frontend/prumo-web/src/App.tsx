@@ -1,9 +1,10 @@
 import { LoadingState } from './components/LoadingState'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation } from 'react-router'
+import { Link, Navigate, useLocation, type Location } from 'react-router'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import './App.css'
 import type { Dashboard, DashboardAssessment } from './sections/DashboardOverview'
+import type { PositionFormFeedback, PositionFormField } from './sections/PortfolioSection'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowTrendUp, faArrowUp, faBell, faCheckDouble, faEye, faEyeSlash, faFileLines, faGaugeHigh, faMoon, faSatelliteDish, faSun, faWallet } from '@fortawesome/free-solid-svg-icons'
 import { getJson, sendJson, sendVoid } from './api/client'
@@ -68,6 +69,7 @@ type CreatePositionRequest = {
   currentPrice: number | null
   registerPurchase?: boolean
 }
+type PositionFormContext = { portfolioId: string; location: Location }
 type UpdatePositionRequest = {
   quantity: number
   averagePrice: number
@@ -75,9 +77,10 @@ type UpdatePositionRequest = {
   registerPurchase?: boolean
   purchaseUnitPrice?: number
 }
-type PurchaseConfirmation =
+type PurchaseConfirmation = PositionFormContext & (
   | { kind: 'create'; request: CreatePositionRequest; ticker: string }
   | { kind: 'update'; positionId: string; request: UpdatePositionRequest; ticker: string; addedQuantity: number }
+)
 
 const assetTypeOptions: Array<{ value: AssetType; label: string }> = [
   { value: 0, label: 'Ação' },
@@ -104,8 +107,9 @@ function App() {
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null)
   const [documentSelection, setDocumentSelection] = useState<{ key: string; id: string | null }>({ key: '', id: null })
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
-  const [purchaseConfirmation, setPurchaseConfirmation] = useState<PurchaseConfirmation | null>(null)
+  const [pendingPurchaseConfirmation, setPurchaseConfirmation] = useState<PurchaseConfirmation | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
+  const [positionFeedback, setPositionFeedback] = useState<(PositionFormContext & { value: PositionFormFeedback }) | null>(null)
   const [privacyHidden, setPrivacyHidden] = useState(() => {
     try {
       return localStorage.getItem('prumo.privacy.hidden') === 'true'
@@ -155,6 +159,11 @@ function App() {
     return () => window.clearTimeout(timeout)
   }, [feedback])
   useEffect(() => {
+    if (positionFeedback?.value.tone !== 'success') return
+    const timeout = window.setTimeout(() => setPositionFeedback(current => current === positionFeedback ? null : current), 4000)
+    return () => window.clearTimeout(timeout)
+  }, [positionFeedback])
+  useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > 500)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
@@ -189,6 +198,10 @@ function App() {
     portfolios.data?.find((item) => item.id === selectedPortfolioId)
     ?? portfolios.data?.[0]
     ?? null
+  const visiblePositionFeedback = positionFeedback?.location === location && positionFeedback.portfolioId === activePortfolio?.id
+    ? positionFeedback.value : null
+  const purchaseConfirmation = pendingPurchaseConfirmation?.location === location && pendingPurchaseConfirmation.portfolioId === activePortfolio?.id
+    ? pendingPurchaseConfirmation : null
   const activeDocumentSelectionKey = `${documentSelectionKey}|${activePortfolio?.id ?? ''}`
   const selectedDocumentId = documentSelection.key === activeDocumentSelectionKey ? documentSelection.id : documentIdFromUrl
   const setSelectedDocumentId = (id: string | null) => setDocumentSelection({ key: activeDocumentSelectionKey, id })
@@ -360,14 +373,15 @@ function App() {
   })
 
   const createPosition = useMutation({
-    mutationFn: (request: CreatePositionRequest) => sendJson<Position, CreatePositionRequest>(`/api/portfolios/${activePortfolio!.id}/positions`, 'POST', request),
-    onSuccess: async (created) => {
-      setFeedback({ tone: 'success', message: `Posição ${created.ticker} adicionada com sucesso.` })
+    mutationFn: ({ portfolioId, request }: PositionFormContext & { request: CreatePositionRequest }) =>
+      sendJson<Position, CreatePositionRequest>(`/api/portfolios/${portfolioId}/positions`, 'POST', request),
+    onSuccess: async (created, { portfolioId, location }) => {
+      setPositionFeedback({ portfolioId, location, value: { tone: 'success', message: `Posição ${created.ticker} adicionada com sucesso.` } })
       setPositionForm({ ticker: '', name: '', assetType: 0, sector: '', quantity: '', averagePrice: '', currentPrice: '' })
-      await refreshPortfolioData(queryClient, activePortfolio?.id)
+      await refreshPortfolioData(queryClient, portfolioId)
     },
-    onError: (error: Error) => {
-      setFeedback({ tone: 'error', message: error.message })
+    onError: (error: Error, { portfolioId, location }) => {
+      setPositionFeedback({ portfolioId, location, value: { tone: 'error', message: error.message } })
     },
   })
 
@@ -409,35 +423,40 @@ function App() {
 
   function handleCreatePosition(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!activePortfolio) {
-      setFeedback({ tone: 'error', message: 'Crie ou selecione uma carteira antes de adicionar posições.' })
-      return
+    if (!activePortfolio) return
+    setPositionFeedback(null)
+
+    const showError = (field: PositionFormField, message: string) => {
+      setPositionFeedback({ portfolioId: activePortfolio.id, location, value: { tone: 'error', field, message } })
+      const input = event.currentTarget.elements.namedItem(field)
+      if (input instanceof HTMLInputElement) input.focus()
     }
 
+    const ticker = positionForm.ticker.trim()
     const quantity = Number(positionForm.quantity.replace(',', '.'))
     const averagePrice = 0
     const currentPrice = parseOptionalNumber(positionForm.currentPrice)
 
-    if (!positionForm.ticker.trim()) {
-      setFeedback({ tone: 'error', message: 'O ticker do ativo é obrigatório.' })
+    if (!ticker) {
+      showError('ticker', 'O ticker do ativo é obrigatório.')
       return
     }
 
-    if (Number.isNaN(quantity) || (currentPrice !== null && Number.isNaN(currentPrice))) {
-      setFeedback({ tone: 'error', message: 'Preencha quantidade e cotação com números válidos.' })
+    if (!Number.isFinite(quantity) || (currentPrice !== null && !Number.isFinite(currentPrice))) {
+      showError(!Number.isFinite(quantity) ? 'quantity' : 'current-price', 'Preencha quantidade e cotação com números válidos.')
       return
     }
 
     const request: CreatePositionRequest = {
-      ticker: positionForm.ticker.trim(),
-      name: positionForm.ticker.trim(),
+      ticker,
+      name: ticker,
       assetType: positionForm.assetType,
       sector: null,
       quantity,
       averagePrice,
       currentPrice,
     }
-    setPurchaseConfirmation({ kind: 'create', request, ticker: request.ticker })
+    setPurchaseConfirmation({ kind: 'create', portfolioId: activePortfolio.id, location, request, ticker: request.ticker })
   }
 
   function startEditing(position: Position) {
@@ -452,6 +471,7 @@ function App() {
 
   function handleUpdatePosition(event: FormEvent<HTMLFormElement>, positionId: string) {
     event.preventDefault()
+    if (!activePortfolio) return
     const quantity = Number(editForm.quantity.replace(',', '.'))
     const averagePrice = Number(editForm.averagePrice.replace(',', '.'))
     const currentPrice = parseOptionalNumber(editForm.currentPrice)
@@ -464,7 +484,7 @@ function App() {
     const request: UpdatePositionRequest = { quantity, averagePrice, currentPrice }
     const previousQuantity = dashboard.data?.positions.find(position => position.id === positionId)?.quantity ?? quantity
     if (quantity > previousQuantity) {
-      setPurchaseConfirmation({ kind: 'update', positionId, request, ticker: dashboard.data?.positions.find(position => position.id === positionId)?.ticker ?? 'ativo', addedQuantity: quantity - previousQuantity })
+      setPurchaseConfirmation({ kind: 'update', portfolioId: activePortfolio.id, location, positionId, request, ticker: dashboard.data?.positions.find(position => position.id === positionId)?.ticker ?? 'ativo', addedQuantity: quantity - previousQuantity })
       return
     }
     updatePosition.mutate({ positionId, request })
@@ -473,12 +493,15 @@ function App() {
   function finishPurchaseConfirmation(registerPurchase: boolean, values?: Record<string, string>) {
     if (!purchaseConfirmation) return
     const unitPrice = values ? parseOptionalNumber(values.unitPrice) : null
-    if (registerPurchase && (unitPrice === null || Number.isNaN(unitPrice) || unitPrice <= 0)) {
-      setFeedback({ tone: 'error', message: 'Informe um preço unitário de compra positivo.' })
-      return
+    if (registerPurchase && (unitPrice === null || !Number.isFinite(unitPrice) || unitPrice <= 0)) {
+      return 'Informe um preço unitário de compra positivo.'
     }
     if (purchaseConfirmation.kind === 'create') {
-      createPosition.mutate({ ...purchaseConfirmation.request, averagePrice: registerPurchase ? unitPrice! : 0, registerPurchase })
+      createPosition.mutate({
+        portfolioId: purchaseConfirmation.portfolioId,
+        location: purchaseConfirmation.location,
+        request: { ...purchaseConfirmation.request, averagePrice: registerPurchase ? unitPrice! : 0, registerPurchase },
+      })
     } else {
       updatePosition.mutate({ positionId: purchaseConfirmation.positionId, request: { ...purchaseConfirmation.request, purchaseUnitPrice: registerPurchase ? unitPrice! : undefined, registerPurchase } })
     }
@@ -534,10 +557,10 @@ function App() {
           {portfolios.isError && <p className="text-rose-700">Não foi possível conectar ao serviço do Prumo. Tente novamente em alguns instantes.</p>}
 
           {route === '/portfolio' && !portfolios.isLoading && !portfolios.isError && <div className="portfolio-layout grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)] xl:items-start *:min-w-0">
-            <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} positionForm={positionForm} setPositionForm={setPositionForm} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} onImportStateChange={setImportProcessing} />
+            <PortfolioSection portfolios={portfolios} activePortfolio={activePortfolio} portfolioName={portfolioName} setPortfolioName={setPortfolioName} handleCreatePortfolio={handleCreatePortfolio} createPortfolio={createPortfolio} deletePortfolio={deletePortfolio} renamePortfolio={renamePortfolio} editingPortfolioId={editingPortfolioId} setEditingPortfolioId={setEditingPortfolioId} editingPortfolioName={editingPortfolioName} setEditingPortfolioName={setEditingPortfolioName} setSelectedPortfolioId={setSelectedPortfolioId} setSelectedDocumentId={setSelectedDocumentId} setPositionPage={setPositionPage} setFeedback={setFeedback} privacyHidden={privacyHidden} togglePrivacy={() => setPrivacyHidden((current) => !current)} positionForm={positionForm} setPositionForm={setPositionForm} positionFeedback={visiblePositionFeedback} clearPositionFeedback={() => setPositionFeedback(null)} assetTypeOptions={assetTypeOptions} handleCreatePosition={handleCreatePosition} createPosition={createPosition} dashboard={dashboard} editingPositionId={editingPositionId} startEditing={startEditing} handleUpdatePosition={handleUpdatePosition} editForm={editForm} setEditForm={setEditForm} updatePosition={updatePosition} setEditingPositionId={setEditingPositionId} deletePosition={deletePosition} selectedAsset={selectedAsset} setSelectedAssetId={setSelectedAssetId} onImportStateChange={setImportProcessing} />
           </div>}
         </section>
-        {purchaseConfirmation && <AppDialog
+        {route === '/portfolio' && purchaseConfirmation && <AppDialog
           title={`Registrar ${purchaseConfirmation.kind === 'create' ? 'a inclusão' : 'o aumento'} de ${purchaseConfirmation.ticker} como compra?`}
           description={purchaseConfirmation.kind === 'create' ? 'Se confirmar, essa posição também será registrada no histórico como um aporte de compra.' : `A quantidade aumentou em ${purchaseConfirmation.addedQuantity}. Se confirmar, esse acréscimo será registrado no histórico como um aporte de compra.`}
           fields={[{ name: 'unitPrice', label: 'Preço unitário de compra', defaultValue: purchaseConfirmation.kind === 'create' ? positionForm.currentPrice : purchaseConfirmation.request.averagePrice.toString(), inputMode: 'decimal', decimalPlaces: 2 }]}
@@ -558,6 +581,7 @@ function App() {
 
 
 async function refreshPortfolioData(queryClient: QueryClient, portfolioId: string | undefined) {
+  await queryClient.invalidateQueries({ queryKey: portfolioId ? ['dividend-forecast', portfolioId] : ['dividend-forecast'] })
   await queryClient.invalidateQueries({ queryKey: ['portfolios'] })
   if (portfolioId) {
     await queryClient.invalidateQueries({ queryKey: ['dashboard', portfolioId] })

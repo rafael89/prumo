@@ -1,6 +1,6 @@
 import { LoadingState } from '../components/LoadingState'
 import { useEffect, useRef, useState } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
@@ -309,7 +309,6 @@ type DividendComponent = { type: string; estimatedAmount: number; amountBasis: s
 
 type DividendForecast = {
   estimatedMonthlyAmount: number
-  referenceMonth: string
   items: Array<{
     assetId: string
     ticker: string
@@ -339,18 +338,14 @@ function DividendPaymentDate({ value }: { value: string }) {
   </time>
 }
 
-function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: string; privacyHidden: boolean }) {
+function DividendForecastWidget({ forecast, month, onMonthChange, privacyHidden }: {
+  forecast: UseQueryResult<DividendForecast>
+  month: string
+  onMonthChange: (month: string) => void
+  privacyHidden: boolean
+}) {
   const initialVisibleCount = 5
-  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
   const [allDividendsVisible, setAllDividendsVisible] = useState(false)
-  const forecast = useQuery({
-    queryKey: ['dividend-forecast', portfolioId, selectedMonth],
-    queryFn: async () => {
-      const response = await fetch(`${apiBaseUrl}/api/portfolios/${portfolioId}/dividend-forecast${selectedMonth ? `?month=${selectedMonth}` : ''}`)
-      if (!response.ok) throw new Error('Não foi possível carregar a previsão de rendimentos.')
-      return response.json() as Promise<DividendForecast>
-    },
-  })
   const currency = (amount: number) => privacyHidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
   const orderedItems = (forecast.data?.items ?? [])
     .filter(item => item.paymentDate !== null && item.estimatedMonthlyAmount !== null)
@@ -367,16 +362,15 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
         estimatedMonthlyAmount: component.estimatedAmount,
       })) : [{ ...item, key, label: '' }]
     })
-  const referenceMonth = selectedMonth ?? forecast.data?.referenceMonth
   const total = currency(forecast.data?.estimatedMonthlyAmount ?? 0)
   return <div className="relative order-1 min-w-0 lg:self-stretch">
     <article className="dividend-forecast flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:absolute lg:inset-0 lg:py-2">
     <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
-      {referenceMonth && <MonthSwitcher month={referenceMonth} onMonthChange={setSelectedMonth} />}
+      <MonthSwitcher month={month} onMonthChange={onMonthChange} />
     </div>
     <div role="region" aria-label="Lista de rendimentos" tabIndex={0} className="dividend-forecast-scroll min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain lg:pr-2">
-    {forecast.isLoading ? <LoadingState message="Calculando previsão…" className="mt-4" /> : forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
+    {!forecast.data && forecast.isPending ? <LoadingState message="Calculando previsão…" className="mt-4" /> : !forecast.data && forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
       <div className="mt-5 divide-y divide-slate-200 sm:hidden">
         {orderedItems.map((item, index) => <div key={item.key} className={`grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 ${index >= initialVisibleCount && !allDividendsVisible ? 'hidden' : ''}`}>
           <div className="min-w-0">
@@ -391,7 +385,7 @@ function DividendForecastWidget({ portfolioId, privacyHidden }: { portfolioId: s
     </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum pagamento com valor e data informados neste mês.</p>}
     </div>
     {orderedItems.length > initialVisibleCount && <button type="button" aria-expanded={allDividendsVisible} onClick={() => setAllDividendsVisible(current => !current)} className="mt-2 min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-400 sm:hidden">{allDividendsVisible ? 'Mostrar menos' : `Ver todos os ${orderedItems.length} rendimentos`}</button>}
-    <footer className="mt-1 flex shrink-0 items-baseline justify-between gap-3 border-t border-slate-200 pt-1 text-slate-950"><strong className="text-sm">Total</strong><strong className="text-lg">{forecast.isLoading || forecast.isError ? '—' : total}</strong></footer>
+    <footer className="mt-1 flex shrink-0 items-baseline justify-between gap-3 border-t border-slate-200 pt-1 text-slate-950"><strong className="text-sm">Total</strong><strong className="text-lg">{forecast.data ? total : '—'}</strong></footer>
   </article>
   </div>
 }
@@ -412,6 +406,19 @@ function PortfolioAllocationCard({ data, privacyHidden = false }: { data: Dashbo
 }
 
 export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoading = false, portfoliosError = false, retryPortfolios, privacyHidden = false }: DashboardOverviewProps) {
+  const [month, setMonth] = useState(() => `${new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()).slice(0, 7)}-01`)
+  const portfolioId = activePortfolio?.id
+  const forecast = useQuery({
+    queryKey: ['dividend-forecast', portfolioId, month],
+    enabled: Boolean(portfolioId && (dashboard.data?.positionCount ?? activePortfolio?.positionCount)),
+    staleTime: 60_000,
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`${apiBaseUrl}/api/portfolios/${portfolioId}/dividend-forecast?month=${month}`, { signal })
+      if (!response.ok) throw new Error('Não foi possível carregar a previsão de rendimentos.')
+      return response.json() as Promise<DividendForecast>
+    },
+  })
+
   if (portfoliosLoading) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><LoadingState message="Carregando sua visão geral…" className="my-4" /></section>
   if (portfoliosError) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-rose-200 bg-rose-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-rose-700">Serviço temporariamente indisponível</p><h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Não conseguimos carregar sua carteira.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">O Prumo está com dificuldade para se conectar ao serviço neste momento. Seus dados não foram apagados. Tente novamente em alguns instantes.</p>{retryPortfolios && <button type="button" onClick={retryPortfolios} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Tentar novamente</button>}</div></section>
   if (!activePortfolio) return <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-7 sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Primeiros passos</p><h1 className="mt-3 text-3xl font-semibold tracking-tight">Sua carteira começa aqui.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-700">Crie uma carteira e importe seu relatório consolidado da B3 para o Prumo entender seus investimentos.</p><Link to="/portfolio" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Criar carteira <FontAwesomeIcon icon={faArrowRight} /></Link></div></section>
@@ -427,7 +434,7 @@ export function DashboardOverview({ dashboard, activePortfolio, portfoliosLoadin
     </header>
     <div className="grid w-full min-w-0 items-start gap-4 lg:grid-cols-2">
       <PortfolioAllocationCard data={data} privacyHidden={privacyHidden} />
-      <DividendForecastWidget key={activePortfolio.id} portfolioId={activePortfolio.id} privacyHidden={privacyHidden} />
+      <DividendForecastWidget key={activePortfolio.id} forecast={forecast} month={month} onMonthChange={setMonth} privacyHidden={privacyHidden} />
       <div className="order-2 min-w-0 lg:col-span-2"><RadarCard items={data.attentionNow ?? []} portfolioId={activePortfolio.id} /></div>
       <div className="order-3 min-w-0 self-start lg:col-span-2"><RecentUpdatesCard items={data.recentUpdates ?? []} totalItems={data.recentUpdatesTotalItems ?? data.recentUpdates?.length ?? 0} portfolioId={activePortfolio.id} /></div>
     </div>

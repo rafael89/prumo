@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
@@ -28,9 +29,12 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
         var monthEnd = new DateTimeOffset(endDateTime, timeZone.GetUtcOffset(endDateTime)).ToUniversalTime();
         var positions = await db.PortfolioPositions.AsNoTracking().Include(x => x.Asset)
             .Where(x => x.PortfolioId == portfolioId).ToListAsync(ct);
-        var assetIds = positions.Select(x => x.AssetId).ToHashSet();
+        var distributionPositions = positions.Where(x => x.Asset?.AssetClass is AssetClass.Fii or AssetClass.BrazilianStock)
+            .ToDictionary(x => x.AssetId);
+        var distributionAssetIds = distributionPositions.Keys.ToArray();
+        var stockIds = distributionPositions.Values.Where(x => x.Asset!.AssetClass == AssetClass.BrazilianStock).Select(x => x.AssetId).ToHashSet();
         var quantityHistory = (await db.PortfolioPositionQuantities.AsNoTracking()
-            .Where(x => x.PortfolioId == portfolioId && assetIds.Contains(x.AssetId) && x.RecordedAt < monthEnd)
+            .Where(x => x.PortfolioId == portfolioId && distributionAssetIds.Contains(x.AssetId) && x.RecordedAt < monthEnd)
             .OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id).ToListAsync(ct))
             .ToLookup(x => x.AssetId);
         decimal QuantityOn(PortfolioPosition position, DateOnly? baseDate)
@@ -42,75 +46,83 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
             .Where(x => x.PortfolioId == portfolioId && x.Type == PortfolioCashFlowType.Income
                 && x.OccurredAt >= monthStart && x.OccurredAt < monthEnd && x.OccurredAt <= now)
             .ToListAsync(ct);
-        var events = assetIds.Count == 0 ? new List<InvestmentEvent>() : await db.InvestmentEvents.AsNoTracking()
+        var events = distributionAssetIds.Length == 0 ? [] : await db.InvestmentEvents.AsNoTracking()
             .AsSplitQuery().Include(x => x.AffectedAssets).Include(x => x.DocumentAnalysis!).ThenInclude(x => x.Document)
-            .Where(x => x.AffectedAssets.Any(a => assetIds.Contains(a.Id)) && x.CreatedAt <= now
+            .Where(x => x.CreatedAt <= now && x.DocumentAnalysis!.Document!.PublishedAt <= now
+                && x.AffectedAssets.Any(a => stockIds.Contains(a.Id)
+                    || (x.EventType == InvestmentEventType.Distribution && distributionAssetIds.Contains(a.Id)))
                 && !db.DocumentAnalyses.Any(other => other.DocumentId == x.DocumentAnalysis!.DocumentId && other.CreatedAt > x.DocumentAnalysis.CreatedAt))
             .ToListAsync(ct);
         var calculated = DividendForecastCalculator.Calculate(positions, events, now, referenceMonth, QuantityOn);
         var items = calculated.GroupBy(x => x.AssetId).ToDictionary(x => x.Key, x => x.First());
-        var stockIds = positions.Where(x => x.Asset?.AssetClass == AssetClass.BrazilianStock).Select(x => x.AssetId).ToHashSet();
         var stockItems = calculated.Where(x => stockIds.Contains(x.AssetId) && x.PaymentDate is not null).ToList();
-        if (assetIds.Count > 0)
+        if (distributionAssetIds.Length > 0)
         {
-            var assetClasses = positions.Where(x => x.Asset is not null).ToDictionary(x => x.AssetId, x => x.Asset!.AssetClass);
             var documents = await db.Documents.AsNoTracking()
-                .Where(x => assetIds.Contains(x.AssetId) && x.PublishedAt <= now)
+                .Where(x => distributionAssetIds.Contains(x.AssetId) && x.PublishedAt <= now)
                 .OrderByDescending(x => x.PublishedAt).ThenByDescending(x => x.DiscoveredAt).ThenByDescending(x => x.Id).ToListAsync(ct);
-            documents = documents.Where(x => assetClasses.TryGetValue(x.AssetId, out var assetClass)
-                && DocumentClassificationPolicy.MayReportDistribution(assetClass, x.DocumentType, x.SourceCategory, x.SourceType, x.SourceSpecies)).ToList();
+            documents = documents.Where(x => DocumentClassificationPolicy.MayReportDistribution(
+                distributionPositions[x.AssetId].Asset!.AssetClass, x.DocumentType, x.SourceCategory, x.SourceType, x.SourceSpecies)).ToList();
             var noticeIds = documents.Select(x => x.Id).ToArray();
-            var noticeSummaries = noticeIds.Length == 0 ? new Dictionary<Guid, string>() :
-                (await db.DocumentAnalyses.AsNoTracking()
-                    .Where(x => noticeIds.Contains(x.DocumentId))
-                    .Select(x => new { x.DocumentId, x.Summary, x.CreatedAt })
-                    .ToListAsync(ct))
-                .GroupBy(x => x.DocumentId)
-                .ToDictionary(x => x.Key, x => x.OrderByDescending(y => y.CreatedAt).First().Summary);
-            foreach (var assetDocuments in documents.GroupBy(x => x.AssetId))
+            var noticeSummaries = noticeIds.Length == 0 ? new Dictionary<Guid, string?>() : await db.Documents.AsNoTracking()
+                .Where(x => noticeIds.Contains(x.Id))
+                .Select(x => new { x.Id, Summary = db.DocumentAnalyses.Where(a => a.DocumentId == x.Id)
+                    .OrderByDescending(a => a.CreatedAt).Select(a => a.Summary).FirstOrDefault() })
+                .ToDictionaryAsync(x => x.Id, x => x.Summary, ct);
+            var eventsByAsset = events.SelectMany(x => x.AffectedAssets.Select(a => (a.Id, Event: x)))
+                .ToLookup(x => x.Id, x => x.Event);
+            var documentItems = new ConcurrentDictionary<Guid, IReadOnlyList<DividendForecastItem>>();
+            // Each asset keeps publication order while independent document reads run concurrently.
+            await Parallel.ForEachAsync(documents.GroupBy(x => x.AssetId),
+                new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = 4 }, async (assetDocuments, token) =>
             {
-                var position = positions.Single(x => x.AssetId == assetDocuments.Key);
-                if (position.Asset is null) continue;
+                var position = distributionPositions[assetDocuments.Key];
+                var ticker = position.Asset!.Ticker;
                 if (position.Asset.AssetClass == AssetClass.Fii)
                 {
                     foreach (var document in assetDocuments)
                     {
-                        var text = await ReadDocumentTextAsync(document, ct);
                         var summary = noticeSummaries.GetValueOrDefault(document.Id);
-                        var notice = FiiDistributionNoticeParser.Parse(text ?? "", position.Asset.Ticker, summary);
+                        var cacheKey = (document.Id, document.FileHash, ticker, summary);
+                        var notice = await ReadDocumentAsync(document, cacheKey,
+                            text => FiiDistributionNoticeParser.Parse(text ?? "", ticker, summary), token);
                         if (notice is null || !SameMonth(notice.PaymentDate, referenceMonth)) continue;
                         var quantity = QuantityOn(position, notice.BaseDate);
-                        if (quantity > 0)
-                        {
-                            items[document.AssetId] = new DividendForecastItem(document.AssetId, position.Asset.Ticker,
+                        documentItems[position.AssetId] = [quantity > 0
+                            ? new DividendForecastItem(document.AssetId, ticker,
                                 decimal.Round(notice.AmountPerUnit * quantity, 2), "Aviso aos Cotistas",
-                                document.SourceUrl, document.PublishedAt, notice.PaymentDate);
-                        }
-                        else
-                        {
-                            items[document.AssetId] = new DividendForecastItem(document.AssetId, position.Asset.Ticker, null, "Sem posição na data-base", null, null);
-                        }
+                                document.SourceUrl, document.PublishedAt, notice.PaymentDate)
+                            : new DividendForecastItem(document.AssetId, ticker, null, "Sem posição na data-base", null, null)];
                         break;
                     }
+                    return;
                 }
-                else if (position.Asset.AssetClass == AssetClass.BrazilianStock)
+
+                var evidence = DividendForecastCalculator.ReadStockEvidence(eventsByAsset[position.AssetId], now, ticker).ToList();
+                foreach (var document in assetDocuments)
                 {
-                    var evidence = DividendForecastCalculator.ReadStockEvidence(events.Where(x => x.AffectedAssets.Any(a => a.Id == position.AssetId)), now, position.Asset.Ticker).ToList();
-                    foreach (var document in assetDocuments)
-                    {
-                        var text = await ReadDocumentTextAsync(document, ct);
-                        var original = text is null ? [] : DividendForecastCalculator.ParseStockEvidence(text, document, position.Asset.Ticker);
-                        if (original.Count > 0)
-                            evidence.RemoveAll(x => x.Document.Id == document.Id);
-                        else if (!evidence.Any(x => x.Document.Id == document.Id) && noticeSummaries.TryGetValue(document.Id, out var summary))
-                            original = DividendForecastCalculator.ParseStockEvidence(summary, document, position.Asset.Ticker);
-                        evidence.AddRange(original);
-                    }
-                    var payments = DividendForecastCalculator.BuildStockItems(position, evidence, referenceMonth, QuantityOn);
-                    stockItems.RemoveAll(x => x.AssetId == position.AssetId);
-                    stockItems.AddRange(payments);
-                    items[position.AssetId] = payments.FirstOrDefault() ?? new DividendForecastItem(position.AssetId, position.Asset.Ticker, null, "Sem pagamento informado neste mês", null, null);
+                    var isNotice = DocumentClassificationPolicy.IsShareholderNotice(document.SourceCategory, document.SourceType, document.SourceSpecies);
+                    var cacheKey = (document.Id, document.FileHash, ticker, isNotice);
+                    var original = await ReadDocumentAsync(document, cacheKey,
+                        text => text is null ? [] : DividendForecastCalculator.ParseStockNotices(text, ticker, isNotice), token);
+                    if (original.Count > 0)
+                        evidence.RemoveAll(x => x.Document.Id == document.Id);
+                    else if (!evidence.Any(x => x.Document.Id == document.Id) && noticeSummaries.GetValueOrDefault(document.Id) is { } summary)
+                        original = DividendForecastCalculator.ParseStockNotices(summary, ticker, isNotice);
+                    evidence.AddRange(DividendForecastCalculator.ToStockEvidence(original, document, isNotice));
                 }
+                documentItems[position.AssetId] = DividendForecastCalculator.BuildStockItems(position, evidence, referenceMonth, QuantityOn);
+            });
+
+            foreach (var (assetId, payments) in documentItems)
+            {
+                if (stockIds.Contains(assetId))
+                {
+                    stockItems.RemoveAll(x => x.AssetId == assetId);
+                    stockItems.AddRange(payments);
+                }
+                items[assetId] = payments.FirstOrDefault() ?? new DividendForecastItem(assetId, distributionPositions[assetId].Asset!.Ticker,
+                    null, "Sem pagamento informado neste mês", null, null);
             }
         }
         foreach (var position in positions.Where(x => x.Asset is not null))
@@ -135,20 +147,20 @@ public sealed class DividendForecastService(PrumoDbContext db, IFileStorage? sto
     private static bool SameMonth(DateOnly date, DateOnly referenceMonth)
         => date.Year == referenceMonth.Year && date.Month == referenceMonth.Month;
 
-    private async Task<string?> ReadDocumentTextAsync(Document document, CancellationToken ct)
+    private async Task<T> ReadDocumentAsync<T>(Document document, object cacheKey, Func<string?, T> parse, CancellationToken ct)
     {
-        if (storage is null || extractor is null || string.IsNullOrWhiteSpace(document.FilePath)) return null;
-        var cacheKey = $"dividend-document-text:{document.Id}:{document.FileHash}";
-        if (cache is not null && cache.TryGetValue(cacheKey, out string? cached)) return cached;
+        ct.ThrowIfCancellationRequested();
+        if (storage is null || extractor is null || string.IsNullOrWhiteSpace(document.FilePath)) return parse(null);
+        if (cache is not null && cache.TryGetValue(cacheKey, out T? cached)) return cached!;
         try
         {
             await using var stream = await storage.OpenReadAsync(document.FilePath, ct);
             var extracted = await extractor.ExtractAsync(stream, ct);
-            var text = extracted.Succeeded ? extracted.Text : null;
-            cache?.Set(cacheKey, text, TimeSpan.FromHours(4));
-            return text;
+            var result = parse(extracted.Succeeded ? extracted.Text : null);
+            cache?.Set(cacheKey, result, TimeSpan.FromHours(4));
+            return result;
         }
-        catch (IOException) { return null; }
+        catch (IOException) { return parse(null); }
     }
 }
 
@@ -230,9 +242,14 @@ public static partial class DividendForecastCalculator
     internal static IReadOnlyList<StockDistributionEvidence> ParseStockEvidence(string text, Document document, string ticker)
     {
         var isNotice = DocumentClassificationPolicy.IsShareholderNotice(document.SourceCategory, document.SourceType, document.SourceSpecies);
-        var notices = isNotice ? StockDividendNoticeParser.ParseAll(text, ticker) : StockDividendNoticeParser.ParseInstallments(text, ticker);
-        return notices.Select(notice => new StockDistributionEvidence(notice, document, isNotice ? "Aviso aos Acionistas" : "Fato Relevante")).ToArray();
+        return ToStockEvidence(ParseStockNotices(text, ticker, isNotice), document, isNotice).ToArray();
     }
+
+    internal static IReadOnlyList<StockDividendNotice> ParseStockNotices(string text, string ticker, bool isNotice)
+        => isNotice ? StockDividendNoticeParser.ParseAll(text, ticker) : StockDividendNoticeParser.ParseInstallments(text, ticker);
+
+    internal static IEnumerable<StockDistributionEvidence> ToStockEvidence(IEnumerable<StockDividendNotice> notices, Document document, bool isNotice)
+        => notices.Select(notice => new StockDistributionEvidence(notice, document, isNotice ? "Aviso aos Acionistas" : "Fato Relevante"));
 
     public static IReadOnlyList<DividendForecastItem> BuildStockItems(PortfolioPosition position, IEnumerable<StockDistributionEvidence> evidence, DateOnly referenceMonth,
         Func<PortfolioPosition, DateOnly?, decimal>? quantityOn = null)

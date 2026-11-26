@@ -111,6 +111,20 @@
 [data-theme='light'] .text-slate-400 { color: #64748b; }
 [data-theme='light'] .border-slate-200 { border-color: #dbe3ed; }
 
+@media (hover: hover) {
+  .month-switcher-button:hover > span {
+    background-color: #fffbeb;
+    border-color: #d97706;
+    color: #92400e;
+  }
+
+  [data-theme='dark'] .month-switcher-button:hover > span {
+    background-color: #3a3025;
+    border-color: #a47a34;
+    color: #fcd34d;
+  }
+}
+
 @media (max-width: 639px) {
   .app-header > nav { padding-inline: .5rem; }
   .app-header .nav-scroll {

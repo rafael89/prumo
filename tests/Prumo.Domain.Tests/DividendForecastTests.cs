@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 using Prumo.Api.Services;
 using Prumo.Application.Abstractions;
@@ -38,6 +39,7 @@ public sealed class DividendForecastTests
             // PostgreSQL stores microseconds; avoid sub-microsecond rounding at the boundary.
             AddIncome(db, portfolio.Id, asset.Id, 30, end.AddSeconds(-1));
             AddIncome(db, portfolio.Id, asset.Id, 2000, end);
+            AddAnalyzedFiiNotice(db, asset, 1m, month.AddMonths(-1), month.AddMonths(-1), start.AddDays(-1));
             await db.SaveChangesAsync(ct);
 
             var result = await new DividendForecastService(db).GetAsync(portfolio.Id, ct, month);
@@ -52,6 +54,39 @@ public sealed class DividendForecastTests
             await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", connection);
             await drop.ExecuteNonQueryAsync(CancellationToken.None);
         }
+    }
+
+    [Theory]
+    [InlineData(AssetClass.Fii)]
+    [InlineData(AssetClass.BrazilianStock)]
+    public async Task Parsed_document_is_reused_between_months_and_refreshed_when_the_file_changes(AssetClass assetClass)
+    {
+        await using var db = CreateDb();
+        var ct = TestContext.Current.CancellationToken;
+        var (portfolio, asset) = await Seed(db, assetClass, 10);
+        var month = CurrentMonthDate(1).AddMonths(-1);
+        var payment = month.AddDays(19);
+        var isFii = assetClass == AssetClass.Fii;
+        AddDownloadedDocument(db, asset, isFii ? DocumentType.Other : DocumentType.RelevantFact, LocalNoon(month),
+            isFii ? "Aviso aos Cotistas - Estruturado" : "Aviso aos Acionistas", isFii ? "Rendimentos e Amortizações" : null);
+        await db.SaveChangesAsync(ct);
+
+        var text = isFii ? $"Valor do provento: 1,00\nData do pagamento: {payment:dd/MM/yyyy}"
+            : $"Dividendos: R$ 1,00 por ação. Pagamento em {payment:dd/MM/yyyy}.";
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var storage = new MemoryStorage(text);
+        var service = new DividendForecastService(db, storage, new TextExtractor(), cache);
+
+        Assert.Equal(10m, (await service.GetAsync(portfolio.Id, ct, month))!.EstimatedMonthlyAmount);
+        Assert.Equal(0m, (await service.GetAsync(portfolio.Id, ct, month.AddMonths(1)))!.EstimatedMonthlyAmount);
+        Assert.Equal(1, storage.ReadCount);
+
+        db.Documents.Single().MarkDownloaded("memory://distribution", "revised-distribution-hash");
+        await db.SaveChangesAsync(ct);
+        var revisedStorage = new MemoryStorage(text.Replace("1,00", "2,00", StringComparison.Ordinal));
+        var revisedService = new DividendForecastService(db, revisedStorage, new TextExtractor(), cache);
+        Assert.Equal(20m, (await revisedService.GetAsync(portfolio.Id, ct, month))!.EstimatedMonthlyAmount);
+        Assert.Equal(1, revisedStorage.ReadCount);
     }
 
     [Fact]
@@ -828,9 +863,15 @@ public sealed class DividendForecastTests
 
     private sealed class MemoryStorage(string content) : IFileStorage
     {
+        private int readCount;
+        public int ReadCount => readCount;
+
         public Task<StoredFile> SaveAsync(Guid documentId, Stream data, string extension, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken = default)
-            => Task.FromResult<Stream>(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
+        {
+            Interlocked.Increment(ref readCount);
+            return Task.FromResult<Stream>(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
+        }
     }
 
     private sealed class TextExtractor : IPdfTextExtractor

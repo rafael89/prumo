@@ -3,7 +3,7 @@ import { useState, type Dispatch, type FormEvent, type SetStateAction } from 're
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import { Pagination } from '../components/Pagination'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faBan, faCheck, faEye, faEyeSlash, faPen, faTrash, faPlus } from '@fortawesome/free-solid-svg-icons'
+import { faBan, faCheck, faEye, faEyeSlash, faPen, faTrash, faPlus, faXmark } from '@fortawesome/free-solid-svg-icons'
 import { AppDialog } from '../components/AppDialog'
 import { Link } from 'react-router'
 import { maskDecimalInput } from '../utils/decimalInput'
@@ -12,6 +12,9 @@ type AssetType = 0 | 1 | 2 | 3
 type PortfolioItem = { id: string; name: string; totalValue: number; positionCount: number }
 type Position = { id: string; assetId: string; assetClass: number; ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null; currentValue: number | null; portfolioWeight: number }
 type Feedback = { tone: 'success' | 'error'; message: string } | null
+export type PositionFormField = 'ticker' | 'quantity' | 'current-price'
+export type PositionFormFeedback = { tone: 'success'; message: string }
+  | { tone: 'error'; message: string; field?: PositionFormField }
 type PositionForm = { ticker: string; name: string; assetType: AssetType; sector: string; quantity: string; averagePrice: string; currentPrice: string }
 type EditForm = { quantity: string; averagePrice: string; currentPrice: string }
 type Mutation<TVariables> = Pick<UseMutationResult<unknown, Error, TVariables>, 'isPending' | 'mutate'>
@@ -20,12 +23,14 @@ type PortfolioSectionProps = {
   portfolios: UseQueryResult<PortfolioItem[], Error>; activePortfolio: PortfolioItem | null; portfolioName: string; setPortfolioName: (value: string) => void; handleCreatePortfolio: (event: FormEvent<HTMLFormElement>) => void
   createPortfolio: Mutation<{ name: string }>; deletePortfolio: Mutation<string>; renamePortfolio: Mutation<{ portfolioId: string; name: string }>; editingPortfolioId: string | null; setEditingPortfolioId: (id: string | null) => void; editingPortfolioName: string; setEditingPortfolioName: (value: string) => void
   setSelectedPortfolioId: (id: string | null) => void; setSelectedDocumentId: (id: string | null) => void; setPositionPage: (page: number) => void; setFeedback: (value: Feedback) => void; privacyHidden: boolean; togglePrivacy: () => void; positionForm: PositionForm; setPositionForm: Dispatch<SetStateAction<PositionForm>>; assetTypeOptions: Array<{ value: AssetType; label: string }>; handleCreatePosition: (event: FormEvent<HTMLFormElement>) => void
-  createPosition: Mutation<{ ticker: string; name: string; assetType: AssetType; sector: string | null; quantity: number; averagePrice: number; currentPrice: number | null }>; dashboard: UseQueryResult<DashboardData, Error>; editingPositionId: string | null; startEditing: (position: Position) => void; handleUpdatePosition: (event: FormEvent<HTMLFormElement>, positionId: string) => void; editForm: EditForm; setEditForm: Dispatch<SetStateAction<EditForm>>
+  createPosition: { isPending: boolean }; positionFeedback: PositionFormFeedback | null; clearPositionFeedback: () => void
+  dashboard: UseQueryResult<DashboardData, Error>; editingPositionId: string | null; startEditing: (position: Position) => void; handleUpdatePosition: (event: FormEvent<HTMLFormElement>, positionId: string) => void; editForm: EditForm; setEditForm: Dispatch<SetStateAction<EditForm>>
   updatePosition: Mutation<{ positionId: string; request: { quantity: number; averagePrice: number; currentPrice: number | null } }>; setEditingPositionId: (id: string | null) => void; deletePosition: Mutation<string>; selectedAsset: Position | null; setSelectedAssetId: (id: string | null) => void; onImportStateChange: (processing: boolean) => void
 }
 function formatCurrency(value: number | null | undefined, hidden = false) { if (hidden) return 'R$ ••••••'; if (value == null) return 'Sem valor'; return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value) }
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
+const positionInputClass = 'mt-2 w-full rounded-2xl border bg-stone-50 px-4 py-3 text-sm outline-none transition focus:bg-white'
 function formatAssetName(name: string, ticker: string) {
   const description = name.trim()
   const prefix = ticker.trim()
@@ -33,10 +38,17 @@ function formatAssetName(name: string, ticker: string) {
   const suffix = description.slice(prefix.length)
   return /^\s*[-–—]\s*/.test(suffix) ? suffix.replace(/^\s*[-–—]\s*/, '') : description
 }
-export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, togglePrivacy, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId, onImportStateChange }: PortfolioSectionProps) {
+export function PortfolioSection({ portfolios, activePortfolio, portfolioName, setPortfolioName, handleCreatePortfolio, createPortfolio, deletePortfolio, renamePortfolio, editingPortfolioId, setEditingPortfolioId, editingPortfolioName, setEditingPortfolioName, setSelectedPortfolioId, setSelectedDocumentId, setPositionPage, setFeedback, privacyHidden, togglePrivacy, positionForm, setPositionForm, assetTypeOptions, handleCreatePosition, createPosition, positionFeedback, clearPositionFeedback, dashboard, editingPositionId, startEditing, handleUpdatePosition, editForm, setEditForm, updatePosition, setEditingPositionId, deletePosition, selectedAsset, setSelectedAssetId, onImportStateChange }: PortfolioSectionProps) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [portfolioToDelete, setPortfolioToDelete] = useState<PortfolioItem | null>(null)
   const [positionToDelete, setPositionToDelete] = useState<Position | null>(null)
+  const invalidField = positionFeedback?.tone === 'error' ? positionFeedback.field : undefined
+  const positionInputProps = (field: PositionFormField) => ({
+    id: field,
+    'aria-invalid': invalidField === field || undefined,
+    'aria-describedby': invalidField === field ? 'position-form-feedback' : undefined,
+    className: `${positionInputClass} ${invalidField === field ? 'border-rose-500' : 'border-slate-300 focus:border-amber-500'}`,
+  })
   return <>
       <div className="contents">
         <div className="portfolio-side">
@@ -52,7 +64,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
               return (
                 <div key={portfolio.id} className={`relative flex min-h-24 rounded-xl border bg-white p-3 transition ${isActive ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-amber-300 hover:bg-amber-50/40'}`}>
                   {editingPortfolioId === portfolio.id ? <form className="flex min-w-0 flex-1 flex-col justify-center" onSubmit={(event) => { event.preventDefault(); const name = editingPortfolioName.trim(); if (name) renamePortfolio.mutate({ portfolioId: portfolio.id, name }) }}><input autoFocus value={editingPortfolioName} onChange={(event) => setEditingPortfolioName(event.target.value)} aria-label="Nome da carteira" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /><div className="mt-2 flex gap-2"><button type="submit" disabled={renamePortfolio.isPending} className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Salvar</button><button type="button" onClick={() => setEditingPortfolioId(null)} className="rounded-full border border-slate-300 px-3 py-1 text-xs">Cancelar</button></div></form> : <>
-                    <button type="button" title="Duplo clique para renomear" onClick={() => { setSelectedPortfolioId(portfolio.id); setSelectedDocumentId(null); setPositionPage(1); setFeedback(null) }} onDoubleClick={() => { setEditingPortfolioId(portfolio.id); setEditingPortfolioName(portfolio.name) }} className="min-w-0 flex-1 pr-12 text-left">
+                    <button type="button" title="Duplo clique para renomear" onClick={() => { setSelectedPortfolioId(portfolio.id); setSelectedDocumentId(null); setPositionPage(1); setFeedback(null); clearPositionFeedback() }} onDoubleClick={() => { setEditingPortfolioId(portfolio.id); setEditingPortfolioName(portfolio.name) }} className="min-w-0 flex-1 pr-12 text-left">
                       <div className="flex flex-wrap items-center gap-2"><strong className="truncate text-sm">{portfolio.name}</strong>{isActive && <span className="rounded-full bg-slate-900 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">Ativa</span>}</div>
                       <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-sm text-slate-500">{formatCurrency(portfolio.totalValue, privacyHidden)}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{portfolio.positionCount} posi&ccedil;&otilde;es</span></div>
                     </button>
@@ -83,10 +95,10 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
           {activePortfolio && (
             <>
-              <form onSubmit={handleCreatePosition} className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5 md:items-end">
+              <form onSubmit={handleCreatePosition} onChange={clearPositionFeedback} className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5 md:items-end">
                 <div>
                   <label htmlFor="ticker" className="text-sm font-medium text-slate-700">Ticker</label>
-                  <input id="ticker" value={positionForm.ticker} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, ticker: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="BBSE3" />
+                  <input {...positionInputProps('ticker')} aria-required="true" value={positionForm.ticker} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, ticker: event.target.value.toUpperCase() }))} placeholder="BBSE3" />
                 </div>
                 <div>
                   <label htmlFor="asset-type" className="text-sm font-medium text-slate-700">Tipo do ativo</label>
@@ -96,17 +108,21 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                 </div>
                 <div>
                   <label htmlFor="quantity" className="text-sm font-medium text-slate-700">Quantidade</label>
-                  <input id="quantity" inputMode="decimal" value={positionForm.quantity} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, quantity: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="100" />
+                  <input {...positionInputProps('quantity')} inputMode="decimal" value={positionForm.quantity} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, quantity: event.target.value }))} placeholder="100" />
                 </div>
                 <div>
                   <label htmlFor="current-price" className="text-sm font-medium text-slate-700">Pre&ccedil;o de refer&ecirc;ncia</label>
-                  <input id="current-price" inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: maskDecimalInput(event.target.value) }))} onBlur={() => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: maskDecimalInput(current.currentPrice, true) }))} className="mt-2 w-full rounded-2xl border border-slate-300 bg-stone-50 px-4 py-3 text-sm outline-none transition focus:border-amber-500 focus:bg-white" placeholder="31,40" />
+                  <input {...positionInputProps('current-price')} inputMode="decimal" value={positionForm.currentPrice} onChange={(event) => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: maskDecimalInput(event.target.value) }))} onBlur={() => setPositionForm((current: PositionForm) => ({ ...current, currentPrice: maskDecimalInput(current.currentPrice, true) }))} placeholder="31,40" />
                 </div>
                 <div className="col-span-2 flex items-end md:col-span-1">
                   <button type="submit" disabled={createPosition.isPending} className="h-11.5 w-full rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60">
                     <FontAwesomeIcon icon={faPlus} className="mr-2" />{createPosition.isPending ? 'Salvando...' : 'Adicionar'}
                   </button>
                 </div>
+                {positionFeedback && <div className={`col-span-full flex items-center gap-2 text-sm ${positionFeedback.tone === 'error' ? 'text-rose-700' : 'text-emerald-700'}`}>
+                  <p id="position-form-feedback" role={positionFeedback.tone === 'error' ? 'alert' : 'status'}>{positionFeedback.message}</p>
+                  {positionFeedback.tone === 'error' && <button type="button" aria-label="Fechar aviso da posição" onClick={clearPositionFeedback} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-rose-100"><FontAwesomeIcon icon={faXmark} aria-hidden="true" /></button>}
+                </div>}
               </form>
 
               {dashboard.isLoading && <LoadingState message="Carregando posições…" className="mt-4" />}
