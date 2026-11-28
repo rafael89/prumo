@@ -195,6 +195,7 @@ public sealed class PortfoliosController : ControllerBase
         var events = assessments.Where(a => a.InvestmentEvent is not null).GroupBy(a => RadarEventPolicy.CardId(a.InvestmentEvent!)).ToDictionary(g => g.Key, BuildDashboardEvents);
         return analyses.Select(a => byAnalysis.TryGetValue(a.Id, out var assessment)
             ? CreateDashboardAssessment(assessment, events.GetValueOrDefault(RadarEventPolicy.CardId(assessment.InvestmentEvent!)))
+                with { DocumentImportance = a.Importance.ToString() }
             : CreateDashboardDocument(a)).ToList();
     }
 

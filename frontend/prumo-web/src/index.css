@@ -13,7 +13,7 @@ button:disabled { cursor: not-allowed; }
 a { font-family: inherit; }
 @media (min-width: 1024px) {
   .dividend-forecast-scroll { container-type: size; }
-  /* Distribui a altura restante entre cinco ativos, abaixo do cabeçalho. */
+  /* Distribui a altura restante entre cinco linhas, abaixo do cabeçalho. */
   .dividend-forecast tbody tr { height: calc((100cqh - 31px) / 5); }
 }
 .dividend-forecast-scroll { scrollbar-width: thin; scrollbar-color: #94a3b855 transparent; }

@@ -1,4 +1,4 @@
-import { analysisTone } from '../utils/documentAnalysis'
+import { analysisTone, importanceLabels } from '../utils/documentAnalysis'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircleInfo } from '@fortawesome/free-solid-svg-icons'
 
@@ -16,7 +16,6 @@ type Analysis = {
   affectedAssets: string[]
 }
 
-const importanceLabels: Record<string, string> = { Critical: 'Cr\u00edtico', Relevant: 'Relevante', Informative: 'Informativo', NoAction: 'Sem a\u00e7\u00e3o' }
 const classificationLabels: Record<string, string> = { CorporateAction: 'A\u00e7\u00e3o corporativa', FinancialResult: 'Resultado financeiro', Distribution: 'Distribui\u00e7\u00e3o', CapitalRaise: 'Capta\u00e7\u00e3o', AssetTransaction: 'Transa\u00e7\u00e3o de ativos', Governance: 'Governan\u00e7a', Operational: 'Operacional', Liquidation: 'Liquida\u00e7\u00e3o', Other: 'Outro' }
 const actionLabels: Record<string, string> = { Maintain: 'Manter', IncreasePosition: 'Aumentar posi\u00e7\u00e3o', ReduceExposure: 'Reduzir exposi\u00e7\u00e3o', EvaluateSale: 'Avaliar venda', Monitor: 'Acompanhar', NoAction: 'Sem a\u00e7\u00e3o', OpenPosition: 'Abrir posi\u00e7\u00e3o' }
 

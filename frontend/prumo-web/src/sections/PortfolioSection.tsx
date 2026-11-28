@@ -31,6 +31,9 @@ function formatCurrency(value: number | null | undefined, hidden = false) { if (
 function formatNumber(value: number | null | undefined) { if (value == null) return '-'; return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value) }
 const assetTypeLabels: Record<number, string> = { 0: 'A\u00e7\u00e3o', 1: 'FII', 2: 'ETF', 3: 'Outro' }
 const positionInputClass = 'mt-2 w-full rounded-2xl border bg-stone-50 px-4 py-3 text-sm outline-none transition focus:bg-white'
+const positionColumns = 'md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:gap-x-3'
+const positionRowClass = `grid min-w-0 grid-cols-2 md:items-center ${positionColumns}`
+const positionEditInputClass = 'block h-11 w-full min-w-0 rounded-xl border border-slate-300 px-2 text-right text-sm md:h-9'
 function formatAssetName(name: string, ticker: string) {
   const description = name.trim()
   const prefix = ticker.trim()
@@ -135,7 +138,7 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
 
               {dashboard.data && dashboard.data.positions.length > 0 && (
                 <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                  <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 md:grid">
+                  <div className={`hidden bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 md:grid ${positionColumns}`}>
                     <span>Ativo</span>
                     <span>Tipo</span>
                     <span className="text-right">Qtde</span>
@@ -148,23 +151,23 @@ export function PortfolioSection({ portfolios, activePortfolio, portfolioName, s
                     {dashboard.data.positions.map((position: Position) => (
                       <div key={position.id} className="px-4 py-3">
                         {editingPositionId === position.id ? (
-                          <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-end">
-                            <div className="col-span-2 md:col-span-1">
-                              <p className="text-sm font-semibold">{position.ticker}</p>
-                              <p className="text-xs text-slate-500">{formatAssetName(position.name, position.ticker)}</p>
+                          <form onSubmit={(event) => handleUpdatePosition(event, position.id)} className={`${positionRowClass} gap-3`}>
+                            <div className="col-span-2 min-w-0 md:col-span-1">
+                              <p className="truncate text-sm font-semibold">{position.ticker}</p>
+                              <p className="wrap-break-word text-xs text-slate-500">{formatAssetName(position.name, position.ticker)}</p>
                             </div>
-                            <div className="text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
-                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span><input aria-label="Quantidade" value={editForm.quantity} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, quantity: event.target.value }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
-                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Preço ref.</span><input aria-label="Preço de referência" inputMode="decimal" value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: maskDecimalInput(event.target.value) }))} onBlur={() => setEditForm((current: EditForm) => ({ ...current, currentPrice: maskDecimalInput(current.currentPrice, true) }))} className="min-w-0 w-full rounded-xl border border-slate-300 px-2 py-2 text-right text-sm" /></label>
-                            <div className="text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Valor atual</span>{formatCurrency(position.currentValue, privacyHidden)}</div>
-                            <div className="text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Peso</span>{position.portfolioWeight.toFixed(2)}%</div>
+                            <div className="min-w-0 text-sm text-slate-600"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Tipo</span>{assetTypeLabels[position.assetType]}</div>
+                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Quantidade</span><input aria-label="Quantidade" value={editForm.quantity} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, quantity: event.target.value }))} className={positionEditInputClass} /></label>
+                            <label className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Preço ref.</span><input aria-label="Preço de referência" inputMode="decimal" value={editForm.currentPrice} onChange={(event) => setEditForm((current: EditForm) => ({ ...current, currentPrice: maskDecimalInput(event.target.value) }))} onBlur={() => setEditForm((current: EditForm) => ({ ...current, currentPrice: maskDecimalInput(current.currentPrice, true) }))} className={positionEditInputClass} /></label>
+                            <div className="min-w-0 text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Valor atual</span>{formatCurrency(position.currentValue, privacyHidden)}</div>
+                            <div className="min-w-0 text-right text-sm text-slate-500"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">Peso</span>{position.portfolioWeight.toFixed(2)}%</div>
                             <div className="flex items-center justify-end gap-2 md:justify-center">
                               <button type="submit" aria-label="Salvar posição" title="Salvar posição" disabled={updatePosition.isPending} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"><FontAwesomeIcon icon={faCheck} /></button>
                               <button type="button" aria-label="Cancelar edição" title="Cancelar edição" onClick={() => setEditingPositionId(null)} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"><FontAwesomeIcon icon={faBan} /></button>
                             </div>
                           </form>
                         ) : (
-                          <div className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1.5fr)_minmax(3rem,.55fr)_minmax(3.5rem,.6fr)_minmax(5rem,.85fr)_minmax(6rem,1fr)_minmax(3rem,.55fr)_5.5rem] md:items-center">
+                          <div className={`${positionRowClass} gap-x-4 gap-y-2`}>
                             <div className="col-span-2 min-w-0 md:col-span-1">
                               <p className="truncate text-sm font-semibold">{position.ticker}</p>
                               <p className="wrap-break-word text-xs text-slate-500">{formatAssetName(position.name, position.ticker)}</p>

@@ -64,8 +64,7 @@
   min-height: 1.75rem;
 }
 
-.portfolio-layout .portfolio-positions input,
-.portfolio-layout .portfolio-positions select {
+.portfolio-layout .portfolio-positions > form :is(input, select) {
   min-height: 3.125rem;
 }
 

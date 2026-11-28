@@ -1,12 +1,12 @@
 import { LoadingState } from '../components/LoadingState'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faCircleMinus, faCircleQuestion, faClock, faTriangleExclamation, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl, sendJson } from '../api/client'
-import { analysisTone } from '../utils/documentAnalysis'
+import { analysisTone, importanceLabels } from '../utils/documentAnalysis'
 import { DocumentAnalysisContent } from '../components/DocumentAnalysisContent'
 import { MonthSwitcher } from '../components/MonthSwitcher'
 const contributionApiUrl = apiBaseUrl
@@ -274,6 +274,21 @@ function newsPreview(summary: string) {
   return `${(lastSpace > 0 ? excerpt.slice(0, lastSpace) : excerpt).replace(/[,;:]+$/, '')}…`
 }
 
+const newsImportanceStyles = new Map([
+  ['Critical', { icon: faCircleExclamation, color: 'text-rose-700' }],
+  ['Relevant', { icon: faTriangleExclamation, color: 'text-amber-700' }],
+  ['Informative', { icon: faCircleInfo, color: 'text-sky-700' }],
+  ['NoAction', { icon: faCircleMinus, color: 'text-slate-500' }],
+])
+
+function NewsImportanceIcon({ importance = '' }: { importance?: string }) {
+  const style = newsImportanceStyles.get(importance)
+  const label = `Importância: ${style ? importanceLabels[importance] : 'Não informada'}`
+  return <span role="img" aria-label={label} title={label} className={`inline-flex h-5 w-4 shrink-0 items-center justify-center self-start text-xs ${style?.color ?? 'text-slate-500'}`}>
+    <FontAwesomeIcon icon={style?.icon ?? faCircleQuestion} aria-hidden="true" />
+  </span>
+}
+
 function RecentUpdatesCard({ items: initialItems, totalItems, portfolioId }: { items: DashboardAssessment[]; totalItems: number; portfolioId: string }) {
   type NewsPage = { items: DashboardAssessment[]; page: number; totalPages: number }
   const news = useInfiniteQuery({
@@ -289,18 +304,22 @@ function RecentUpdatesCard({ items: initialItems, totalItems, portfolioId }: { i
   })
   const items = [...new Map([...initialItems, ...(news.data?.pages.flatMap(page => page.items) ?? [])].map(item => [item.documentId ?? item.assessmentId, item])).values()]
   const hasMore = news.data ? news.hasNextPage : totalItems > initialItems.length
-  const visibleCount = items.length
   const [selectedItem, setSelectedItem] = useState<DashboardAssessment | null>(null)
   return <article className="order-3 min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
     <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Últimas notícias</p>
     {items.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-slate-500">Nenhum documento recente para consultar.</p> : <div className="mt-4 divide-y divide-slate-100">
-      {items.slice(0, visibleCount).map(item => item.documentId ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className="flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0 transition hover:bg-stone-50">
-        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 sm:line-clamp-1 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</h3></div>
-        {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
-      </button> : <div key={item.assessmentId} className="flex min-w-0 items-center gap-2 py-3 first:pt-0">
-        <div className="min-w-0 flex-1"><h3 className="line-clamp-2 sm:line-clamp-1 text-sm font-semibold leading-5 text-slate-950"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</h3></div>
-        {formatRelativeDate(item.occurredAt) && <span className="shrink-0 text-xs text-slate-500">{formatRelativeDate(item.occurredAt)}</span>}
-      </div>)}
+      {items.map(item => {
+        const date = formatRelativeDate(item.occurredAt)
+        const content = <>
+          <NewsImportanceIcon importance={item.documentImportance} />
+          <span className="min-w-0 flex-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-950 sm:line-clamp-1"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</span>
+          {date && <span className="shrink-0 text-xs text-slate-500">{date}</span>}
+        </>
+        const rowClass = 'flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0'
+        return item.documentId
+          ? <button key={item.assessmentId} type="button" onClick={() => setSelectedItem(item)} className={`${rowClass} transition hover:bg-stone-50`}>{content}</button>
+          : <div key={item.assessmentId} className={rowClass}>{content}</div>
+      })}
     </div>}{hasMore && <button type="button" disabled={news.isFetchingNextPage} onClick={() => void news.fetchNextPage()} className="mt-4 inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:text-sky-900"><span className="text-[11px] leading-none">Mostrar mais</span> <FontAwesomeIcon icon={faArrowDown} className="text-[0.55rem]" /></button>}{news.isError && <p role="alert" className="mt-2 text-sm text-rose-700">Não foi possível carregar mais notícias. Tente novamente.</p>}{selectedItem && <RecentAnalysisModal item={selectedItem} portfolioId={portfolioId} showRadarDetails={false} onClose={() => setSelectedItem(null)} />}
   </article>
 }
@@ -320,6 +339,10 @@ type DividendForecast = {
   }>
 }
 
+type DividendPayment = DividendForecast['items'][number] & { key: string; label: string }
+
+const initialMobileDividendCount = 5
+
 function dividendComponentLabel(component: DividendComponent) {
   if (component.amountBasis === 'EstimatedNet') return `${component.type} (líquido estimado)`
   if (component.amountBasis === 'Net') return `${component.type} (líquido)`
@@ -338,13 +361,64 @@ function DividendPaymentDate({ value }: { value: string }) {
   </time>
 }
 
+function DividendTicker({ item, inTable = false }: { item: DividendPayment; inTable?: boolean }) {
+  const text = inTable ? 'inline-block max-w-full truncate align-bottom' : 'block truncate text-sm'
+  if (!item.documentUrl) return <strong className={`${text} text-slate-900`}>{item.ticker}</strong>
+
+  const documentLabel = item.label || item.source || 'Documento'
+  return <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer"
+    className={`${text} font-bold hover:underline ${inTable ? 'text-sky-700' : 'text-slate-900'}`}
+    title={inTable ? documentLabel : undefined} aria-label={`${documentLabel} de ${item.ticker} (abre em nova aba)`}>
+    {item.ticker}
+  </a>
+}
+
+function DividendPaymentTable({ items, currency, sideBySide = false }: {
+  items: DividendPayment[]
+  currency: (amount: number) => string
+  sideBySide?: boolean
+}) {
+  const groups = sideBySide ? [0, 1] : [0]
+  const rows: DividendPayment[][] = []
+  for (let start = 0; start < items.length; start += groups.length) {
+    rows.push(items.slice(start, start + groups.length))
+  }
+
+  return <table className={`w-full border-collapse text-xs leading-[18px] xl:text-[13px] ${sideBySide ? 'hidden lg:table' : 'hidden sm:table lg:hidden'}`}>
+    {groups.map(group => <colgroup key={group}>
+      <col style={{ width: `${25 / groups.length}%` }} />
+      <col style={{ width: `${40 / groups.length}%` }} />
+      <col style={{ width: `${35 / groups.length}%` }} />
+    </colgroup>)}
+    <thead className="sticky top-0 z-10 bg-white">
+      <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase leading-4 tracking-wide text-slate-500">
+        {groups.map(group => <Fragment key={group}>
+          <th scope="col" className={`pb-1.5 pt-2 ${group === 1 ? 'border-l border-slate-200 pl-2' : ''}`}>Ativo</th>
+          <th scope="col" className="whitespace-nowrap pb-1.5 pt-2">Pagamento</th>
+          <th scope="col" className={`pb-1.5 pt-2 text-right ${sideBySide && group === 0 ? 'pr-2' : ''}`}>Valor</th>
+        </Fragment>)}
+      </tr>
+    </thead>
+    <tbody>{rows.map(row => <tr key={row[0].key} className="border-b border-slate-100">
+      {groups.map(group => {
+        const item = row[group]
+        if (!item) return <td key={group} colSpan={3} className="border-l border-slate-200" />
+        return <Fragment key={group}>
+          <td className={`py-px pr-1 ${group === 1 ? 'border-l border-slate-200 pl-2' : ''}`}><DividendTicker item={item} inTable /></td>
+          <td className="whitespace-nowrap py-px"><DividendPaymentDate value={item.paymentDate!} /></td>
+          <td className={`whitespace-nowrap py-px text-right font-semibold text-slate-900 ${sideBySide && group === 0 ? 'pr-2' : ''}`}>{currency(item.estimatedMonthlyAmount!)}</td>
+        </Fragment>
+      })}
+    </tr>)}</tbody>
+  </table>
+}
+
 function DividendForecastWidget({ forecast, month, onMonthChange, privacyHidden }: {
   forecast: UseQueryResult<DividendForecast>
   month: string
   onMonthChange: (month: string) => void
   privacyHidden: boolean
 }) {
-  const initialVisibleCount = 5
   const [allDividendsVisible, setAllDividendsVisible] = useState(false)
   const currency = (amount: number) => privacyHidden ? 'R$ ••••••' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
   const orderedItems = (forecast.data?.items ?? [])
@@ -363,7 +437,7 @@ function DividendForecastWidget({ forecast, month, onMonthChange, privacyHidden 
       })) : [{ ...item, key, label: '' }]
     })
   const total = currency(forecast.data?.estimatedMonthlyAmount ?? 0)
-  return <div className="relative order-1 min-w-0 lg:self-stretch">
+  return <div className="relative order-1 min-w-0 lg:min-h-60 lg:self-stretch">
     <article className="dividend-forecast flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:absolute lg:inset-0 lg:py-2">
     <div className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Rendimentos</p>
@@ -372,19 +446,20 @@ function DividendForecastWidget({ forecast, month, onMonthChange, privacyHidden 
     <div role="region" aria-label="Lista de rendimentos" tabIndex={0} className="dividend-forecast-scroll min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain lg:pr-2">
     {!forecast.data && forecast.isPending ? <LoadingState message="Calculando previsão…" className="mt-4" /> : !forecast.data && forecast.isError ? <p className="mt-4 text-sm text-rose-700">Não foi possível carregar a previsão.</p> : orderedItems.length ? <>
       <div className="mt-5 divide-y divide-slate-200 sm:hidden">
-        {orderedItems.map((item, index) => <div key={item.key} className={`grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 ${index >= initialVisibleCount && !allDividendsVisible ? 'hidden' : ''}`}>
+        {orderedItems.map((item, index) => <div key={item.key} className={`grid min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 ${index >= initialMobileDividendCount && !allDividendsVisible ? 'hidden' : ''}`}>
           <div className="min-w-0">
-            {item.documentUrl ? <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer" className="block truncate text-sm font-bold text-slate-900 hover:underline" aria-label={`${item.label || item.source || 'Documento'} de ${item.ticker} (abre em nova aba)`}>{item.ticker}</a> : <strong className="block truncate text-sm text-slate-900">{item.ticker}</strong>}
+            <DividendTicker item={item} />
             {item.label && <span className="block text-xs text-slate-600">{item.label}</span>}
           </div>
           <span className="text-xs text-slate-600"><DividendPaymentDate value={item.paymentDate!} /></span>
           <strong className="whitespace-nowrap text-right text-sm text-slate-900">{currency(item.estimatedMonthlyAmount!)}</strong>
         </div>)}
       </div>
-      <div className="hidden sm:block"><table className="w-full table-fixed border-collapse text-[13px] leading-[18px]"><colgroup><col style={{ width: '17%' }} /><col style={{ width: '25%' }} /><col style={{ width: '38%' }} /><col style={{ width: '20%' }} /></colgroup><thead className="sticky top-0 z-10 bg-white"><tr className="border-b border-slate-200 text-left text-[11px] leading-4 font-semibold uppercase tracking-wide text-slate-500"><th scope="col" className="pb-1.5 pr-3 pt-2">Ativo</th><th scope="col" className="whitespace-nowrap pb-1.5 pr-3 pt-2">Pagamento</th><th scope="col" className="pb-1.5 pr-3 pt-2">Documento</th><th scope="col" className="pb-1.5 pt-2 text-right">Valor</th></tr></thead><tbody>{orderedItems.map(item => <tr key={item.key} className="border-b border-slate-100"><td className="py-px pr-3"><strong className="text-slate-900">{item.ticker}</strong></td><td className="whitespace-nowrap py-px pr-3 text-slate-700"><DividendPaymentDate value={item.paymentDate!} /></td><td className="py-px pr-3">{item.documentUrl ? <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer" title={item.source} aria-label={`${item.label || item.source || 'Documento'} de ${item.ticker} (abre em nova aba)`} className="flex min-w-0 items-center gap-1 font-semibold text-sky-700 hover:underline"><span className="truncate">{item.label || item.source || 'Documento'}</span></a> : <span className="text-slate-500">—</span>}</td><td className="whitespace-nowrap py-px text-right font-semibold text-slate-900">{currency(item.estimatedMonthlyAmount!)}</td></tr>)}</tbody></table></div>
+      <DividendPaymentTable items={orderedItems} currency={currency} />
+      <DividendPaymentTable items={orderedItems} currency={currency} sideBySide />
     </> : <p className="mt-4 text-sm leading-6 text-slate-600">Nenhum pagamento com valor e data informados neste mês.</p>}
     </div>
-    {orderedItems.length > initialVisibleCount && <button type="button" aria-expanded={allDividendsVisible} onClick={() => setAllDividendsVisible(current => !current)} className="mt-2 min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-400 sm:hidden">{allDividendsVisible ? 'Mostrar menos' : `Ver todos os ${orderedItems.length} rendimentos`}</button>}
+    {orderedItems.length > initialMobileDividendCount && <button type="button" aria-expanded={allDividendsVisible} onClick={() => setAllDividendsVisible(current => !current)} className="mt-2 min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-amber-400 sm:hidden">{allDividendsVisible ? 'Mostrar menos' : `Ver todos os ${orderedItems.length} rendimentos`}</button>}
     <footer className="mt-1 flex shrink-0 items-baseline justify-between gap-3 border-t border-slate-200 pt-1 text-slate-950"><strong className="text-sm">Total</strong><strong className="text-lg">{forecast.data ? total : '—'}</strong></footer>
   </article>
   </div>

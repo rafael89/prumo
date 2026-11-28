@@ -102,7 +102,8 @@ public sealed class PerformanceOptimizationTests
         var asset = new Asset("NEWS3", "News", AssetType.Stock, null);
         portfolio.Positions.Add(new(portfolio.Id, asset.Id, 10, 10, 10));
         db.AddRange(portfolio, asset);
-        for (var i = 0; i < 13; i++) AddAnalysis(db, portfolio, asset, new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(i));
+        var eventDetails = new RadarEventDetails(Importance: nameof(AnalysisImportance.Critical));
+        for (var i = 0; i < 13; i++) AddAnalysis(db, portfolio, asset, new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(i), eventDetails);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new PortfoliosController(db);
         var dashboard = Assert.IsType<DashboardResponse>(Assert.IsType<OkObjectResult>((await controller.GetDashboard(portfolio.Id, cancellationToken: TestContext.Current.CancellationToken)).Result).Value);
@@ -119,6 +120,11 @@ public sealed class PerformanceOptimizationTests
         Assert.Equal(13, items.Count);
         Assert.Equal(13, items.Select(x => x.DocumentId).Distinct().Count());
         Assert.Equal(dashboard.RecentUpdates.Select(x => x.DocumentId), items.Take(5).Select(x => x.DocumentId));
+        Assert.All(dashboard.RecentUpdates.Concat(items), item =>
+        {
+            Assert.True(item.HasRadarAssessment);
+            Assert.Equal(nameof(AnalysisImportance.Relevant), item.DocumentImportance);
+        });
     }
 
     [Fact]
@@ -170,11 +176,12 @@ public sealed class PerformanceOptimizationTests
         Assert.DoesNotContain(candidates, x => x.TransactionAId == outside.Id || x.TransactionBId == outside.Id);
     }
 
-    private static PortfolioAssessment AddAnalysis(PrumoDbContext db, Portfolio portfolio, Asset asset, DateTimeOffset publishedAt)
+    private static PortfolioAssessment AddAnalysis(PrumoDbContext db, Portfolio portfolio, Asset asset, DateTimeOffset publishedAt, RadarEventDetails? eventDetails = null)
     {
         var document = new Document(asset.Id, DocumentType.RelevantFact, publishedAt, "Test", null, "https://example.test/doc", Guid.NewGuid().ToString());
         var analysis = new DocumentAnalysis(Guid.NewGuid(), document.Id, "test", "test", AnalysisImportance.Relevant, AnalysisClassification.Other, true, SuggestedAction.Monitor, "Summary", "Impact", "Portfolio impact", [asset.Ticker], 1, "{}");
         var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.Other, publishedAt, "Event", []);
+        if (eventDetails is not null) investmentEvent.SetRadarDetails(eventDetails);
         investmentEvent.AffectedAssets.Add(asset);
         investmentEvent.Evidence.Add(new(investmentEvent.Id, analysis.Id, document.Id, "Evidence"));
         var assessment = new PortfolioAssessment(portfolio.Id, investmentEvent.Id, AttentionPriority.High, ActionRequirement.Review, CapitalDecisionImpact.None, AssessmentStatus.Active, AssessmentUserState.Unread, "Summary", "Reason", "Monitor", IntelligenceConfidence.High, null, PortfolioImpactAssessmentService.CurrentVersion, PortfolioSnapshotKeyCalculator.Calculate(portfolio), investmentEvent.Version);
