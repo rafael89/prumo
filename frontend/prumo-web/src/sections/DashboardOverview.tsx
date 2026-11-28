@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faCircleMinus, faCircleQuestion, faClock, faTriangleExclamation, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faArrowRight, faArrowUpRightFromSquare, faCircleCheck, faCircleExclamation, faCircleInfo, faClock, faTriangleExclamation, faRotate, faXmark } from '@fortawesome/free-solid-svg-icons'
 
 import { apiBaseUrl, sendJson } from '../api/client'
 import { analysisTone, importanceLabels } from '../utils/documentAnalysis'
@@ -274,18 +274,18 @@ function newsPreview(summary: string) {
   return `${(lastSpace > 0 ? excerpt.slice(0, lastSpace) : excerpt).replace(/[,;:]+$/, '')}…`
 }
 
-const newsImportanceStyles = new Map([
-  ['Critical', { icon: faCircleExclamation, color: 'text-rose-700' }],
-  ['Relevant', { icon: faTriangleExclamation, color: 'text-amber-700' }],
-  ['Informative', { icon: faCircleInfo, color: 'text-sky-700' }],
-  ['NoAction', { icon: faCircleMinus, color: 'text-slate-500' }],
+const newsImportanceColors = new Map([
+  ['Critical', 'text-rose-700'],
+  ['Relevant', 'text-amber-700'],
+  ['Informative', 'text-sky-700'],
+  ['NoAction', 'text-slate-500'],
 ])
 
-function NewsImportanceIcon({ importance = '' }: { importance?: string }) {
-  const style = newsImportanceStyles.get(importance)
-  const label = `Importância: ${style ? importanceLabels[importance] : 'Não informada'}`
-  return <span role="img" aria-label={label} title={label} className={`inline-flex h-5 w-4 shrink-0 items-center justify-center self-start text-xs ${style?.color ?? 'text-slate-500'}`}>
-    <FontAwesomeIcon icon={style?.icon ?? faCircleQuestion} aria-hidden="true" />
+function NewsTicker({ asset, importance = '' }: { asset: string; importance?: string }) {
+  const color = newsImportanceColors.get(importance)
+  const label = `Importância: ${color ? importanceLabels[importance] : 'Não informada'}`
+  return <span title={label} className={`mr-2 ${color ?? 'text-slate-500'}`}>
+    {asset}<span className="sr-only"> {label}. </span>
   </span>
 }
 
@@ -311,8 +311,7 @@ function RecentUpdatesCard({ items: initialItems, totalItems, portfolioId }: { i
       {items.map(item => {
         const date = formatRelativeDate(item.occurredAt)
         const content = <>
-          <NewsImportanceIcon importance={item.documentImportance} />
-          <span className="min-w-0 flex-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-950 sm:line-clamp-1"><span className="mr-2 text-amber-700">{item.asset}</span>{newsPreview(item.eventSummary)}</span>
+          <span className="min-w-0 flex-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-950 sm:line-clamp-1"><NewsTicker asset={item.asset} importance={item.documentImportance} />{newsPreview(item.eventSummary)}</span>
           {date && <span className="shrink-0 text-xs text-slate-500">{date}</span>}
         </>
         const rowClass = 'flex w-full min-w-0 items-center gap-2 py-3 text-left first:pt-0'
@@ -339,7 +338,7 @@ type DividendForecast = {
   }>
 }
 
-type DividendPayment = DividendForecast['items'][number] & { key: string; label: string }
+type DividendPayment = DividendForecast['items'][number] & { key: string; label: string; distributionType?: string }
 
 const initialMobileDividendCount = 5
 
@@ -362,14 +361,18 @@ function DividendPaymentDate({ value }: { value: string }) {
 }
 
 function DividendTicker({ item, inTable = false }: { item: DividendPayment; inTable?: boolean }) {
-  const text = inTable ? 'inline-block max-w-full truncate align-bottom' : 'block truncate text-sm'
-  if (!item.documentUrl) return <strong className={`${text} text-slate-900`}>{item.ticker}</strong>
+  const suffix = item.distributionType === 'JCP' ? ' (JCP)' : item.distributionType === 'Dividendos' ? ' (Div.)' : ''
+  const ticker = inTable && suffix
+    ? <>{item.ticker}<span className="text-[11px] font-normal text-slate-900">{suffix}</span></>
+    : item.ticker
+  const text = inTable ? 'inline-block whitespace-nowrap align-bottom' : 'block truncate text-sm'
+  if (!item.documentUrl) return <strong className={`${text} text-slate-900`}>{ticker}</strong>
 
   const documentLabel = item.label || item.source || 'Documento'
   return <a href={officialDocumentUrl(item.documentUrl)} target="_blank" rel="noreferrer"
     className={`${text} font-bold hover:underline ${inTable ? 'text-sky-700' : 'text-slate-900'}`}
     title={inTable ? documentLabel : undefined} aria-label={`${documentLabel} de ${item.ticker} (abre em nova aba)`}>
-    {item.ticker}
+    {ticker}
   </a>
 }
 
@@ -386,9 +389,9 @@ function DividendPaymentTable({ items, currency, sideBySide = false }: {
 
   return <table className={`w-full border-collapse text-xs leading-[18px] xl:text-[13px] ${sideBySide ? 'hidden lg:table' : 'hidden sm:table lg:hidden'}`}>
     {groups.map(group => <colgroup key={group}>
-      <col style={{ width: `${25 / groups.length}%` }} />
-      <col style={{ width: `${40 / groups.length}%` }} />
-      <col style={{ width: `${35 / groups.length}%` }} />
+      <col style={{ width: `${32 / groups.length}%` }} />
+      <col style={{ width: `${36 / groups.length}%` }} />
+      <col style={{ width: `${32 / groups.length}%` }} />
     </colgroup>)}
     <thead className="sticky top-0 z-10 bg-white">
       <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase leading-4 tracking-wide text-slate-500">
@@ -432,6 +435,7 @@ function DividendForecastWidget({ forecast, month, onMonthChange, privacyHidden 
         ...item,
         key: `${key}:${index}`,
         label: dividendComponentLabel(component),
+        distributionType: component.type,
         documentUrl: component.documentUrl,
         estimatedMonthlyAmount: component.estimatedAmount,
       })) : [{ ...item, key, label: '' }]
