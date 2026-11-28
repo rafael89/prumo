@@ -100,6 +100,30 @@ public sealed class CandidateIntelligenceTests
         Assert.Equal(1, Count(review, "Canonical assessment"));
     }
 
+    [Fact]
+    public void Contribution_event_window_preserves_ongoing_cases_and_prioritizes_material_updates()
+    {
+        var asOf = new DateTimeOffset(2026, 12, 15, 12, 0, 0, TimeSpan.Zero);
+        var candidate = Candidate(new Asset("TEST3", "Teste", AssetType.Stock, "Industrial"));
+        var activeCase = new CandidateIntelligenceEvent(Guid.NewGuid(), InvestmentEventType.Liquidation, asOf.AddYears(-1), "Liquidação em andamento", [], []);
+        var oldDistribution = new CandidateIntelligenceEvent(Guid.NewGuid(), InvestmentEventType.Distribution, asOf.AddYears(-1), "Provento antigo", [], []);
+        var results = new CandidateIntelligenceEvent(Guid.NewGuid(), InvestmentEventType.FinancialResult, asOf.AddDays(-120), "Resultados", [], []);
+        var afterCutoff = results with { EventId = Guid.NewGuid(), OccurredAt = asOf.AddDays(-120).AddSeconds(-1) };
+        var announced = new CandidateIntelligenceEvent(Guid.NewGuid(), InvestmentEventType.CorporateAction, asOf.AddDays(20), "Ação anunciada", [], [])
+        { PublishedAt = asOf.AddDays(-2) };
+        var routine = Enumerable.Range(1, 6).Select(i => new CandidateIntelligenceEvent(Guid.NewGuid(), InvestmentEventType.Distribution,
+            asOf.AddDays(-i), $"Provento {i}", [], [])).ToArray();
+        var intelligence = CandidateIntelligence.Unavailable(candidate) with
+        {
+            Assessments = [new("High", "Review", "Caution", "Acompanhar liquidação", "Motivo", "Revisar", .9m, []) { InvestmentEventId = activeCase.EventId }],
+            RecentEvents = [..routine, oldDistribution, activeCase, results, afterCutoff, announced]
+        };
+
+        var selected = ContributionEventContext.SelectForPrompt(intelligence, asOf);
+
+        Assert.Equal(new[] { activeCase, announced, results, routine[0], routine[1] }, selected);
+    }
+
     private static int Count(string text, string value)
         => text.Split(value, StringSplitOptions.None).Length - 1;
 

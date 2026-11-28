@@ -9,11 +9,12 @@ public static class ContributionIntelligencePrompt
     // Kept for the legacy evaluation/selection contract. R5 has its own prompt
     // version so historical R4 traces remain comparable.
     public const string Version = "r4-contribution-v12";
-    public const string AllocationVersion = "r5-constrained-allocation-v6-compact-context";
-    public const string AllocationReviewVersion = "r5-composition-review-v3-compact-context";
+    public const string AllocationVersion = "r5-constrained-allocation-v8-event-window";
+    public const string AllocationReviewVersion = "r5-composition-review-v5-event-window";
 
     public static string BuildAllocationProposal(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy? investorPolicy = null, string? rejectionReason = null)
     {
+        var asOf = DateTimeOffset.UtcNow;
         var candidateByKey = candidates.ToDictionary(x => x.CandidateKey.Value);
         var portfolioExposure = PortfolioExposureAggregator.Aggregate(candidates);
         var projectedExposureByCandidate = candidates
@@ -61,7 +62,7 @@ public static class ContributionIntelligencePrompt
             candidate.ListingCountryCode,
             candidate.TradingCurrency,
             financialContext = FinancialContext(candidate),
-            candidateIntelligence = ContextualIntelligence(candidate),
+            candidateIntelligence = ContextualIntelligence(candidate, asOf),
             assessments = LegacyAssessments(candidate),
             projectedPortfolioExposure = projectedExposureByCandidate.GetValueOrDefault(candidate.CandidateKey),
             deterministicReference = new
@@ -171,6 +172,7 @@ public static class ContributionIntelligencePrompt
 
     public static string BuildAllocationReview(Guid portfolioId, decimal contributionAmount, IReadOnlyList<ContributionCandidate> candidates, IReadOnlyList<ContributionScenarioOption> deterministicReferences, InvestorPolicy investorPolicy, CompositionProjection projection)
     {
+        var asOf = DateTimeOffset.UtcNow;
         var candidateByKey = candidates.ToDictionary(candidate => candidate.CandidateKey.Value);
         var context = JsonSerializer.Serialize(new
         {
@@ -207,7 +209,7 @@ public static class ContributionIntelligencePrompt
                 candidate.RecentContributionCount,
                 candidate.LastContributionAt,
                 financialContext = FinancialContext(candidate),
-                candidateIntelligence = ContextualIntelligence(candidate),
+                candidateIntelligence = ContextualIntelligence(candidate, asOf),
                 assessments = LegacyAssessments(candidate),
                 deterministicReference = new { decisionScore = candidate.DecisionScore }
             }),
@@ -479,19 +481,18 @@ public static class ContributionIntelligencePrompt
         };
     }
 
-    private static object ContextualIntelligence(ContributionCandidate candidate)
+    private static object ContextualIntelligence(ContributionCandidate candidate, DateTimeOffset asOf)
     {
         var intelligence = candidate.CandidateIntelligence;
         if (intelligence is null) return new { events = Array.Empty<object>(), assessments = LegacyAssessments(candidate), evidence = Array.Empty<EvidenceReference>() };
-        const int maxEvents = 12;
         const int maxAssessments = 12;
-        var events = intelligence.RecentEvents.OrderByDescending(x => x.OccurredAt).Take(maxEvents).Select(x => new
+        var events = ContributionEventContext.SelectForPrompt(intelligence, asOf).Select(x => new
         {
-            x.Type, x.OccurredAt, x.Summary, x.Facts, x.SummaryTruncated
+            x.Type, x.OccurredAt, x.PublishedAt, x.Summary, x.Facts, x.SummaryTruncated
         }).ToArray();
         var assessments = intelligence.Assessments
             .OrderByDescending(x => AssessmentPriority(x))
-            .ThenByDescending(x => x.EvidenceReferences.Max(e => e.OccurredAt))
+            .ThenByDescending(x => x.EvidenceReferences.FirstOrDefault(e => e.Type == "PortfolioAssessment")?.OccurredAt)
             .Take(maxAssessments)
             .Select(x => new { x.AttentionPriority, x.ActionRequirement, x.CapitalDecisionImpact, x.Summary, x.WhyItMatters, x.SuggestedBehavior, x.Confidence })
             .ToArray();

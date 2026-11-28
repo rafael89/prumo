@@ -6,6 +6,8 @@ namespace Prumo.Application.Contributions;
 
 public static class ContributionText
 {
+    public const string ClassWithoutBudgetReason = "A classe ficou sem orçamento neste aporte.";
+
     public static string AssetClassLabel(AssetClass assetClass) => assetClass switch
     {
         AssetClass.BrazilianStock => "A\u00e7\u00f5es",

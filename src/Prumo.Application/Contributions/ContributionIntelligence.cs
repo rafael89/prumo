@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Prumo.Application.Explainability;
 using Prumo.Application.Abstractions;
 using Prumo.Domain.Enums;
@@ -89,7 +90,11 @@ public sealed record ContributionCandidate(
 }
 public sealed record KnownGeographicExposure(string CountryCode, decimal? Percentage, string? Source = null, string? SourceReference = null, DateTimeOffset? ObservedAt = null);
 public sealed record KnownCurrencyExposure(string CurrencyCode, decimal? Percentage, string? Source = null, string? SourceReference = null, DateTimeOffset? ObservedAt = null);
-public sealed record ContributionAssessmentContext(string AttentionPriority, string ActionRequirement, string CapitalDecisionImpact, string Summary, string WhyItMatters, string SuggestedBehavior, decimal Confidence, IReadOnlyList<EvidenceReference> EvidenceReferences);
+public sealed record ContributionAssessmentContext(string AttentionPriority, string ActionRequirement, string CapitalDecisionImpact, string Summary, string WhyItMatters, string SuggestedBehavior, decimal Confidence, IReadOnlyList<EvidenceReference> EvidenceReferences)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? InvestmentEventId { get; init; }
+}
 public sealed record ContributionCandidateEvaluation(CandidateKey CandidateKey, int Rank, decimal SuggestedAmount, string Reason, decimal Confidence, IReadOnlyList<EvidenceReference> Evidence)
 {
     public Guid? AssetId => CandidateKey.Value.StartsWith("KnownCatalog:", StringComparison.Ordinal) && Guid.TryParse(CandidateKey.Value["KnownCatalog:".Length..], out var id) ? id : null;

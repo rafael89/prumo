@@ -4,6 +4,7 @@ using Prumo.Application.Abstractions;
 using Prumo.Application.Contributions;
 using Prumo.Application.Explainability;
 using Prumo.Application.Portfolio;
+using Prumo.Application.Radar;
 using Prumo.Domain.Entities;
 using Prumo.Domain.Enums;
 using Prumo.Infrastructure.Persistence;
@@ -18,7 +19,9 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
     public async Task<ContributionContext> BuildAsync(Portfolio portfolio, IReadOnlyList<TargetAllocation> targets, decimal amount, CancellationToken ct)
     {
         var portfolioId = portfolio.Id;
-        var recentSince = DateTimeOffset.UtcNow.Subtract(RecentContributionWindow);
+        var now = DateTimeOffset.UtcNow;
+        var recentSince = now.Subtract(RecentContributionWindow);
+        var eventCutoff = ContributionEventContext.Cutoff(now);
         var canonicalTransactions = await (canonical ?? new TransactionReconciliationService(db)).Canonical(portfolioId, ct);
         var purchaseHistoryByAsset = canonicalTransactions
             .Where(x => x.Type == nameof(PortfolioTransactionType.Buy))
@@ -120,14 +123,11 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
                     || x.InvestmentEvent.DocumentAnalysis.Importance == AnalysisImportance.Relevant
                     || x.InvestmentEvent.RadarDetails != null)
                 && x.InvestmentEvent.AffectedAssets.Any(a => ids.Contains(a.Id))).ToListAsync(ct);
-        assessments = (await current.EnsureFreshAsync(portfolio, targets, assessments, ct)).ToList();
-
-        var events = await db.InvestmentEvents.AsNoTracking().AsSplitQuery()
-            .Include(x => x.AffectedAssets)
-            .Include(x => x.Evidence)
-            .Where(x => x.AffectedAssets.Any(a => ids.Contains(a.Id)))
-            .OrderByDescending(x => x.OccurredAt ?? x.CreatedAt)
-            .ToListAsync(ct);
+        assessments = (await current.EnsureFreshAsync(portfolio, targets, assessments, ct))
+            .Where(x => x.InvestmentEvent is { } source && x.Status != AssessmentStatus.Closed
+                && (RadarAttentionNowPolicy.RequiresAttention(x) || x.CapitalDecisionImpact == CapitalDecisionImpact.Favor
+                    || (EventDate(source) >= eventCutoff && EventDate(source) <= now)))
+            .ToList();
 
         var inputs = assessments.Where(x => x.InvestmentEvent is not null)
             .SelectMany(x => x.InvestmentEvent!.AffectedAssets.Where(a => ids.Contains(a.Id)).Select(a => new GuidanceAssessment(
@@ -136,23 +136,45 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
         var intelligenceContextKey = ContributionIntelligenceContextKeyCalculator.Calculate(inputs);
         var baseline = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(portfolioId, amount, health, positions, inputs));
         var classBudgets = baseline.Allocations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.Sum(a => a.Amount));
+        var blockedAssetIds = inputs.Where(x => x.Impact == CapitalDecisionImpact.Block).Select(x => x.AssetId).ToHashSet();
+        var contextualAssetIds = positions.Where(x => !blockedAssetIds.Contains(x.AssetId)
+                && (requiresRebalance ? classBudgets.GetValueOrDefault(x.AssetClass) : amount) > 0)
+            .Select(x => x.AssetId).ToHashSet();
+        var eventsByAssessment = assessments.ToDictionary(x => x.Id, x => x.InvestmentEvent!);
+        var assessmentEventIds = assessments.Select(x => x.InvestmentEventId).ToHashSet();
+        var recentEvents = await db.InvestmentEvents.AsNoTracking().AsSplitQuery()
+            .Include(x => x.AffectedAssets)
+            .Include(x => x.Evidence)
+            .Where(x => !assessmentEventIds.Contains(x.Id)
+                && x.AffectedAssets.Any(a => contextualAssetIds.Contains(a.Id))
+                && ((DateTimeOffset?)x.DocumentAnalysis!.Document!.PublishedAt ?? x.OccurredAt) >= eventCutoff
+                && ((DateTimeOffset?)x.DocumentAnalysis!.Document!.PublishedAt ?? x.OccurredAt) <= now)
+            .Select(x => new { Event = x, PublishedAt = (DateTimeOffset?)x.DocumentAnalysis!.Document!.PublishedAt })
+            .ToListAsync(ct);
+
         var deviations = health.AllocationDeviations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.First());
         var assetsById = portfolio.Positions.Where(x => x.Asset is not null).Select(x => x.Asset!).Concat(catalogCandidates).DistinctBy(x => x.Id).ToDictionary(x => x.Id);
-        var eventsByAsset = events.SelectMany(e => e.AffectedAssets.Select(a => (a.Id, Event: e))).ToLookup(x => x.Id, x => x.Event);
+        var publicationDates = recentEvents.ToDictionary(x => x.Event.Id, x => x.PublishedAt);
+        var eventsByAsset = recentEvents.SelectMany(x => x.Event.AffectedAssets.Where(a => contextualAssetIds.Contains(a.Id)).Select(a => (a.Id, x.Event)))
+            .Concat(eventsByAssessment.Values.DistinctBy(e => e.Id).SelectMany(e => e.AffectedAssets.Where(a => ids.Contains(a.Id)).Select(a => (a.Id, Event: e))))
+            .ToLookup(x => x.Id, x => x.Event);
         var inputsByAsset = inputs.ToLookup(x => x.AssetId);
         var candidates = positions.Select(position =>
         {
-            var contexts = inputsByAsset[position.AssetId].Select(x => new ContributionAssessmentContext(
-                x.AttentionPriority.ToString(), x.ActionRequirement.ToString(), x.Impact.ToString(), x.Summary, x.WhyItMatters,
-                x.SuggestedBehavior, x.Confidence,
-                new[] { new EvidenceReference("PortfolioAssessment", $"{x.AssessmentId}:{x.AssessmentVersion}", x.Evidence ?? x.Summary, x.WhyItMatters) }
-                    .Concat(eventsByAsset[position.AssetId].SelectMany(e => e.Evidence.Select(reference =>
-                        new EvidenceReference("Document", reference.DocumentId.ToString(), reference.Reference, reference.Reference, e.OccurredAt))))
-                    .Distinct().ToArray())).ToArray();
+            var contexts = inputsByAsset[position.AssetId].Select(x =>
+            {
+                var sourceEvent = eventsByAssessment[x.AssessmentId];
+                return new ContributionAssessmentContext(
+                    x.AttentionPriority.ToString(), x.ActionRequirement.ToString(), x.Impact.ToString(), x.Summary, x.WhyItMatters,
+                    x.SuggestedBehavior, x.Confidence,
+                    [new EvidenceReference("PortfolioAssessment", $"{x.AssessmentId}:{x.AssessmentVersion}", "Avaliação do Radar",
+                        OccurredAt: sourceEvent.OccurredAt ?? EventDate(sourceEvent))])
+                { InvestmentEventId = sourceEvent.Id };
+            }).ToArray();
             var deviation = deviations.GetValueOrDefault(position.AssetClass);
             var candidate = new ContributionCandidate(CandidateIdentity.Known(position.AssetId), position.Ticker, position.AssetClass, position.CurrentValue, position.CurrentWeight,
                 deviation?.CurrentPercentage ?? 0, deviation?.TargetPercentage ?? 0, requiresRebalance ? classBudgets.GetValueOrDefault(position.AssetClass) : amount,
-                inputsByAsset[position.AssetId].Any(x => x.Impact == CapitalDecisionImpact.Block), contexts,
+                blockedAssetIds.Contains(position.AssetId), contexts,
                 position.AssetType, position.Sector, position.RecentContributionAmount, position.RecentContributionCount,
                 position.LastContributionAt, position.SectorWeightWithinClass, position.HasPosition,
                 position.AllocationNeedScore, position.DiversificationScore, position.UnderweightScore,
@@ -169,7 +191,7 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
                 CandidateIntelligence = CandidateIntelligenceBuilder.Build(
                     candidate,
                     assetsById[position.AssetId],
-                    eventsByAsset[position.AssetId].ToList(), contexts)
+                    eventsByAsset[position.AssetId].ToList(), contexts, now, publicationDates)
             };
         }).ToArray();
 
@@ -184,6 +206,8 @@ public sealed class ContributionContextBuilder(PrumoDbContext db, PortfolioAsses
     };
 
     private static string NormalizeSector(string? sector) => string.IsNullOrWhiteSpace(sector) ? string.Empty : sector.Trim().ToUpperInvariant();
+
+    private static DateTimeOffset? EventDate(InvestmentEvent evt) => evt.DocumentAnalysis?.Document?.PublishedAt ?? evt.OccurredAt;
 
     public static PersistedContributionGuidanceWorkItem BuildPersistableWorkItem(ContributionGuidance baseline, IReadOnlyList<GuidancePosition> positions, IReadOnlyList<ContributionCandidate> candidates)
     {

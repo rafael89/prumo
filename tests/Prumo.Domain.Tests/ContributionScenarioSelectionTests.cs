@@ -283,15 +283,16 @@ public sealed class ContributionScenarioSelectionTests
         var assessments = Enumerable.Range(0, 20).Select(i => new ContributionAssessmentContext(
             i == 19 ? "High" : "Low", i == 19 ? "Monitor" : "None", "None",
             $"assessment-{i}", "impact", "monitor", 0.8m, new[] { reference })).ToArray();
+        var now = DateTimeOffset.UtcNow;
         var events = Enumerable.Range(0, 20).Select(i => new CandidateIntelligenceEvent(Guid.NewGuid(),
-            InvestmentEventType.Other, DateTimeOffset.UnixEpoch.AddDays(i), $"event-{i}", Array.Empty<string>(), new[] { reference })).ToArray();
+            InvestmentEventType.Other, now.AddDays(i - 20), $"event-{i}", Array.Empty<string>(), new[] { reference })).ToArray();
         candidate = candidate with { CandidateIntelligence = CandidateIntelligence.Unavailable(candidate) with { Assessments = assessments, RecentEvents = events } };
 
         var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(Guid.NewGuid(), 100m, new[] { candidate }, Array.Empty<ContributionScenarioOption>());
         using var document = JsonDocument.Parse(prompt[(prompt.LastIndexOf("\n{") + 1)..]);
         var context = document.RootElement.GetProperty("eligibleCandidates")[0].GetProperty("candidateIntelligence");
-        Assert.Equal(12, context.GetProperty("events").GetArrayLength());
-        Assert.Equal(8, context.GetProperty("omittedEventCount").GetInt32());
+        Assert.Equal(5, context.GetProperty("events").GetArrayLength());
+        Assert.Equal(15, context.GetProperty("omittedEventCount").GetInt32());
         Assert.Equal(8, context.GetProperty("omittedAssessmentCount").GetInt32());
         Assert.Equal("assessment-19", context.GetProperty("assessments")[0].GetProperty("summary").GetString());
         Assert.Equal("event-19", context.GetProperty("events")[0].GetProperty("summary").GetString());

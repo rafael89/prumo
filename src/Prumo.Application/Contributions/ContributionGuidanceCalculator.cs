@@ -75,7 +75,8 @@ public sealed class ContributionGuidanceCalculator
         var targetDeviations = input.Health.AllocationDeviations.GroupBy(x => x.AssetClass).ToDictionary(x => x.Key, x => x.First());
         if (targetDeviations.Count == 0) return Empty(input, ContributionGuidanceStatus.NoNeeds, "Não há alocações-alvo válidas para orientar este aporte.");
         var impacts = input.Assessments.Where(a => a.Status != AssessmentStatus.Closed).GroupBy(a => a.AssetId).ToDictionary(g => g.Key, EffectiveImpact);
-        if (targetDeviations.Count > 1 && !targetDeviations.Values.Any(x => x.Direction == AllocationDeviationDirection.Underweight))
+        var requiresRebalance = targetDeviations.Values.Any(x => x.Direction == AllocationDeviationDirection.Underweight);
+        if (targetDeviations.Count > 1 && !requiresRebalance)
             return Maintenance(input, positions, impacts);
         var avoided = new List<AvoidedCandidate>();
         var reasons = new List<string>();
@@ -126,6 +127,12 @@ public sealed class ContributionGuidanceCalculator
             var ranked = RankedCandidates(group, impacts);
             foreach (var candidate in group.Where(x => impacts.GetValueOrDefault(x.AssetId) == CapitalDecisionImpact.Block))
                 avoided.Add(Blocked(candidate, input.Assessments));
+            if (requiresRebalance && Money(classAllocated.GetValueOrDefault(group.Key)) <= 0)
+            {
+                avoided.AddRange(ranked.Select(candidate => new AvoidedCandidate(candidate.AssetId, candidate.Ticker, candidate.AssetClass,
+                    ContributionAvoidanceReasonType.ClassNotNeeded, ContributionText.ClassWithoutBudgetReason, Array.Empty<string>())));
+                continue;
+            }
             foreach (var candidate in ranked.Skip(1).Where(x => !allocationsByAsset.ContainsKey(x.AssetId)))
                 avoided.Add(new(candidate.AssetId, candidate.Ticker, candidate.AssetClass, ContributionAvoidanceReasonType.LowerPriority,
                     candidate.RecentContributionCount > 0

@@ -225,6 +225,26 @@ public sealed class TargetAllocationAndGuidanceTests
     }
 
     [Fact]
+    public void Guidance_explains_zero_class_budget_for_every_unblocked_asset_in_that_class()
+    {
+        var stock = new GuidancePosition(Guid.NewGuid(), "AAA", AssetClass.BrazilianStock, 30_000, 30);
+        var eligibleFii = new GuidancePosition(Guid.NewGuid(), "BBB", AssetClass.Fii, 40_000, 40, RecentContributionCount: 1);
+        var blockedFii = new GuidancePosition(Guid.NewGuid(), "CCC", AssetClass.Fii, 30_000, 30);
+        var health = CreateHealth((AssetClass.BrazilianStock, 30_000, 50), (AssetClass.Fii, 70_000, 50));
+        var result = new ContributionGuidanceCalculator().Calculate(new ContributionGuidanceInput(Guid.NewGuid(), 4_500, health,
+            [stock, eligibleFii, blockedFii],
+            [new(blockedFii.AssetId, CapitalDecisionImpact.Block, AssessmentStatus.Active, "Bloqueio do Radar", "v1"),
+             new(eligibleFii.AssetId, CapitalDecisionImpact.None, AssessmentStatus.Active, "Distribuição de rendimentos", "v1")]));
+
+        Assert.Equal(stock.AssetId, Assert.Single(result.Allocations).AssetId);
+        var avoided = Assert.Single(result.AvoidedCandidates, x => x.AssetId == eligibleFii.AssetId);
+        Assert.Equal(ContributionAvoidanceReasonType.ClassNotNeeded, avoided.ReasonType);
+        Assert.Equal("A classe ficou sem orçamento neste aporte.", avoided.Reason);
+        Assert.Empty(avoided.Evidence);
+        Assert.Contains(result.AvoidedCandidates, x => x.AssetId == blockedFii.AssetId && x.ReasonType == ContributionAvoidanceReasonType.CapitalDecisionBlock);
+    }
+
+    [Fact]
     public void Guidance_prefers_candidate_without_recent_contribution()
     {
         var recent = Guid.NewGuid();

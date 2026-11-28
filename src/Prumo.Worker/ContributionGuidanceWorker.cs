@@ -111,8 +111,10 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                             metrics.RecordAiOutcome($"composition-review-{reviewResolution.Outcome}");
                             var proposalContext = ContributionIntelligencePrompt.BuildAllocationProposal(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy);
                             var reviewContext = ContributionIntelligencePrompt.BuildAllocationReview(job.PortfolioId, guidance.RequestedAmount, workItem.Candidates, deterministicOptions, investorPolicy, initialProjection);
-                            var proposalEventCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.RecentEvents.Count ?? 0);
-                            var reviewEventCount = proposalEventCount;
+                            var contextAsOf = DateTimeOffset.UtcNow;
+                            var eventCount = eligibleCandidates.Sum(x => x.CandidateIntelligence is { } intelligence
+                                ? ContributionEventContext.SelectForPrompt(intelligence, contextAsOf).Count : 0);
+                            var contextEventsLimited = eventCount < eligibleCandidates.Sum(x => x.CandidateIntelligence?.RecentEvents.Count ?? 0);
                             guidance.UpdateIntelligence(finalMetadata.Provider, finalMetadata.Model, proposal.Availability.ToString(), finalReason, JsonSerializer.Serialize(new
                             {
                                 engineVersion = finalMetadata.EngineVersion,
@@ -170,11 +172,11 @@ public sealed class ContributionGuidanceWorker(IServiceScopeFactory scopes, ILog
                                 reviewMetricEvidenceCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.MetricEvidence.Count ?? 0),
                                 metricEvidenceStatusCounts = MetricEvidenceStatusCounts(workItem.Candidates),
                                 metricEvidenceConflictCount = workItem.Candidates.Sum(x => x.CandidateIntelligence?.MetricEvidence.Count(e => e.Status == MetricEvidenceResolutionStatus.Conflict) ?? 0),
-                                proposalEventCount,
-                                reviewEventCount,
+                                proposalEventCount = eventCount,
+                                reviewEventCount = eventCount,
                                 storagePayloadLimited = false,
-                                proposalContextLimited = false,
-                                reviewContextLimited = false,
+                                proposalContextLimited = contextEventsLimited,
+                                reviewContextLimited = contextEventsLimited,
                                 reviewDecision = review?.Decision ?? "unavailable",
                                 reviewOutcome = reviewResolution.Outcome,
                                 reviewAccepted = reviewResolution.ReviewAccepted,

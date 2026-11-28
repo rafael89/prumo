@@ -1,5 +1,6 @@
 using Prumo.Api.Controllers;
 using Prumo.Api.Services;
+using Prumo.Application.Abstractions;
 using Prumo.Application.Contributions;
 using Prumo.Application.Intelligence;
 using Prumo.Application.Portfolio;
@@ -97,6 +98,35 @@ public sealed class ContributionGuidanceControllerTests
     }
 
     [Fact]
+    public async Task GetCorrectsLegacyAvoidedReasonForAClassWithoutBudget()
+    {
+        await using var db = CreateDbContext();
+        var (portfolio, targets) = await SeedPortfolioAsync(db);
+        var fiiId = Guid.NewGuid();
+        var blockedId = Guid.NewGuid();
+        var candidates = new[]
+        {
+            new ContributionCandidate(CandidateIdentity.Known(fiiId), "FIIA11", AssetClass.Fii, 100, 20, 25, 10, 0, false, []),
+            new ContributionCandidate(CandidateIdentity.Known(blockedId), "FIIB11", AssetClass.Fii, 25, 5, 25, 10, 0, true, [])
+        };
+        var baseline = new PersistedContributionBaseline(ContributionGuidanceStatus.Calculated, portfolio.Id, 4_000m, [],
+            [new(fiiId, "FIIA11", AssetClass.Fii, ContributionAvoidanceReasonType.LowerPriority, "Outro ativo da classe foi priorizado.", []),
+             new(blockedId, "FIIB11", AssetClass.Fii, ContributionAvoidanceReasonType.CapitalDecisionBlock, "Ativo bloqueado.", [])],
+            [], 4_000m, ContributionAllocationStyle.NoAllocation, [], [], "1", [], DateTimeOffset.UtcNow);
+        var workItem = new PersistedContributionGuidanceWorkItem(baseline, candidates.Select(PersistedContributionCandidate.From).ToArray());
+        var guidance = AddCompletedGuidance(db, portfolio, targets, "R4-9.2", candidatesJson: JsonSerializer.Serialize(workItem));
+        var ct = TestContext.Current.CancellationToken;
+        await db.SaveChangesAsync(ct);
+
+        var result = await CreateController(db).Get(portfolio.Id, guidance.Id, ct);
+        var response = Assert.IsType<OkObjectResult>(result.Result);
+        var avoided = JsonSerializer.SerializeToElement(response.Value).GetProperty("avoidedCandidates");
+
+        Assert.Equal("A classe ficou sem orçamento neste aporte.", avoided[0].GetProperty("reason").GetString());
+        Assert.Equal("Ativo bloqueado.", avoided[1].GetProperty("reason").GetString());
+    }
+
+    [Fact]
     public async Task GenerateIncludesKnownCatalogAssetWithoutCurrentPosition()
     {
         await using var db = CreateDbContext();
@@ -138,9 +168,14 @@ public sealed class ContributionGuidanceControllerTests
         await using var db = CreateDbContext();
         var (portfolio, _) = await SeedPortfolioAsync(db);
         var asset = await db.Assets.SingleAsync(x => x.Ticker == "PETR4", cancellationToken: TestContext.Current.CancellationToken);
+        var publishedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        var source = new Document(asset.Id, DocumentType.RelevantFact, publishedAt, "Teste", null, "https://example.test/doc", Guid.NewGuid().ToString());
+        var analysis = new DocumentAnalysis(Guid.NewGuid(), source.Id, "test", "test-v1", AnalysisImportance.Informative,
+            AnalysisClassification.Other, false, SuggestedAction.NoAction, "Resumo", "Impacto", "Impacto", [asset.Ticker], 1, "{}");
+        db.AddRange(source, analysis);
         for (var index = 0; index < 40; index++)
         {
-            var investmentEvent = new InvestmentEvent(Guid.NewGuid(), InvestmentEventType.Other, DateTimeOffset.UtcNow.AddDays(-index), new string('E', 8_000), new[] { new string('F', 2_000) });
+            var investmentEvent = new InvestmentEvent(analysis.Id, InvestmentEventType.Other, publishedAt.AddDays(-index), new string('E', 8_000), new[] { new string('F', 2_000) });
             investmentEvent.AffectedAssets.Add(asset);
             db.InvestmentEvents.Add(investmentEvent);
         }
@@ -161,6 +196,101 @@ public sealed class ContributionGuidanceControllerTests
         Assert.All(workItem.Candidates.SelectMany(x => x.CandidateIntelligence!.RecentEvents), e => Assert.Equal(2_000, e.Facts.Single().Length));
         Assert.Equal(0, workItem.CandidatePayloadTruncatedEventCount);
         Assert.Equal(0, workItem.CandidatePayloadTruncatedSummaryCount);
+    }
+
+    [Fact]
+    public async Task GenerateLinksAssessmentsToTheirOwnEventWithoutCopyingDocumentEvidence()
+    {
+        await using var db = CreateDbContext();
+        var (portfolio, targets) = await SeedPortfolioAsync(db);
+        var ct = TestContext.Current.CancellationToken;
+        var asset = await db.Assets.SingleAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        var older = AddEvent("Evento anterior", now.AddDays(-30), hasAssessment: true);
+        var newer = AddEvent("Evento mais recente avaliado", now.AddDays(-20), hasAssessment: true);
+        AddEvent("Evento posterior sem avaliação", now.AddDays(-5), hasAssessment: false);
+        var historical = AddEvent("Provento antigo", now.AddYears(-1), hasAssessment: true, InvestmentEventType.Distribution);
+        await db.SaveChangesAsync(ct);
+
+        var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), ct);
+        Assert.IsType<AcceptedResult>(result.Result);
+        var job = await db.ContributionGuidanceJobs.SingleAsync(ct);
+        var workItem = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(job.CandidatesJson)!.ToRuntime();
+        var intelligence = Assert.Single(workItem.Candidates).CandidateIntelligence!;
+
+        Assert.Equal(3, intelligence.RecentEvents.Count);
+        Assert.Equal(2, intelligence.Assessments.Count);
+        Assert.DoesNotContain(intelligence.RecentEvents, x => x.EventId == historical.Id);
+        Assert.DoesNotContain(intelligence.Assessments, x => x.InvestmentEventId == historical.Id);
+        foreach (var source in new[] { older, newer })
+        {
+            var assessment = Assert.Single(intelligence.Assessments, x => x.InvestmentEventId == source.Id);
+            var reference = Assert.Single(assessment.EvidenceReferences);
+            Assert.Equal("PortfolioAssessment", reference.Type);
+            Assert.Equal(source.OccurredAt, reference.OccurredAt);
+            var storedEvent = Assert.Single(intelligence.RecentEvents, x => x.EventId == source.Id);
+            Assert.Equal(source.Evidence.Single().DocumentId.ToString(), Assert.Single(storedEvent.Evidence).ReferenceId);
+        }
+
+        var prompt = ContributionIntelligencePrompt.BuildAllocationProposal(portfolio.Id, 4_000m, workItem.Candidates, []);
+        const string contextMarker = "Contexto JSON:\n";
+        using var context = JsonDocument.Parse(prompt[(prompt.IndexOf(contextMarker, StringComparison.Ordinal) + contextMarker.Length)..]);
+        var promptAssessments = context.RootElement.GetProperty("eligibleCandidates")[0]
+            .GetProperty("candidateIntelligence").GetProperty("assessments");
+        Assert.Equal($"Avaliação de {newer.Summary}", promptAssessments[0].GetProperty("summary").GetString());
+        Assert.Equal($"Avaliação de {older.Summary}", promptAssessments[1].GetProperty("summary").GetString());
+
+        InvestmentEvent AddEvent(string summary, DateTimeOffset publishedAt, bool hasAssessment, InvestmentEventType eventType = InvestmentEventType.Other)
+        {
+            var sourceDoc = new Document(asset.Id, DocumentType.RelevantFact, publishedAt, "Teste", null, "https://example.test/doc", Guid.NewGuid().ToString());
+            var analysis = new DocumentAnalysis(Guid.NewGuid(), sourceDoc.Id, "test", "test-v1", AnalysisImportance.Relevant,
+                AnalysisClassification.Other, true, SuggestedAction.Monitor, summary, "Impacto", "Impacto", [asset.Ticker], 1, "{}");
+            var evt = new InvestmentEvent(analysis.Id, eventType, hasAssessment ? publishedAt : null, summary, []);
+            evt.AffectedAssets.Add(asset);
+            evt.Evidence.Add(new(evt.Id, analysis.Id, sourceDoc.Id, $"Fonte de {summary}"));
+            db.AddRange(sourceDoc, analysis, evt);
+            if (hasAssessment)
+                db.PortfolioAssessments.Add(new PortfolioAssessment(portfolio.Id, evt.Id, AttentionPriority.Medium, ActionRequirement.Monitor,
+                    CapitalDecisionImpact.None, AssessmentStatus.Active, AssessmentUserState.Unread, $"Avaliação de {summary}", "Motivo", "Acompanhar",
+                    IntelligenceConfidence.Medium, TargetAllocationKeyCalculator.Calculate(targets), PortfolioImpactAssessmentService.CurrentVersion,
+                    PortfolioSnapshotKeyCalculator.Calculate(portfolio), evt.Version));
+            return evt;
+        }
+    }
+
+    [Theory]
+    [InlineData(AssessmentStatus.Active, true)]
+    [InlineData(AssessmentStatus.Closed, false)]
+    public async Task GenerateKeepsOldLiquidationBlockWhileTheRadarAssessmentIsOpen(AssessmentStatus status, bool keepsBlock)
+    {
+        await using var db = CreateDbContext();
+        var (portfolio, targets) = await SeedPortfolioAsync(db);
+        var ct = TestContext.Current.CancellationToken;
+        var asset = await db.Assets.SingleAsync(ct);
+        var date = DateTimeOffset.UtcNow.AddYears(-1);
+        var source = new Document(asset.Id, DocumentType.RelevantFact, date, "Teste", null, "https://example.test/doc", Guid.NewGuid().ToString());
+        var analysis = new DocumentAnalysis(Guid.NewGuid(), source.Id, "test", "test-v1", AnalysisImportance.Critical,
+            AnalysisClassification.Other, true, SuggestedAction.Monitor, "Liquidação", "Impacto", "Impacto", [asset.Ticker], 1, "{}");
+        var liquidation = new InvestmentEvent(analysis.Id, InvestmentEventType.Liquidation, date, "Liquidação", []);
+        liquidation.AffectedAssets.Add(asset);
+        liquidation.Evidence.Add(new(liquidation.Id, analysis.Id, source.Id, "Liquidação"));
+        var assessment = new PortfolioAssessment(portfolio.Id, liquidation.Id, AttentionPriority.Critical, ActionRequirement.Review,
+            CapitalDecisionImpact.Block, status, AssessmentUserState.Unread, "Liquidação", "Motivo", "Acompanhar",
+            IntelligenceConfidence.High, TargetAllocationKeyCalculator.Calculate(targets), PortfolioImpactAssessmentService.CurrentVersion,
+            PortfolioSnapshotKeyCalculator.Calculate(portfolio), liquidation.Version);
+        db.AddRange(source, analysis, liquidation, assessment);
+        await db.SaveChangesAsync(ct);
+
+        var result = await CreateController(db).Generate(portfolio.Id, new ContributionRequest(4_000m), ct);
+        Assert.IsType<AcceptedResult>(result.Result);
+        var job = await db.ContributionGuidanceJobs.SingleAsync(ct);
+        var workItem = JsonSerializer.Deserialize<PersistedContributionGuidanceWorkItem>(job.CandidatesJson)!;
+        var candidate = Assert.Single(workItem.Candidates);
+
+        Assert.Equal(keepsBlock, candidate.HasBlock);
+        Assert.Equal(keepsBlock, candidate.CandidateIntelligence!.RecentEvents.Any(x => x.EventId == liquidation.Id));
+        Assert.Equal(keepsBlock, candidate.CandidateIntelligence.Assessments.Any(x => x.InvestmentEventId == liquidation.Id));
+        Assert.Equal(!keepsBlock, workItem.Baseline.Allocations.Any());
     }
 
     [Fact]
@@ -206,7 +336,8 @@ public sealed class ContributionGuidanceControllerTests
         Portfolio portfolio,
         IReadOnlyList<TargetAllocation> targets,
         string engineVersion,
-        string? intelligenceContextKey = null)
+        string? intelligenceContextKey = null,
+        string candidatesJson = "{}")
     {
         var guidance = new PersistedContributionGuidance(
             portfolio.Id,
@@ -220,7 +351,7 @@ public sealed class ContributionGuidanceControllerTests
             "IntelligenceAvailable",
             "Resultado de teste.",
             "{}");
-        var job = new ContributionGuidanceJob(portfolio.Id, guidance.Id, "{}");
+        var job = new ContributionGuidanceJob(portfolio.Id, guidance.Id, candidatesJson);
         job.Start();
         job.Complete();
         db.AddRange(guidance, job);

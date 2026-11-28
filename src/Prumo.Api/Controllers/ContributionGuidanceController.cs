@@ -161,6 +161,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
         if (!string.IsNullOrWhiteSpace(jobCandidates))
         {
             workItem = DeserializeWorkItemForRead(jobCandidates);
+            var classesWithoutBudget = workItem?.Candidates?.GroupBy(x => x.AssetClass)
+                .Where(group => group.All(candidate => candidate.ClassBudget <= 0))
+                .Select(group => group.Key).ToHashSet();
             avoidedCandidates = workItem?.Baseline?.AvoidedCandidates
                 .Where(x => !selectedAssetIds.Contains(x.AssetId))
                 .GroupBy(x => x.AssetId)
@@ -171,7 +174,9 @@ public sealed class ContributionGuidanceController(PrumoDbContext db, PortfolioA
                     x.AssetId,
                     x.Ticker,
                     assetClass = (int)x.AssetClass,
-                    reason = ContributionText.NormalizeAssetClassNames(x.Reason)
+                    reason = x.ReasonType == ContributionAvoidanceReasonType.LowerPriority && classesWithoutBudget?.Contains(x.AssetClass) == true
+                        ? ContributionText.ClassWithoutBudgetReason
+                        : ContributionText.NormalizeAssetClassNames(x.Reason)
                 })
                 .ToArray() ?? Array.Empty<object>();
         }

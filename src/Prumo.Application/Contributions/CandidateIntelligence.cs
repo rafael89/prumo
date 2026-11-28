@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Prumo.Application.Explainability;
 using Prumo.Application.Abstractions;
 using Prumo.Domain.Entities;
@@ -23,7 +24,11 @@ public sealed record CandidateIntelligenceEvent(
     IReadOnlyList<string> Facts,
     IReadOnlyList<EvidenceReference> Evidence,
     bool SummaryTruncated = false,
-    int OriginalSummaryLength = 0);
+    int OriginalSummaryLength = 0)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? PublishedAt { get; init; }
+}
 
 public sealed record CandidateIntelligence(
     CandidateKey CandidateKey,
@@ -67,8 +72,11 @@ public static class CandidateIntelligenceBuilder
         ContributionCandidate candidate,
         Asset asset,
         IReadOnlyList<InvestmentEvent> events,
-        IReadOnlyList<ContributionAssessmentContext> assessments)
+        IReadOnlyList<ContributionAssessmentContext> assessments,
+        DateTimeOffset? asOf = null,
+        IReadOnlyDictionary<Guid, DateTimeOffset?>? publicationDates = null)
     {
+        var now = asOf ?? DateTimeOffset.UtcNow;
         var structural = new CandidateIntelligenceSection(
             string.IsNullOrWhiteSpace(asset.Ticker) || asset.AssetClass == AssetClass.Other
                 ? CandidateIntelligenceSectionStatus.Partial : CandidateIntelligenceSectionStatus.Available,
@@ -77,15 +85,22 @@ public static class CandidateIntelligenceBuilder
 
         var financial = CandidateFinancialEvaluator.Evaluate(asset.Id, asset.AssetType, candidate.FinancialSnapshot);
         var metricEvidence = MetricEvidenceResolver.Resolve(asset);
+        var eventContexts = events
+            .Where(x => x.AffectedAssets.Any(a => a.Id == asset.Id))
+            .Select(x => new CandidateIntelligenceEvent(x.Id, x.EventType, x.OccurredAt, x.Summary, x.Facts,
+                x.Evidence.Select(e => new EvidenceReference("Document", e.DocumentId.ToString(), e.Reference, e.Reference, x.OccurredAt)).ToArray())
+            { PublishedAt = publicationDates?.GetValueOrDefault(x.Id) ?? x.DocumentAnalysis?.Document?.PublishedAt })
+            .OrderByDescending(x => x.PublishedAt ?? x.OccurredAt)
+            .ToArray();
         var fundType = candidate.FundType == FundType.Unknown ? SectorExposureSemantics.InferFundType(asset.AssetType, asset.Sector) : candidate.FundType;
         var dimensions = Enum.GetValues<CandidateIntelligenceDimension>()
             .Where(x => x is not CandidateIntelligenceDimension.Events and not CandidateIntelligenceDimension.Assessments)
-            .Select(x => MetricApplicabilityResolver.Dimension(x, asset.AssetType, fundType, metricEvidence, DateTimeOffset.UtcNow)).ToArray();
+            .Select(x => MetricApplicabilityResolver.Dimension(x, asset.AssetType, fundType, metricEvidence, now)).ToArray();
         // Events and assessments are contextual sources, not metric universes.
         // Their presence is represented by Applicability and their own collections.
         dimensions = dimensions.Concat(new[]
         {
-            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Events, eventCoverage(events, asset.Id), 0, 0, 0, Array.Empty<string>(), null),
+            new CandidateDimensionCoverage(CandidateIntelligenceDimension.Events, eventContexts.Length > 0 ? MetricApplicability.Available : MetricApplicability.Unavailable, 0, 0, 0, Array.Empty<string>(), null),
             new CandidateDimensionCoverage(CandidateIntelligenceDimension.Assessments, assessments.Count > 0 ? MetricApplicability.Available : MetricApplicability.Unavailable, 0, 0, 0, assessments.Count > 0 ? Array.Empty<string>() : new[] { "Assessments indisponíveis." }, null)
         }).ToArray();
         var fundamentals = FinancialSection(financial.Quality.Coverage, financial.Quality.Freshness, candidate.FinancialSnapshot?.ObservedAt,
@@ -101,12 +116,6 @@ public static class CandidateIntelligenceBuilder
             incomeAvailable ? 1m : null,
             incomeAvailable ? Array.Empty<string>() : new[] { "Dados de renda/distribuição indisponíveis." });
 
-        var eventContexts = events
-            .Where(x => x.AffectedAssets.Any(a => a.Id == asset.Id))
-            .OrderByDescending(x => x.OccurredAt ?? x.CreatedAt)
-            .Select(x => new CandidateIntelligenceEvent(x.Id, x.EventType, x.OccurredAt, x.Summary, x.Facts,
-                x.Evidence.Select(e => new EvidenceReference("Document", e.DocumentId.ToString(), e.Reference, e.Reference, x.OccurredAt)).ToArray()))
-            .ToArray();
         var eventEvidence = eventContexts.SelectMany(x => x.Evidence).Distinct().ToArray();
         var allEvidence = fundamentals.Evidence.Concat(valuation.Evidence).Concat(income.Evidence).Concat(eventEvidence)
             .Concat(assessments.SelectMany(x => x.EvidenceReferences)).Distinct().ToArray();
@@ -122,13 +131,10 @@ public static class CandidateIntelligenceBuilder
             MetricEvidence = metricEvidence.Metrics,
             DimensionalCoverage = dimensions,
             Freshness = new(CandidateFreshnessPolicy.Version,
-                metricEvidence.Metrics.ToDictionary(x => x.Metric, x => x.Canonical is null ? MetricApplicability.Unavailable : CandidateFreshnessPolicy.Evaluate(x.Metric, x.Canonical.ReferenceDate, x.Canonical.ReferencePeriod, x.Canonical.PeriodType, x.Canonical.ObservedAt, DateTimeOffset.UtcNow), StringComparer.OrdinalIgnoreCase),
+                metricEvidence.Metrics.ToDictionary(x => x.Metric, x => x.Canonical is null ? MetricApplicability.Unavailable : CandidateFreshnessPolicy.Evaluate(x.Metric, x.Canonical.ReferenceDate, x.Canonical.ReferencePeriod, x.Canonical.PeriodType, x.Canonical.ObservedAt, now), StringComparer.OrdinalIgnoreCase),
                 dimensions.ToDictionary(x => x.Dimension, x => x.Applicability))
         };
     }
-
-    private static MetricApplicability eventCoverage(IReadOnlyList<InvestmentEvent> events, Guid assetId)
-        => events.Any(x => x.AffectedAssets.Any(a => a.Id == assetId)) ? MetricApplicability.Available : MetricApplicability.Unavailable;
 
     private static CandidateIntelligenceSection FinancialSection(FinancialEvidenceCoverage coverage, FinancialEvidenceFreshness freshness, DateTimeOffset? observedAt, string? source, string label, int evidenceCount, IReadOnlyList<string> missing)
     {

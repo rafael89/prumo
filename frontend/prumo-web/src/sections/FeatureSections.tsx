@@ -101,11 +101,14 @@ export function RadarSection({ portfolioId }: { portfolioId: string | null }) {
     {aiConfiguration.data?.enabled === false && <p className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Análise por IA indisponível. Configure um provedor para habilitar novas análises; os resultados anteriores continuam disponíveis.</p>}
     <div className="absolute right-0 top-0 z-10" onMouseEnter={showRadarInfoAfterDelay} onMouseLeave={hideRadarInfo}>
       <button type="button" aria-label="Como funciona o Radar" aria-expanded={showRadarInfo} aria-describedby={showRadarInfo ? 'radar-info-tooltip' : undefined} onFocus={showRadarInfoAfterDelay} onBlur={hideRadarInfo} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition hover:border-amber-500 hover:text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400"><FontAwesomeIcon icon={faCircleInfo} /></button>
-      {showRadarInfo && <div id="radar-info-tooltip" role="tooltip" className="absolute right-0 top-10 w-[min(23rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 text-left text-xs leading-5 text-slate-600 shadow-xl">
+      {showRadarInfo && <div id="radar-info-tooltip" role="tooltip" className="absolute right-0 top-10 w-[min(23rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-3 text-left text-xs leading-4 text-slate-600 shadow-xl sm:p-4 sm:leading-5">
         <p className="font-semibold text-slate-900">Como o Radar funciona</p>
-        <p className="mt-2">Atenção agora exige uma mudança material identificada, um prazo ou uma decisão, com motivo e evidência no documento.</p>
-        <p className="mt-2">O impacto potencial considera a exposição da carteira aos ativos afetados. Em documentos relevantes, a partir de 5% é alto e a partir de 10% é crítico.</p>
-        <p className="mt-2">O peso na carteira não gera urgência sozinho. O Radar exibe apenas itens que requerem atenção e situações resolvidas. Itens de acompanhamento e publicações rotineiras podem ser consultados na área de documentos.</p>
+        <p className="mt-2">Em <strong>Atenção agora</strong>, mudanças relevantes, prazos e decisões precisam de evidência no documento.</p>
+        <p className="mt-2">O peso do ativo ajuda a definir a prioridade. Em eventos relevantes, 5% da carteira pode indicar prioridade alta e 10%, crítica.</p>
+        <p className="mt-2">Use <strong>Resolvidos</strong> para situações encerradas e <strong>Documentos</strong> para acompanhamento e comunicados de rotina.</p>
+        <p className="mt-2 border-t border-slate-200 pt-2 font-semibold text-slate-900 sm:mt-3 sm:pt-3">Influência no Aporte</p>
+        <p className="mt-2">Uma avaliação favorável pode priorizar o ativo. Cautela pode reduzir sua prioridade. Um bloqueio vigente exclui o ativo da recomendação.</p>
+        <p className="mt-2">O contexto usa eventos dos últimos 120 dias. Alertas que ainda exigem atenção podem influenciar por mais tempo. Fechar a situação retira a avaliação das próximas simulações.</p>
       </div>}
     </div>
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700">Radar</p><h2 className="mt-2 text-4xl font-semibold tracking-tight">Eventos da sua carteira.</h2></div><span className="rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">{radar.data?.requiresAttention ?? 0} precisam de atenção</span></div>
